@@ -49,14 +49,14 @@ export function CertificadoPicker({ litros, valor, onChange }: Props) {
     <div className="space-y-3">
       <button
         type="button"
-        onClick={() => selecionar("integral")}
+        onClick={() => selecionar("nao")}
         className={`w-full text-left p-5 rounded-2xl border-2 text-lg font-semibold transition-colors ${
-          valor.tipo === "integral"
+          valor.tipo === "nao"
             ? "bg-verde text-white border-verde"
             : "bg-white border-cinza-borda active:bg-cinza-fundo"
         }`}
       >
-        ✅ Sim, pelos {formatLitros(litros)}
+        ❌ Não emitiu
       </button>
 
       <button
@@ -90,14 +90,14 @@ export function CertificadoPicker({ litros, valor, onChange }: Props) {
 
       <button
         type="button"
-        onClick={() => selecionar("nao")}
+        onClick={() => selecionar("integral")}
         className={`w-full text-left p-5 rounded-2xl border-2 text-lg font-semibold transition-colors ${
-          valor.tipo === "nao"
+          valor.tipo === "integral"
             ? "bg-verde text-white border-verde"
             : "bg-white border-cinza-borda active:bg-cinza-fundo"
         }`}
       >
-        ❌ Não emitiu
+        ✅ Sim, pelos {formatLitros(litros)}
       </button>
     </div>
   );
