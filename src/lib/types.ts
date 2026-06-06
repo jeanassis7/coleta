@@ -65,6 +65,7 @@ export interface ColetaLocal {
   foto_blob: Blob | null;
   foto_subida: boolean;
   registro_subido: boolean;
+  gps_pendente: boolean;          // true enquanto GPS ainda não resolveu (sucesso ou timeout)
   tentativas: number;
   ultimo_erro: string | null;
 }

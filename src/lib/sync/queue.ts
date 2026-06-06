@@ -33,9 +33,9 @@ export async function runSync(): Promise<SyncResult> {
   } = await supabase.auth.getSession();
   if (!session) return result;
 
-  // 1. Sincroniza coletas pendentes
+  // 1. Sincroniza coletas pendentes — ignora as que ainda estão esperando GPS
   const pendentes = await db.coletas_locais
-    .filter((c) => !c.registro_subido || !c.foto_subida)
+    .filter((c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente)
     .toArray();
 
   result.total = pendentes.length;
@@ -186,6 +186,26 @@ async function sincronizarEventos(): Promise<void> {
 export async function countPendentes(): Promise<number> {
   const db = getLocalDB();
   return db.coletas_locais
-    .filter((c) => !c.registro_subido || !c.foto_subida)
+    .filter((c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente)
     .count();
+}
+
+/**
+ * Recovery: limpa flag gps_pendente em coletas onde o GPS já era pra ter
+ * resolvido há tempos (>30s). Garante que coletas nunca fiquem presas
+ * caso a função de captura tenha quebrado/cancelado.
+ */
+const GPS_PENDENTE_TIMEOUT_MS = 30_000;
+
+export async function limparGpsPendenteStale(): Promise<number> {
+  const db = getLocalDB();
+  const cutoff = Date.now() - GPS_PENDENTE_TIMEOUT_MS;
+  const stale = await db.coletas_locais
+    .filter((c) => c.gps_pendente === true && c.criado_em < cutoff)
+    .toArray();
+
+  for (const c of stale) {
+    await db.coletas_locais.update(c.client_id, { gps_pendente: false });
+  }
+  return stale.length;
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { getLocalDB } from "@/lib/db/dexie";
-import { captureGPS, checkPermissionsState } from "@/lib/gps/capture";
+import { captureGPS, checkPermissionsState, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
 import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { getDeviceId, getSessionId, APP_VERSION } from "@/lib/device/device-id";
@@ -31,6 +31,21 @@ export default function NovaColetaPage() {
   const [valorFormatado, setValorFormatado] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [observacao, setObservacao] = useState("");
+
+  // GPS começa a ser capturado já na abertura da tela (em paralelo ao preenchimento).
+  // Quando motorista termina de digitar, geralmente o GPS já resolveu.
+  const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
+
+  useEffect(() => {
+    if (!motoristaId) return;
+    let cancelado = false;
+    captureGPS().then((r) => {
+      if (!cancelado) setGpsResultado(r);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [motoristaId]);
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -65,6 +80,8 @@ export default function NovaColetaPage() {
     const client_id = uuid();
     const criado_em = Date.now();
 
+    // Se GPS já resolveu durante o preenchimento, usa de cara. Senão marca pendente.
+    const gpsJaResolvido = gpsResultado;
     const coleta: ColetaLocal = {
       client_id,
       motorista_id: motoristaId,
@@ -75,15 +92,16 @@ export default function NovaColetaPage() {
       certificado_tipo: cert.tipo,
       litros_certificado: cert.litrosCert,
       observacao: observacao.trim() || null,
-      latitude: null,
-      longitude: null,
-      gps_accuracy: null,
-      gps_capturado: false,
+      latitude: gpsJaResolvido?.ok ? gpsJaResolvido.latitude : null,
+      longitude: gpsJaResolvido?.ok ? gpsJaResolvido.longitude : null,
+      gps_accuracy: gpsJaResolvido?.ok ? gpsJaResolvido.accuracy : null,
+      gps_capturado: gpsJaResolvido?.ok ?? false,
+      gps_pendente: gpsJaResolvido === null, // só pendente se ainda não resolveu
       device_id: getDeviceId(),
       session_id: getSessionId(),
       app_version: APP_VERSION,
       criado_em,
-      foto_blob: foto, // pode ser null se exige_foto=false
+      foto_blob: foto,
       foto_subida: false,
       registro_subido: false,
       tentativas: 0,
@@ -93,37 +111,68 @@ export default function NovaColetaPage() {
     const db = getLocalDB();
     await db.coletas_locais.add(coleta);
 
-    // Navega já — GPS e sync acontecem em background
-    router.push(`/motorista/confirmacao?cid=${client_id}`);
-
-    // GPS em background — não bloqueia
-    (async () => {
-      const gps = await captureGPS();
-      if (gps.ok) {
-        await db.coletas_locais.update(client_id, {
-          latitude: gps.latitude,
-          longitude: gps.longitude,
-          gps_accuracy: gps.accuracy,
-          gps_capturado: true,
-        });
-      } else {
-        const permState = await checkPermissionsState();
-        const eventType =
-          gps.failure?.kind === "denied"
-            ? "gps_denied"
-            : gps.failure?.kind === "timeout"
-            ? "gps_timeout"
-            : "gps_error";
-        await logEvent(motoristaId, eventType, {
+    // Se GPS já falhou na captura inicial, loga
+    if (gpsJaResolvido && !gpsJaResolvido.ok) {
+      const permState = await checkPermissionsState();
+      await logEvent(
+        motoristaId,
+        gpsJaResolvido.failure?.kind === "denied"
+          ? "gps_denied"
+          : gpsJaResolvido.failure?.kind === "timeout"
+          ? "gps_timeout"
+          : "gps_error",
+        {
           coleta_client_id: client_id,
           permissions_state: permState,
-          code: gps.failure?.code,
-          message: gps.failure?.message,
-          kind: gps.failure?.kind,
-        });
-      }
+          code: gpsJaResolvido.failure?.code,
+          message: gpsJaResolvido.failure?.message,
+          kind: gpsJaResolvido.failure?.kind,
+        }
+      );
+    }
+
+    // Navega já — GPS pendente e sync ficam em background
+    router.push(`/motorista/confirmacao?cid=${client_id}`);
+
+    // Se ainda não tinha GPS no momento do save, continua tentando
+    if (!gpsJaResolvido) {
+      (async () => {
+        const gps = await captureGPS();
+        if (gps.ok) {
+          await db.coletas_locais.update(client_id, {
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            gps_accuracy: gps.accuracy,
+            gps_capturado: true,
+            gps_pendente: false,
+          });
+        } else {
+          await db.coletas_locais.update(client_id, {
+            gps_pendente: false,
+          });
+          const permState = await checkPermissionsState();
+          await logEvent(
+            motoristaId,
+            gps.failure?.kind === "denied"
+              ? "gps_denied"
+              : gps.failure?.kind === "timeout"
+              ? "gps_timeout"
+              : "gps_error",
+            {
+              coleta_client_id: client_id,
+              permissions_state: permState,
+              code: gps.failure?.code,
+              message: gps.failure?.message,
+              kind: gps.failure?.kind,
+            }
+          );
+        }
+        triggerSyncAfterSave();
+      })();
+    } else {
+      // GPS já estava pronto — dispara sync direto
       triggerSyncAfterSave();
-    })();
+    }
   }
 
   function handleValorChange(s: string) {

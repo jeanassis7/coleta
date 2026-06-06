@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { runSync, countPendentes } from "@/lib/sync/queue";
+import { runSync, countPendentes, limparGpsPendenteStale } from "@/lib/sync/queue";
 
 let inFlight = false;
 
@@ -9,6 +9,9 @@ async function safeSync() {
   if (inFlight) return { total: 0, enviadas: 0, falhas: 0 };
   inFlight = true;
   try {
+    // Limpa flags de GPS pendente que já estão velhas demais — evita
+    // coletas presas indefinidamente caso o GPS tenha sido cancelado.
+    await limparGpsPendenteStale();
     return await runSync();
   } finally {
     inFlight = false;
