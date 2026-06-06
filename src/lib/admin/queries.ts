@@ -7,31 +7,81 @@ export interface FiltrosDashboard {
   motorista?: string; // uuid ou 'todos'
 }
 
+/**
+ * Períodos alinhados ao calendário:
+ *  - hoje: 00:00 a 23:59 do dia atual
+ *  - semana: domingo 00:00 a sábado 23:59 da SEMANA atual
+ *  - mês: dia 1 00:00 a último dia 23:59 do MÊS atual
+ *  - customizado: o que o usuário escolheu
+ */
 export function resolvePeriodo(filtros: FiltrosDashboard): { inicio: Date; fim: Date } {
-  const fim = new Date();
-  fim.setHours(23, 59, 59, 999);
+  const agora = new Date();
 
-  let inicio = new Date();
-  if (filtros.periodo === "hoje") {
-    inicio.setHours(0, 0, 0, 0);
-  } else if (filtros.periodo === "semana") {
-    inicio.setDate(inicio.getDate() - 7);
-    inicio.setHours(0, 0, 0, 0);
-  } else if (filtros.periodo === "mes") {
-    inicio.setDate(1);
-    inicio.setHours(0, 0, 0, 0);
-  } else if (filtros.periodo === "customizado" && filtros.inicio && filtros.fim) {
-    inicio = new Date(filtros.inicio);
-    return { inicio, fim: new Date(filtros.fim) };
+  if (filtros.periodo === "customizado" && filtros.inicio && filtros.fim) {
+    return { inicio: new Date(filtros.inicio), fim: new Date(filtros.fim) };
   }
+
+  if (filtros.periodo === "hoje") {
+    const inicio = new Date(agora);
+    inicio.setHours(0, 0, 0, 0);
+    const fim = new Date(agora);
+    fim.setHours(23, 59, 59, 999);
+    return { inicio, fim };
+  }
+
+  if (filtros.periodo === "semana") {
+    // Domingo da semana atual (getDay: 0=domingo .. 6=sábado)
+    const inicio = new Date(agora);
+    inicio.setDate(agora.getDate() - agora.getDay());
+    inicio.setHours(0, 0, 0, 0);
+    const fim = new Date(inicio);
+    fim.setDate(inicio.getDate() + 6); // sábado
+    fim.setHours(23, 59, 59, 999);
+    return { inicio, fim };
+  }
+
+  // mês: dia 1 ao último dia do mês atual
+  const inicio = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
+  const fim = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59, 999);
   return { inicio, fim };
 }
 
 /**
- * Resolve o período imediatamente anterior, com mesma duração.
- * Ex: se atual é mês corrente, anterior é mesmo número de dias antes.
+ * Período anterior alinhado ao calendário:
+ *  - hoje → ontem
+ *  - semana → semana anterior (domingo-sábado)
+ *  - mês → mês anterior (calendário completo)
+ *  - customizado → mesmo número de dias imediatamente antes
  */
 export function resolvePeriodoAnterior(filtros: FiltrosDashboard): { inicio: Date; fim: Date } {
+  const agora = new Date();
+
+  if (filtros.periodo === "hoje") {
+    const inicio = new Date(agora);
+    inicio.setDate(agora.getDate() - 1);
+    inicio.setHours(0, 0, 0, 0);
+    const fim = new Date(inicio);
+    fim.setHours(23, 59, 59, 999);
+    return { inicio, fim };
+  }
+
+  if (filtros.periodo === "semana") {
+    const { inicio: inicioAtual } = resolvePeriodo(filtros);
+    const inicio = new Date(inicioAtual);
+    inicio.setDate(inicioAtual.getDate() - 7);
+    const fim = new Date(inicio);
+    fim.setDate(inicio.getDate() + 6);
+    fim.setHours(23, 59, 59, 999);
+    return { inicio, fim };
+  }
+
+  if (filtros.periodo === "mes") {
+    const inicio = new Date(agora.getFullYear(), agora.getMonth() - 1, 1, 0, 0, 0, 0);
+    const fim = new Date(agora.getFullYear(), agora.getMonth(), 0, 23, 59, 59, 999);
+    return { inicio, fim };
+  }
+
+  // customizado: mesma duração imediatamente antes
   const { inicio, fim } = resolvePeriodo(filtros);
   const duracao = fim.getTime() - inicio.getTime();
   const previo_fim = new Date(inicio.getTime() - 1);
@@ -200,16 +250,18 @@ export function calcularCustoPorMotorista(coletas: ColetaCompleta[]): CustoMotor
 }
 
 /**
- * Calcula % de coletas com certificado emitido (integral + parcial) por motorista.
+ * % de litros que entraram no certificado por motorista.
+ * Fórmula: soma(litros_certificado) / soma(litros)
+ * litros_certificado é null quando 'nao', igual a litros quando 'integral',
+ * e o valor digitado quando 'parcial'.
  */
 export interface CertificadoMotorista {
   motorista_id: string;
   nome: string;
-  total: number;
-  integral: number;
-  parcial: number;
-  nao: number;
-  pct_emitido: number; // (integral + parcial) / total
+  total_coletas: number;
+  total_litros: number;
+  litros_certificado: number;
+  pct_litros: number; // litros_certificado / total_litros * 100
 }
 
 export function calcularCertificadoPorMotorista(coletas: ColetaCompleta[]): CertificadoMotorista[] {
@@ -219,25 +271,25 @@ export function calcularCertificadoPorMotorista(coletas: ColetaCompleta[]): Cert
     const cur = por.get(c.motorista_id) || {
       motorista_id: c.motorista_id,
       nome: c.profiles?.nome || "—",
-      total: 0,
-      integral: 0,
-      parcial: 0,
-      nao: 0,
-      pct_emitido: 0,
+      total_coletas: 0,
+      total_litros: 0,
+      litros_certificado: 0,
+      pct_litros: 0,
     };
-    cur.total += 1;
-    if (c.certificado_tipo === "integral") cur.integral += 1;
-    else if (c.certificado_tipo === "parcial") cur.parcial += 1;
-    else cur.nao += 1;
+    cur.total_coletas += 1;
+    cur.total_litros += Number(c.litros);
+    if (c.litros_certificado !== null) {
+      cur.litros_certificado += Number(c.litros_certificado);
+    }
     por.set(c.motorista_id, cur);
   }
 
   for (const v of por.values()) {
-    v.pct_emitido = v.total > 0 ? ((v.integral + v.parcial) / v.total) * 100 : 0;
+    v.pct_litros = v.total_litros > 0 ? (v.litros_certificado / v.total_litros) * 100 : 0;
   }
 
-  // Ordena por % crescente — quem entrega menos certificado aparece no topo (chama atenção)
-  return Array.from(por.values()).sort((a, b) => a.pct_emitido - b.pct_emitido);
+  // Ordena crescente — quem certifica menos volume aparece no topo
+  return Array.from(por.values()).sort((a, b) => a.pct_litros - b.pct_litros);
 }
 
 /**
