@@ -17,8 +17,6 @@ export function CertificadoPorMotorista({ dados }: { dados: CertificadoMotorista
       <div className="space-y-3">
         {dados.map((m) => {
           const pct = Math.round(m.pct_litros);
-          const corBarra =
-            pct >= 90 ? "bg-verde" : pct >= 70 ? "bg-atencao" : "bg-alerta";
 
           return (
             <div key={m.motorista_id}>
@@ -27,7 +25,7 @@ export function CertificadoPorMotorista({ dados }: { dados: CertificadoMotorista
                 <span className="font-semibold">{pct}%</span>
               </div>
               <div className="h-3 bg-slate-100 rounded-full overflow-hidden mb-1">
-                <div className={`h-full ${corBarra}`} style={{ width: `${pct}%` }} />
+                <div className="h-full bg-slate-500" style={{ width: `${pct}%` }} />
               </div>
               <div className="flex gap-3 text-xs text-cinza-suave">
                 <span>{formatLitros(m.litros_certificado)} certificados</span>
