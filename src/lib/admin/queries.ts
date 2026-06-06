@@ -7,86 +7,104 @@ export interface FiltrosDashboard {
   motorista?: string; // uuid ou 'todos'
 }
 
+// Brasil é UTC-3 fixo (sem horário de verão desde 2019)
+const BR_OFFSET_MS = -3 * 60 * 60 * 1000;
+
+/** Componentes da data/hora atual em Brasília. */
+function nowBrParts(): { year: number; month: number; date: number; day: number } {
+  const nowUtc = new Date();
+  const brAsUtc = new Date(nowUtc.getTime() + BR_OFFSET_MS);
+  return {
+    year: brAsUtc.getUTCFullYear(),
+    month: brAsUtc.getUTCMonth(),
+    date: brAsUtc.getUTCDate(),
+    day: brAsUtc.getUTCDay(),
+  };
+}
+
+/** Constrói uma Date que representa um wall-clock BR no UTC equivalente. */
+function fromBrParts(y: number, m: number, d: number, h = 0, mi = 0, s = 0, ms = 0): Date {
+  return new Date(Date.UTC(y, m, d, h, mi, s, ms) - BR_OFFSET_MS);
+}
+
 /**
- * Períodos alinhados ao calendário:
- *  - hoje: 00:00 a 23:59 do dia atual
- *  - semana: domingo 00:00 a sábado 23:59 da SEMANA atual
- *  - mês: dia 1 00:00 a último dia 23:59 do MÊS atual
+ * Períodos alinhados ao calendário brasileiro:
+ *  - hoje: 00:00 a 23:59 do dia atual em Brasília
+ *  - semana: domingo 00:00 a sábado 23:59 da semana atual em Brasília
+ *  - mês: dia 1 00:00 a último dia 23:59 do mês atual em Brasília
  *  - customizado: o que o usuário escolheu
  */
 export function resolvePeriodo(filtros: FiltrosDashboard): { inicio: Date; fim: Date } {
-  const agora = new Date();
-
   if (filtros.periodo === "customizado" && filtros.inicio && filtros.fim) {
     return { inicio: new Date(filtros.inicio), fim: new Date(filtros.fim) };
   }
 
+  const { year, month, date, day } = nowBrParts();
+
   if (filtros.periodo === "hoje") {
-    const inicio = new Date(agora);
-    inicio.setHours(0, 0, 0, 0);
-    const fim = new Date(agora);
-    fim.setHours(23, 59, 59, 999);
-    return { inicio, fim };
+    return {
+      inicio: fromBrParts(year, month, date, 0, 0, 0, 0),
+      fim: fromBrParts(year, month, date, 23, 59, 59, 999),
+    };
   }
 
   if (filtros.periodo === "semana") {
-    // Domingo da semana atual (getDay: 0=domingo .. 6=sábado)
-    const inicio = new Date(agora);
-    inicio.setDate(agora.getDate() - agora.getDay());
-    inicio.setHours(0, 0, 0, 0);
-    const fim = new Date(inicio);
-    fim.setDate(inicio.getDate() + 6); // sábado
-    fim.setHours(23, 59, 59, 999);
-    return { inicio, fim };
+    const diaDomingo = date - day;
+    return {
+      inicio: fromBrParts(year, month, diaDomingo, 0, 0, 0, 0),
+      fim: fromBrParts(year, month, diaDomingo + 6, 23, 59, 59, 999),
+    };
   }
 
-  // mês: dia 1 ao último dia do mês atual
-  const inicio = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
-  const fim = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59, 999);
-  return { inicio, fim };
+  // mês
+  return {
+    inicio: fromBrParts(year, month, 1, 0, 0, 0, 0),
+    fim: fromBrParts(year, month + 1, 0, 23, 59, 59, 999),
+  };
 }
 
 /**
- * Período anterior alinhado ao calendário:
- *  - hoje → ontem
- *  - semana → semana anterior (domingo-sábado)
- *  - mês → mês anterior (calendário completo)
- *  - customizado → mesmo número de dias imediatamente antes
+ * Período anterior PARA COMPARAÇÃO JUSTA (mesmo intervalo até "agora"):
+ *  - hoje → ontem (dia inteiro)
+ *  - semana → semana anterior até MESMO dia da semana (Dom-Qua se hoje é Qua)
+ *  - mês → mês anterior do dia 1 até MESMA data (May 1-6 se hoje é Jun 6)
+ *  - customizado → mesma duração imediatamente antes
+ *
+ * Edge case mês: se hoje é dia 31 e mês anterior só tem 28-30 dias, clampa.
  */
 export function resolvePeriodoAnterior(filtros: FiltrosDashboard): { inicio: Date; fim: Date } {
-  const agora = new Date();
+  if (filtros.periodo === "customizado") {
+    const { inicio, fim } = resolvePeriodo(filtros);
+    const duracao = fim.getTime() - inicio.getTime();
+    const previo_fim = new Date(inicio.getTime() - 1);
+    const previo_inicio = new Date(previo_fim.getTime() - duracao);
+    return { inicio: previo_inicio, fim: previo_fim };
+  }
+
+  const { year, month, date, day } = nowBrParts();
 
   if (filtros.periodo === "hoje") {
-    const inicio = new Date(agora);
-    inicio.setDate(agora.getDate() - 1);
-    inicio.setHours(0, 0, 0, 0);
-    const fim = new Date(inicio);
-    fim.setHours(23, 59, 59, 999);
-    return { inicio, fim };
+    return {
+      inicio: fromBrParts(year, month, date - 1, 0, 0, 0, 0),
+      fim: fromBrParts(year, month, date - 1, 23, 59, 59, 999),
+    };
   }
 
   if (filtros.periodo === "semana") {
-    const { inicio: inicioAtual } = resolvePeriodo(filtros);
-    const inicio = new Date(inicioAtual);
-    inicio.setDate(inicioAtual.getDate() - 7);
-    const fim = new Date(inicio);
-    fim.setDate(inicio.getDate() + 6);
-    fim.setHours(23, 59, 59, 999);
-    return { inicio, fim };
+    const diaDomingo = date - day;
+    return {
+      inicio: fromBrParts(year, month, diaDomingo - 7, 0, 0, 0, 0),
+      fim: fromBrParts(year, month, date - 7, 23, 59, 59, 999),
+    };
   }
 
-  if (filtros.periodo === "mes") {
-    const inicio = new Date(agora.getFullYear(), agora.getMonth() - 1, 1, 0, 0, 0, 0);
-    const fim = new Date(agora.getFullYear(), agora.getMonth(), 0, 23, 59, 59, 999);
-    return { inicio, fim };
-  }
-
-  // customizado: mesma duração imediatamente antes
-  const { inicio, fim } = resolvePeriodo(filtros);
-  const duracao = fim.getTime() - inicio.getTime();
-  const previo_fim = new Date(inicio.getTime() - 1);
-  const previo_inicio = new Date(previo_fim.getTime() - duracao);
-  return { inicio: previo_inicio, fim: previo_fim };
+  // mês anterior do dia 1 até mesma data (com clamp pra meses curtos)
+  const ultimoDiaMesAnterior = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const diaParaUsar = Math.min(date, ultimoDiaMesAnterior);
+  return {
+    inicio: fromBrParts(year, month - 1, 1, 0, 0, 0, 0),
+    fim: fromBrParts(year, month - 1, diaParaUsar, 23, 59, 59, 999),
+  };
 }
 
 type ColetaCompleta = {
