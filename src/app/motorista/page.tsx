@@ -26,37 +26,87 @@ export default function MotoristaHomePage() {
   useEffect(() => {
     const carregar = async () => {
       const supabase = getSupabaseBrowser();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/motorista/login");
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, nome, role, ativo, exige_foto")
-        .eq("id", user.id)
-        .maybeSingle();
 
-      if (!profile || !profile.ativo) {
-        await supabase.auth.signOut();
-        router.push("/motorista/login");
-        return;
-      }
-      if (profile.role === "admin") {
-        router.push("/admin");
-        return;
+      // 1. PRIMEIRO: tenta usar perfil cacheado pra abrir offline rápido
+      const cachedId = localStorage.getItem("coleta_perfil_id");
+      const cachedNome = localStorage.getItem("coleta_perfil_nome");
+      const cachedExigeFoto = localStorage.getItem("coleta_perfil_exige_foto");
+
+      if (cachedId && cachedNome) {
+        const perfilCacheado: PerfilLocal = {
+          id: cachedId,
+          nome: cachedNome,
+          exige_foto: cachedExigeFoto === "true",
+        };
+        setPerfil(perfilCacheado);
+        sessionStorage.setItem("coleta_exige_foto", String(perfilCacheado.exige_foto));
+        sessionStorage.setItem("coleta_motorista_id", perfilCacheado.id);
+        sessionStorage.setItem("coleta_motorista_nome", perfilCacheado.nome);
+        setCarregando(false);
       }
 
-      setPerfil({
-        id: profile.id,
-        nome: profile.nome,
-        exige_foto: profile.exige_foto,
-      });
-      // Guarda preferência localmente pra Nova Coleta consultar
-      sessionStorage.setItem("coleta_exige_foto", String(profile.exige_foto));
-      sessionStorage.setItem("coleta_motorista_id", profile.id);
-      sessionStorage.setItem("coleta_motorista_nome", profile.nome);
-      setCarregando(false);
+      // 2. Verifica sessão local (sem chamada de rede)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        // Sem sessão cacheada e sem cache de perfil = primeira vez ou logout
+        if (!cachedId) {
+          router.push("/motorista/login");
+        }
+        return;
+      }
+
+      // 3. Se está online, atualiza o perfil em background pra pegar mudanças (ex: exige_foto)
+      if (navigator.onLine) {
+        try {
+          const { data: profile, error } = await supabase
+            .from("profiles")
+            .select("id, nome, role, ativo, exige_foto")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          if (error) {
+            // Network error — segue com cache
+            if (!cachedId) setCarregando(false);
+            return;
+          }
+
+          if (!profile || !profile.ativo) {
+            // Conta desativada de verdade — força logout
+            localStorage.removeItem("coleta_perfil_id");
+            localStorage.removeItem("coleta_perfil_nome");
+            localStorage.removeItem("coleta_perfil_exige_foto");
+            await supabase.auth.signOut();
+            router.push("/motorista/login");
+            return;
+          }
+          if (profile.role === "admin") {
+            router.push("/admin");
+            return;
+          }
+
+          // Atualiza cache + estado
+          const perfilNovo: PerfilLocal = {
+            id: profile.id,
+            nome: profile.nome,
+            exige_foto: profile.exige_foto,
+          };
+          setPerfil(perfilNovo);
+          localStorage.setItem("coleta_perfil_id", perfilNovo.id);
+          localStorage.setItem("coleta_perfil_nome", perfilNovo.nome);
+          localStorage.setItem("coleta_perfil_exige_foto", String(perfilNovo.exige_foto));
+          sessionStorage.setItem("coleta_exige_foto", String(perfilNovo.exige_foto));
+          sessionStorage.setItem("coleta_motorista_id", perfilNovo.id);
+          sessionStorage.setItem("coleta_motorista_nome", perfilNovo.nome);
+          setCarregando(false);
+        } catch {
+          // Erro de rede — segue com cache se houver
+          if (!cachedId) setCarregando(false);
+        }
+      } else if (!cachedId) {
+        // Offline E sem cache: primeira abertura sem internet — manda pro login
+        // (vai mostrar mensagem amigável de "precisa de internet pra primeira vez")
+        router.push("/motorista/login");
+      }
     };
     carregar();
   }, [router]);

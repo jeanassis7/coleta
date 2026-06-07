@@ -301,7 +301,7 @@ export default function NovaColetaPage() {
         {exigeFoto && motoristaId && (
           <div>
             <label className="block text-xl font-semibold mb-3">
-              Foto do local
+              Foto da fachada/portão
             </label>
             <FotoPicker onChange={setFoto} motoristaId={motoristaId} />
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { logEvent } from "@/lib/events/log";
@@ -13,10 +13,42 @@ export default function MotoristaLoginPage() {
   const [verSenha, setVerSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [online, setOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+
+  // Se já tem sessão local, manda direto pra Home (funciona offline também)
+  useEffect(() => {
+    const supabase = getSupabaseBrowser();
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        router.push("/motorista");
+      }
+    });
+  }, [router]);
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
+
+    if (!navigator.onLine) {
+      setErro(
+        "Sem internet. O primeiro login precisa de conexão (4G ou Wi-Fi). Depois que entrar uma vez, o app funciona offline normalmente."
+      );
+      return;
+    }
+
     setCarregando(true);
 
     const supabase = getSupabaseBrowser();
@@ -26,17 +58,34 @@ export default function MotoristaLoginPage() {
     });
 
     if (error || !data.user) {
-      setErro("Email ou senha errado. Tenta de novo.");
+      const msg = error?.message?.toLowerCase() || "";
+      if (msg.includes("failed to fetch") || msg.includes("network") || msg.includes("err_")) {
+        setErro(
+          "Não consegui falar com o servidor. Verifica a internet e tenta de novo."
+        );
+      } else if (msg.includes("invalid login")) {
+        setErro("Email ou senha errado. Tenta de novo.");
+      } else if (error?.message) {
+        setErro(error.message);
+      } else {
+        setErro("Não consegui entrar. Tenta de novo.");
+      }
       setCarregando(false);
       return;
     }
 
     // Verifica role — motorista não pode entrar pelo admin
-    const { data: profile } = await supabase
+    const { data: profile, error: errProfile } = await supabase
       .from("profiles")
       .select("role, ativo")
       .eq("id", data.user.id)
       .maybeSingle();
+
+    if (errProfile) {
+      setErro("Conectei mas não consegui pegar seu perfil. Tenta de novo.");
+      setCarregando(false);
+      return;
+    }
 
     if (!profile || !profile.ativo) {
       await supabase.auth.signOut();
@@ -68,6 +117,17 @@ export default function MotoristaLoginPage() {
           </div>
           <h1 className="text-3xl font-bold text-cinza-texto">Coleta</h1>
         </div>
+
+        {!online && (
+          <div className="bg-atencao/10 border-2 border-atencao rounded-2xl p-4 mb-4 text-center">
+            <p className="text-base font-medium text-cinza-texto">
+              📵 Sem internet
+            </p>
+            <p className="text-sm text-cinza-suave mt-1">
+              O primeiro login precisa de conexão. Conecta em 4G ou Wi-Fi e tenta.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={entrar} className="space-y-4">
           <div>
