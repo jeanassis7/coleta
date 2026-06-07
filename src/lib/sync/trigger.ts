@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { runSync, countPendentes, limparGpsPendenteStale } from "@/lib/sync/queue";
+import {
+  runSync,
+  countPendentes,
+  limparGpsPendenteStale,
+  type SyncResult,
+} from "@/lib/sync/queue";
 
 let inFlight = false;
 
-async function safeSync() {
+async function safeSync(): Promise<SyncResult> {
   if (inFlight) return { total: 0, enviadas: 0, falhas: 0 };
   inFlight = true;
   try {
-    // Limpa flags de GPS pendente que já estão velhas demais — evita
-    // coletas presas indefinidamente caso o GPS tenha sido cancelado.
     await limparGpsPendenteStale();
     return await runSync();
   } finally {
@@ -21,7 +24,6 @@ async function safeSync() {
 /**
  * Hook que registra os triggers de sync sem polling.
  * Dispara em: mount (se online), evento 'online', visibilitychange visible (se online).
- * Atualiza contador de pendentes em IndexedDB → re-render.
  */
 export function useSyncTriggers() {
   const [pendentes, setPendentes] = useState(0);
@@ -49,17 +51,14 @@ export function useSyncTriggers() {
       if (mounted) await refreshCount();
     };
 
-    // 1. Trigger inicial
     trySync();
 
-    // 2. Trigger no evento online
     const onOnline = () => {
       setOnline(true);
       trySync();
     };
     const onOffline = () => setOnline(false);
 
-    // 3. Trigger no visibilitychange visible
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         trySync();
@@ -82,14 +81,10 @@ export function useSyncTriggers() {
 }
 
 /**
- * Dispara sync manual (botão "Enviar agora"). Retorna resultado.
- * Debounce de 10s — implementado pelo caller via state.
+ * Dispara sync manual (botão "Enviar agora"). Retorna resultado completo
+ * com motivo do último erro pra UI mostrar.
  */
-export async function manualSync(): Promise<{
-  total: number;
-  enviadas: number;
-  falhas: number;
-}> {
+export async function manualSync(): Promise<SyncResult> {
   return safeSync();
 }
 

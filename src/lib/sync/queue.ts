@@ -5,13 +5,52 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { logEvent } from "@/lib/events/log";
 import type { ColetaLocal, EventoLocal } from "@/lib/types";
 
-interface SyncResult {
+export type SyncErrorKind = "auth" | "network" | "data" | "storage" | "unknown";
+
+export interface SyncResult {
   total: number;
   enviadas: number;
   falhas: number;
+  /** Motivo do último erro encontrado (pra UI mostrar). */
+  ultimo_erro?: string;
+  ultimo_erro_kind?: SyncErrorKind;
 }
 
 const lockedClientIds = new Set<string>();
+
+/**
+ * Classifica o erro pra que a UI possa sugerir ação certa
+ * (relogar quando auth, esperar quando network, etc).
+ */
+function classificarErro(motivo: string): SyncErrorKind {
+  const m = motivo.toLowerCase();
+  if (
+    m.includes("jwt") ||
+    m.includes("token") ||
+    m.includes("unauthorized") ||
+    m.includes("401") ||
+    m.includes("auth") ||
+    m.includes("pgrst301")
+  ) {
+    return "auth";
+  }
+  if (
+    m.includes("failed to fetch") ||
+    m.includes("network") ||
+    m.includes("err_") ||
+    m.includes("timeout") ||
+    m.includes("aborted")
+  ) {
+    return "network";
+  }
+  if (m.includes("upload") || m.includes("storage")) {
+    return "storage";
+  }
+  if (m.includes("violates") || m.includes("constraint") || m.includes("invalid")) {
+    return "data";
+  }
+  return "unknown";
+}
 
 /**
  * Tenta sincronizar todas as coletas pendentes e eventos pendentes.
@@ -21,6 +60,8 @@ export async function runSync(): Promise<SyncResult> {
   const result: SyncResult = { total: 0, enviadas: 0, falhas: 0 };
 
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    result.ultimo_erro = "Sem conexão";
+    result.ultimo_erro_kind = "network";
     return result;
   }
 
@@ -31,7 +72,11 @@ export async function runSync(): Promise<SyncResult> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session) return result;
+  if (!session) {
+    result.ultimo_erro = "Sessão não encontrada";
+    result.ultimo_erro_kind = "auth";
+    return result;
+  }
 
   // 1. Sincroniza coletas pendentes — ignora as que ainda estão esperando GPS
   const pendentes = await db.coletas_locais
@@ -44,9 +89,16 @@ export async function runSync(): Promise<SyncResult> {
     if (lockedClientIds.has(coleta.client_id)) continue;
     lockedClientIds.add(coleta.client_id);
     try {
-      const ok = await sincronizarUmaColeta(coleta);
-      if (ok) result.enviadas++;
-      else result.falhas++;
+      const { ok, erro } = await sincronizarUmaColeta(coleta);
+      if (ok) {
+        result.enviadas++;
+      } else {
+        result.falhas++;
+        if (erro) {
+          result.ultimo_erro = erro;
+          result.ultimo_erro_kind = classificarErro(erro);
+        }
+      }
     } finally {
       lockedClientIds.delete(coleta.client_id);
     }
@@ -58,14 +110,16 @@ export async function runSync(): Promise<SyncResult> {
   return result;
 }
 
-async function sincronizarUmaColeta(coleta: ColetaLocal): Promise<boolean> {
+async function sincronizarUmaColeta(
+  coleta: ColetaLocal
+): Promise<{ ok: boolean; erro?: string }> {
   const db = getLocalDB();
   const supabase = getSupabaseBrowser();
 
   try {
     // Passo 1: upload da foto (se houver e ainda não subida)
-    let fotoPath = coleta.foto_subida
-      ? (await db.coletas_locais.get(coleta.client_id))?.foto_blob
+    let fotoPath: string | null = coleta.foto_subida
+      ? coleta.foto_blob
         ? `${coleta.motorista_id}/${coleta.client_id}.jpg`
         : null
       : null;
@@ -80,12 +134,14 @@ async function sincronizarUmaColeta(coleta: ColetaLocal): Promise<boolean> {
           contentType: "image/jpeg",
         });
       if (uploadErr) {
-        await registrarFalha(coleta, `upload: ${uploadErr.message}`);
-        return false;
+        const motivo = `upload: ${uploadErr.message}`;
+        console.error("[sync] upload falhou:", uploadErr);
+        await registrarFalha(coleta, motivo);
+        return { ok: false, erro: motivo };
       }
       fotoPath = path;
       await db.coletas_locais.update(coleta.client_id, { foto_subida: true });
-    } else if (coleta.foto_blob === null) {
+    } else if (!coleta.foto_subida && coleta.foto_blob === null) {
       // exige_foto=false: sem foto, ok
       fotoPath = null;
       await db.coletas_locais.update(coleta.client_id, { foto_subida: true });
@@ -118,19 +174,23 @@ async function sincronizarUmaColeta(coleta: ColetaLocal): Promise<boolean> {
         // 23505 = unique_violation (já enviado antes) → tratar como sucesso
         if (insertErr.code === "23505") {
           await db.coletas_locais.update(coleta.client_id, { registro_subido: true });
-          return true;
+          return { ok: true };
         }
-        await registrarFalha(coleta, `insert: ${insertErr.message}`);
-        return false;
+        const motivo = `insert: ${insertErr.message}${insertErr.code ? ` (${insertErr.code})` : ""}`;
+        console.error("[sync] insert falhou:", insertErr);
+        await registrarFalha(coleta, motivo);
+        return { ok: false, erro: motivo };
       }
 
       await db.coletas_locais.update(coleta.client_id, { registro_subido: true });
     }
 
-    return true;
+    return { ok: true };
   } catch (err) {
-    await registrarFalha(coleta, String(err));
-    return false;
+    const motivo = err instanceof Error ? err.message : String(err);
+    console.error("[sync] exceção:", err);
+    await registrarFalha(coleta, motivo);
+    return { ok: false, erro: motivo };
   }
 }
 
