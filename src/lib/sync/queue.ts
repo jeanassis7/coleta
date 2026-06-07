@@ -147,6 +147,10 @@ async function sincronizarUmaColeta(
 
     if (!coleta.foto_subida && coleta.foto_blob) {
       const path = `${coleta.motorista_id}/${coleta.client_id}.jpg`;
+      const tamanhoFoto = coleta.foto_blob.size;
+      const { data: sessUser } = await supabase.auth.getUser();
+      const sessionUserId = sessUser.user?.id ?? null;
+
       const { error: uploadErr } = await supabase.storage
         .from("fotos-coletas")
         .upload(path, coleta.foto_blob, {
@@ -156,8 +160,26 @@ async function sincronizarUmaColeta(
         });
       if (uploadErr) {
         const motivo = `upload: ${uploadErr.message}`;
-        console.error("[sync] upload falhou:", uploadErr);
-        await registrarFalha(coleta, motivo);
+        console.error("[sync] upload falhou:", uploadErr, {
+          path,
+          tamanho: tamanhoFoto,
+          coleta_motorista_id: coleta.motorista_id,
+          session_user_id: sessionUserId,
+        });
+        // Loga contexto detalhado pra admin debugar
+        await logEvent(coleta.motorista_id, "sync_failure", {
+          coleta_client_id: coleta.client_id,
+          motivo,
+          fase: "upload_foto",
+          path,
+          tamanho_bytes: tamanhoFoto,
+          tipo_blob: coleta.foto_blob.type,
+          coleta_motorista_id: coleta.motorista_id,
+          session_user_id: sessionUserId,
+          ids_batem: coleta.motorista_id === sessionUserId,
+          error_name: (uploadErr as { name?: string }).name ?? null,
+        });
+        await registrarFalhaSemLog(coleta, motivo);
         return { ok: false, erro: motivo };
       }
       fotoPath = path;
@@ -225,6 +247,15 @@ async function registrarFalha(coleta: ColetaLocal, motivo: string): Promise<void
     coleta_client_id: coleta.client_id,
     motivo,
     tentativas: (coleta.tentativas || 0) + 1,
+  });
+}
+
+/** Variante sem logEvent (pra quem ja logou contexto rico antes) */
+async function registrarFalhaSemLog(coleta: ColetaLocal, motivo: string): Promise<void> {
+  const db = getLocalDB();
+  await db.coletas_locais.update(coleta.client_id, {
+    tentativas: (coleta.tentativas || 0) + 1,
+    ultimo_erro: motivo,
   });
 }
 
