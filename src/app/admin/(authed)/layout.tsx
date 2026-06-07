@@ -39,6 +39,7 @@ export default async function AdminLayout({
             <nav className="hidden md:flex gap-4 text-base">
               <Link href="/admin" className="hover:text-verde">Dashboard</Link>
               <Link href="/admin/mapa" className="hover:text-verde">Mapa</Link>
+              <Link href="/admin/observacoes" className="hover:text-verde">Observações</Link>
               <Link href="/admin/curadoria" className="hover:text-verde">Curadoria</Link>
               <Link href="/admin/motoristas" className="hover:text-verde">Motoristas</Link>
               <Link href="/admin/eventos" className="hover:text-verde">Eventos</Link>

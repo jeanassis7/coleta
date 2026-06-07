@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { manualSync } from "@/lib/sync/trigger";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { logEvent } from "@/lib/events/log";
 import type { SyncErrorKind } from "@/lib/sync/queue";
 
 interface Props {
   pendentes: number;
   online: boolean;
   onSyncDone: () => void;
+  motoristaId: string;
 }
 
 interface Feedback {
@@ -19,7 +21,7 @@ interface Feedback {
   kind?: SyncErrorKind;
 }
 
-export function BotaoSyncManual({ pendentes, online, onSyncDone }: Props) {
+export function BotaoSyncManual({ pendentes, online, onSyncDone, motoristaId }: Props) {
   const router = useRouter();
   const [carregando, setCarregando] = useState(false);
   const [debouncedAt, setDebouncedAt] = useState(0);
@@ -34,7 +36,19 @@ export function BotaoSyncManual({ pendentes, online, onSyncDone }: Props) {
     setCarregando(true);
     setFeedback(null);
 
+    await logEvent(motoristaId, "enviar_agora_clicked", { pendentes });
+    await logEvent(motoristaId, "sync_started", { trigger: "manual" });
+
     const result = await manualSync();
+
+    await logEvent(motoristaId, "sync_completed", {
+      trigger: "manual",
+      total: result.total,
+      enviadas: result.enviadas,
+      falhas: result.falhas,
+      ultimo_erro: result.ultimo_erro,
+      ultimo_erro_kind: result.ultimo_erro_kind,
+    });
 
     if (result.falhas === 0 && result.enviadas > 0) {
       setFeedback({

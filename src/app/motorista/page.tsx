@@ -9,6 +9,7 @@ import { InstallPrompt } from "@/components/motorista/InstallPrompt";
 import { BotaoSyncManual } from "@/components/motorista/BotaoSyncManual";
 import { ListaColetasDia } from "@/components/motorista/ListaColetasDia";
 import { MenuLogout } from "@/components/motorista/MenuLogout";
+import { EventLogger } from "@/components/motorista/EventLogger";
 
 interface PerfilLocal {
   id: string;
@@ -70,6 +71,7 @@ export default function MotoristaHomePage() {
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
+      <EventLogger motoristaId={perfil.id} />
       <header className="flex items-center justify-between mb-6 mt-2">
         <h1 className="text-2xl font-bold">Olá, {perfil.nome}</h1>
         <MenuLogout nome={perfil.nome} motoristaId={perfil.id} />
@@ -89,6 +91,7 @@ export default function MotoristaHomePage() {
           pendentes={pendentes}
           online={online}
           onSyncDone={refresh}
+          motoristaId={perfil.id}
         />
       </div>
 

@@ -84,9 +84,30 @@ export async function runSync(): Promise<SyncResult> {
     .toArray();
 
   result.total = pendentes.length;
+  const sessionUserId = session.user.id;
 
   for (const coleta of pendentes) {
     if (lockedClientIds.has(coleta.client_id)) continue;
+
+    // Segurança: coleta tem que pertencer ao motorista logado.
+    // Se não bater, o INSERT/UPLOAD vai falhar com RLS — melhor skipar e logar.
+    if (coleta.motorista_id !== sessionUserId) {
+      const motivo = `Coleta pertence ao motorista ${coleta.motorista_id} mas a sessão atual é ${sessionUserId}. Não vai sincronizar nesse login.`;
+      console.warn("[sync] skip wrong motorista:", motivo);
+      await db.coletas_locais.update(coleta.client_id, { ultimo_erro: motivo });
+      await logEvent(coleta.motorista_id, "sync_skipped_wrong_motorista", {
+        coleta_client_id: coleta.client_id,
+        coleta_motorista_id: coleta.motorista_id,
+        sessao_motorista_id: sessionUserId,
+      });
+      result.falhas++;
+      if (!result.ultimo_erro) {
+        result.ultimo_erro = "Essa coleta foi feita por outro motorista neste celular.";
+        result.ultimo_erro_kind = "auth";
+      }
+      continue;
+    }
+
     lockedClientIds.add(coleta.client_id);
     try {
       const { ok, erro } = await sincronizarUmaColeta(coleta);

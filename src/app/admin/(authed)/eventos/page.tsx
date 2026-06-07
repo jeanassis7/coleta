@@ -6,13 +6,38 @@ export const dynamic = "force-dynamic";
 
 const TIPOS = [
   { key: "todos", label: "Todos" },
+  // Erros — debug é o foco principal
+  { key: "js_error", label: "❌ JS error" },
+  { key: "js_unhandled_rejection", label: "❌ Rejection" },
+  { key: "sync_failure", label: "❌ Sync falhou" },
+  { key: "sync_skipped_wrong_motorista", label: "⚠️ Outro motorista" },
+  { key: "foto_compress_failed", label: "❌ Foto falhou" },
   { key: "gps_timeout", label: "GPS timeout" },
   { key: "gps_denied", label: "GPS negado" },
   { key: "gps_error", label: "GPS erro" },
-  { key: "sync_failure", label: "Falha de sync" },
+  // Ações
+  { key: "nova_coleta_opened", label: "Abriu nova coleta" },
+  { key: "coleta_saved_local", label: "Salvou coleta" },
+  { key: "enviar_agora_clicked", label: "Tocou enviar" },
+  { key: "foto_capture_started", label: "Abriu câmera" },
+  { key: "foto_compress_completed", label: "Foto OK" },
+  { key: "gps_success", label: "GPS OK" },
+  // Sync detalhado
+  { key: "sync_started", label: "Sync iniciou" },
+  { key: "sync_completed", label: "Sync completou" },
+  // Lifecycle
+  { key: "app_loaded", label: "App abriu" },
+  { key: "app_focused", label: "Voltou pro app" },
+  { key: "app_blurred", label: "Saiu do app" },
+  { key: "network_online", label: "Conectou" },
+  { key: "network_offline", label: "Desconectou" },
+  { key: "permission_geolocation_changed", label: "Permissão GPS" },
+  // Auth
   { key: "login", label: "Login" },
   { key: "logout", label: "Logout" },
-  { key: "app_install", label: "Instalação" },
+  { key: "session_expired", label: "Sessão expirou" },
+  // PWA / admin
+  { key: "app_install", label: "Instalação PWA" },
   { key: "foto_toggle_changed", label: "Toggle foto" },
 ];
 

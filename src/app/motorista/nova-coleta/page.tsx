@@ -56,6 +56,9 @@ export default function NovaColetaPage() {
     }
     setMotoristaId(id);
     setExigeFoto(ef === "true");
+    logEvent(id, "nova_coleta_opened", {
+      exige_foto: ef === "true",
+    });
   }, [router]);
 
   const litros = parseLitros(litrosTexto);
@@ -111,6 +114,26 @@ export default function NovaColetaPage() {
     const db = getLocalDB();
     await db.coletas_locais.add(coleta);
 
+    // Loga o save local — útil pra debug
+    await logEvent(motoristaId, "coleta_saved_local", {
+      client_id,
+      tem_foto: foto !== null,
+      gps_ja_resolvido: gpsJaResolvido !== null,
+      gps_ok: gpsJaResolvido?.ok ?? false,
+      gps_accuracy: gpsJaResolvido?.ok ? gpsJaResolvido.accuracy : null,
+      tem_local_id: localId !== null,
+      tem_observacao: observacao.trim().length > 0,
+      certificado_tipo: cert.tipo,
+    });
+
+    // Loga GPS bem-sucedido se já tinha
+    if (gpsJaResolvido && gpsJaResolvido.ok) {
+      await logEvent(motoristaId, "gps_success", {
+        coleta_client_id: client_id,
+        accuracy: gpsJaResolvido.accuracy,
+      });
+    }
+
     // Se GPS já falhou na captura inicial, loga
     if (gpsJaResolvido && !gpsJaResolvido.ok) {
       const permState = await checkPermissionsState();
@@ -145,6 +168,11 @@ export default function NovaColetaPage() {
             gps_accuracy: gps.accuracy,
             gps_capturado: true,
             gps_pendente: false,
+          });
+          await logEvent(motoristaId, "gps_success", {
+            coleta_client_id: client_id,
+            accuracy: gps.accuracy,
+            via: "background_after_save",
           });
         } else {
           await db.coletas_locais.update(client_id, {
@@ -270,12 +298,12 @@ export default function NovaColetaPage() {
         </div>
 
         {/* 5. FOTO (condicional) */}
-        {exigeFoto && (
+        {exigeFoto && motoristaId && (
           <div>
             <label className="block text-xl font-semibold mb-3">
               Foto do local
             </label>
-            <FotoPicker onChange={setFoto} />
+            <FotoPicker onChange={setFoto} motoristaId={motoristaId} />
           </div>
         )}
 

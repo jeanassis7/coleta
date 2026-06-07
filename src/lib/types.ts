@@ -1,12 +1,41 @@
 export type CertificadoTipo = "integral" | "parcial" | "nao";
 
 export type EventType =
+  // Lifecycle
+  | "app_loaded"
+  | "app_focused"
+  | "app_blurred"
+  // Rede
+  | "network_online"
+  | "network_offline"
+  // Auth
+  | "login"
+  | "logout"
+  | "session_expired"
+  // Permissões
+  | "permission_geolocation_changed"
+  // Ações do usuário
+  | "nova_coleta_opened"
+  | "coleta_saved_local"
+  | "enviar_agora_clicked"
+  | "foto_capture_started"
+  | "foto_capture_cancelled"
+  | "foto_compress_completed"
+  | "foto_compress_failed"
+  // GPS
+  | "gps_success"
   | "gps_timeout"
   | "gps_denied"
   | "gps_error"
+  // Sync
+  | "sync_started"
+  | "sync_completed"
   | "sync_failure"
-  | "login"
-  | "logout"
+  | "sync_skipped_wrong_motorista"
+  // JS
+  | "js_error"
+  | "js_unhandled_rejection"
+  // PWA / admin
   | "app_install"
   | "foto_toggle_changed";
 
