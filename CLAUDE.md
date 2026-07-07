@@ -73,6 +73,17 @@ Em `supabase/migrations/`:
 - **Não adicionar tracking GPS contínuo** — limitação de PWA + LGPD + bateria. Discutido e descartado. Se virar prioridade, alternativa é rastreador veicular físico.
 - **Não suportar iOS** — explicitamente Android-only no V1.
 
+## Ciclo de vida dos dados
+
+| Dado | Servidor | Retenção local (IndexedDB do celular) |
+|---|---|---|
+| Coleta (registro) | Supabase Postgres, permanente | Apagada 24h após sync 100% |
+| Foto (blob) | Supabase Storage, permanente | Blob apagado junto com a coleta (24h) |
+| Evento (log) | Supabase Postgres, permanente | Apagado 7 dias após sync |
+| Perfil | Supabase Auth + Postgres | Cache em localStorage pra login offline |
+
+Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fazer nada. Ver `limparColetasSincronizadasAntigas` em `src/lib/sync/queue.ts`.
+
 ## Coisas curiosas que aprendi e podem confundir
 
 - **Compilação de path emoji 💧 quebra em PDFKit** — usar SVG path no lugar
