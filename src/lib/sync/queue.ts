@@ -321,3 +321,29 @@ export async function limparGpsPendenteStale(): Promise<number> {
   }
   return stale.length;
 }
+
+/**
+ * Cleanup pós-sync: coleta 100% sincronizada há mais de 24h é apagada
+ * do IndexedDB local. O celular do motorista fica limpo e não acumula
+ * blob de foto (~100KB cada) indefinidamente.
+ *
+ * A tela "Minhas coletas hoje" só mostra do dia atual (00:00-23:59),
+ * então apagar coletas de 24h+ não afeta a UI dele.
+ * Os dados originais continuam intactos no Supabase.
+ */
+const RETENCAO_APOS_SYNC_MS = 24 * 60 * 60 * 1000;
+
+export async function limparColetasSincronizadasAntigas(): Promise<number> {
+  const db = getLocalDB();
+  const cutoff = Date.now() - RETENCAO_APOS_SYNC_MS;
+  const antigas = await db.coletas_locais
+    .filter(
+      (c) => c.registro_subido === true && c.foto_subida === true && c.criado_em < cutoff
+    )
+    .toArray();
+
+  for (const c of antigas) {
+    await db.coletas_locais.delete(c.client_id);
+  }
+  return antigas.length;
+}

@@ -5,6 +5,7 @@ import {
   runSync,
   countPendentes,
   limparGpsPendenteStale,
+  limparColetasSincronizadasAntigas,
   type SyncResult,
 } from "@/lib/sync/queue";
 
@@ -15,7 +16,10 @@ async function safeSync(): Promise<SyncResult> {
   inFlight = true;
   try {
     await limparGpsPendenteStale();
-    return await runSync();
+    const result = await runSync();
+    // Depois do sync, limpa coletas antigas que já subiram (>24h)
+    await limparColetasSincronizadasAntigas();
+    return result;
   } finally {
     inFlight = false;
   }
