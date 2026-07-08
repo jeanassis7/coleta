@@ -75,6 +75,13 @@ export default async function EventosPage({
     <div>
       <h1 className="text-2xl font-bold mb-4">Eventos do App</h1>
 
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-900">
+        <strong>Não precisa mexer em nada aqui.</strong> Esta tela é só pra
+        acompanhar o que acontece no app dos motoristas. Se aparecer algum bug
+        (erro, sync que falhou, foto que não subiu), é aqui que dá pra ver onde e
+        quando aconteceu. No dia a dia, pode ignorar.
+      </div>
+
       <div className="card mb-6 space-y-3">
         <div className="flex flex-wrap gap-2">
           <span className="text-sm font-medium text-cinza-suave mr-2 self-center">

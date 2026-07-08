@@ -7,6 +7,7 @@ import { formatData } from "@/lib/format";
 interface Motorista {
   id: string;
   nome: string;
+  email: string | null;
   role: string;
   ativo: boolean;
   exige_foto: boolean;
@@ -18,6 +19,23 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [senhasVisiveis, setSenhasVisiveis] = useState<Set<string>>(new Set());
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [nomeEdit, setNomeEdit] = useState("");
+
+  function iniciarEdicao(id: string, nomeAtual: string) {
+    setEditandoId(id);
+    setNomeEdit(nomeAtual);
+  }
+
+  async function salvarNome(id: string) {
+    const novo = nomeEdit.trim();
+    if (!novo) {
+      alert("O nome não pode ficar vazio.");
+      return;
+    }
+    await atualizar(id, { nome: novo });
+    setEditandoId(null);
+  }
 
   async function atualizar(id: string, body: Record<string, unknown>) {
     setLoadingId(id);
@@ -122,6 +140,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
         <thead>
           <tr className="text-left text-sm text-cinza-suave border-b border-cinza-borda">
             <th className="py-2 pr-3">Nome</th>
+            <th className="py-2 pr-3">Email (login)</th>
             <th className="py-2 pr-3">Role</th>
             <th className="py-2 pr-3">Senha</th>
             <th className="py-2 pr-3">Criado</th>
@@ -133,7 +152,50 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
         <tbody>
           {motoristas.map((m) => (
             <tr key={m.id} className="border-b border-cinza-borda last:border-0">
-              <td className="py-3 pr-3 font-medium">{m.nome}</td>
+              <td className="py-3 pr-3 font-medium">
+                {editandoId === m.id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={nomeEdit}
+                      onChange={(e) => setNomeEdit(e.target.value)}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") salvarNome(m.id);
+                        if (e.key === "Escape") setEditandoId(null);
+                      }}
+                      className="px-2 py-1 border border-cinza-borda rounded-lg text-sm w-40"
+                    />
+                    <button
+                      onClick={() => salvarNome(m.id)}
+                      disabled={loadingId === m.id}
+                      className="text-verde hover:underline text-sm"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      onClick={() => setEditandoId(null)}
+                      className="text-cinza-suave hover:underline text-sm"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span>{m.nome}</span>
+                    <button
+                      onClick={() => iniciarEdicao(m.id, m.nome)}
+                      className="text-cinza-suave hover:text-verde"
+                      title="Editar nome"
+                    >
+                      ✏️
+                    </button>
+                  </div>
+                )}
+              </td>
+              <td className="py-3 pr-3 text-sm text-cinza-suave font-mono">
+                {m.email || <span className="italic">sem email</span>}
+              </td>
               <td className="py-3 pr-3 text-sm">
                 <span
                   className={`px-2 py-1 rounded ${

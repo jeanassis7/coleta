@@ -1,11 +1,11 @@
-import { buscarMotoristas } from "@/lib/admin/queries";
+import { buscarMotoristasComEmail } from "@/lib/admin/queries";
 import { TabelaMotoristas } from "@/components/admin/TabelaMotoristas";
 import { FormCriarMotorista } from "@/components/admin/FormCriarMotorista";
 
 export const dynamic = "force-dynamic";
 
 export default async function MotoristasPage() {
-  const motoristas = await buscarMotoristas();
+  const motoristas = await buscarMotoristasComEmail();
 
   return (
     <div>

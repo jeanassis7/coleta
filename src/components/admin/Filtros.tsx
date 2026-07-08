@@ -9,7 +9,13 @@ interface Motorista {
   ativo: boolean;
 }
 
-export function Filtros({ motoristas }: { motoristas: Motorista[] }) {
+export function Filtros({
+  motoristas,
+  intervaloLabel,
+}: {
+  motoristas: Motorista[];
+  intervaloLabel?: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -35,6 +41,13 @@ export function Filtros({ motoristas }: { motoristas: Motorista[] }) {
     { key: "customizado", label: "Customizado" },
   ];
 
+  const explicacao: Record<string, string> = {
+    hoje: "só o dia de hoje",
+    semana: "esta semana (de domingo a sábado)",
+    mes: "este mês inteiro (do dia 1 ao último dia)",
+    customizado: "o intervalo que você escolher",
+  };
+
   return (
     <div className="card mb-6 space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
@@ -53,6 +66,21 @@ export function Filtros({ motoristas }: { motoristas: Motorista[] }) {
           </button>
         ))}
       </div>
+
+      {intervaloLabel && (
+        <div className="flex items-start gap-2 text-sm bg-slate-50 border border-cinza-borda rounded-xl px-3 py-2">
+          <span aria-hidden>📅</span>
+          <span>
+            Mostrando <strong>{intervaloLabel}</strong>
+            {explicacao[periodo] && (
+              <span className="text-cinza-suave">
+                {" "}
+                ({explicacao[periodo]})
+              </span>
+            )}
+          </span>
+        </div>
+      )}
 
       {periodo === "customizado" && (
         <div className="flex flex-wrap gap-2 items-center">

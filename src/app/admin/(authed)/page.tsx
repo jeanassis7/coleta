@@ -6,8 +6,10 @@ import {
   calcularCustoPorMotorista,
   calcularCertificadoPorMotorista,
   calcularTopLocais,
+  resolvePeriodo,
   type FiltrosDashboard,
 } from "@/lib/admin/queries";
+import { formatData } from "@/lib/format";
 import { Filtros } from "@/components/admin/Filtros";
 import { KpiCardsComDelta } from "@/components/admin/KpiCardsComDelta";
 import { BarrasMotorista } from "@/components/admin/KpiCards";
@@ -44,10 +46,23 @@ export default async function AdminDashboardPage({
   const certificadoPorMotorista = calcularCertificadoPorMotorista(coletas);
   const topLocais = calcularTopLocais(coletas, 15);
 
+  // Intervalo real de datas do período selecionado (pra mostrar ao usuário)
+  const { inicio, fim } = resolvePeriodo(filtros);
+  const precisaDatas =
+    filtros.periodo === "customizado" && (!filtros.inicio || !filtros.fim);
+  const intervaloLabel = precisaDatas
+    ? "Escolha as datas de início e fim acima"
+    : formatData(inicio) === formatData(fim)
+      ? formatData(inicio)
+      : `${formatData(inicio)} a ${formatData(fim)}`;
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
-      <Filtros motoristas={motoristasMotoristas} />
+      <Filtros
+        motoristas={motoristasMotoristas}
+        intervaloLabel={intervaloLabel}
+      />
 
       {/* Comparação atual vs anterior */}
       <KpiCardsComDelta

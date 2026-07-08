@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export interface FiltrosDashboard {
   periodo: "hoje" | "semana" | "mes" | "customizado";
@@ -167,6 +168,24 @@ export async function buscarMotoristas() {
     .order("nome");
   if (error) throw error;
   return data || [];
+}
+
+/**
+ * Motoristas com o email do login (que vive no Supabase Auth, não no profiles).
+ * Usa o cliente service_role pra listar os usuários do Auth e casar por id.
+ * Só usar em telas de admin — faz uma chamada extra ao Auth.
+ */
+export async function buscarMotoristasComEmail() {
+  const motoristas = await buscarMotoristas();
+  const admin = getSupabaseAdmin();
+  const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const emailPorId = new Map(
+    (data?.users ?? []).map((u) => [u.id, u.email ?? null])
+  );
+  return motoristas.map((m) => ({
+    ...m,
+    email: emailPorId.get(m.id) ?? null,
+  }));
 }
 
 export interface Kpis {

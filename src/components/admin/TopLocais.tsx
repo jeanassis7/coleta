@@ -30,7 +30,7 @@ export function TopLocais({ dados }: { dados: LocalRanking[] }) {
       <div className="mb-3">
         <h3 className="font-semibold">Top locais por litros</h3>
         <p className="text-xs text-cinza-suave">
-          Onde tá saindo mais óleo. Clica num local pra ver a quebra por motorista.
+          Onde tá saindo mais óleo. Clica na seta ▼ do local pra abrir e fechar a quebra por motorista.
         </p>
       </div>
       <div className="space-y-2">
@@ -43,16 +43,23 @@ export function TopLocais({ dados }: { dados: LocalRanking[] }) {
                 onClick={() => toggle(l.local_nome)}
                 className="w-full text-left p-3 hover:bg-slate-50 transition-colors"
               >
-                <div className="flex justify-between items-baseline gap-3 mb-1">
+                <div className="flex justify-between items-center gap-3 mb-1">
                   <span className="font-semibold flex items-center gap-2">
                     <span className="text-cinza-suave text-sm">#{i + 1}</span>
                     {l.local_nome}
-                    <span className="text-cinza-suave text-sm">
-                      {aberto ? "▼" : "▶"}
-                    </span>
                   </span>
-                  <span className="font-bold text-base">
-                    {formatLitros(l.total_litros)}
+                  <span className="flex items-center gap-3">
+                    <span className="font-bold text-base">
+                      {formatLitros(l.total_litros)}
+                    </span>
+                    <span
+                      aria-hidden
+                      className={`flex items-center justify-center w-7 h-7 shrink-0 rounded-full bg-slate-100 text-cinza-suave text-xs transition-transform duration-200 ${
+                        aberto ? "rotate-180 bg-verde/10 text-verde" : ""
+                      }`}
+                    >
+                      ▼
+                    </span>
                   </span>
                 </div>
                 <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1">
