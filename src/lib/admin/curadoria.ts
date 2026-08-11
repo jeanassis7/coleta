@@ -25,7 +25,9 @@ export interface ClusterCuradoria {
   total_pago: number;
 }
 
-const RAIO_CLUSTER_M = 80;
+// 40m: cobre erro típico de GPS urbano (~5-20m) sem colidir com locais vizinhos.
+// Coletas com nome normalizado igual continuam agrupando mesmo além disso.
+const RAIO_CLUSTER_M = 40;
 
 function distanciaHaversineM(
   lat1: number,

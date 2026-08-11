@@ -19,7 +19,7 @@ type Estado =
   | { kind: "vazio" }       // sem sugestões — mostra só o input
   | { kind: "tem"; locais: LocalProximo[]; usandoOutro: boolean; idEscolhido: string | null };
 
-const RAIO_BUSCA_M = 200;
+const RAIO_BUSCA_M = 100;
 
 export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) {
   const [estado, setEstado] = useState<Estado>({ kind: "carregando" });
@@ -150,16 +150,7 @@ export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) 
                 : "bg-white border-cinza-borda active:bg-cinza-fundo"
             }`}
           >
-            <div className="flex justify-between items-center">
-              <span className="text-lg font-semibold">{l.nome_canonico}</span>
-              <span
-                className={`text-sm ${
-                  escolhido ? "text-white/80" : "text-cinza-suave"
-                }`}
-              >
-                {Math.round(l.distancia_m)}m
-              </span>
-            </div>
+            <span className="text-lg font-semibold">{l.nome_canonico}</span>
           </button>
         );
       })}
