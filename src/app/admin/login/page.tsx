@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { podeAcessarAdmin } from "@/lib/auth/roles";
 
 function LoginConteudo() {
   const router = useRouter();
@@ -12,7 +13,7 @@ function LoginConteudo() {
   const [senha, setSenha] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(
-    erroQuery === "acesso" ? "Acesso negado — essa conta não é admin." : null
+    erroQuery === "acesso" ? "Acesso negado — essa conta não tem permissão de admin." : null
   );
 
   async function entrar(e: React.FormEvent) {
@@ -38,9 +39,9 @@ function LoginConteudo() {
       .eq("id", data.user.id)
       .maybeSingle();
 
-    if (!profile || profile.role !== "admin" || !profile.ativo) {
+    if (!profile || !podeAcessarAdmin(profile) || !profile.ativo) {
       await supabase.auth.signOut();
-      setErro("Acesso negado — essa conta não é admin.");
+      setErro("Acesso negado — essa conta não tem permissão de admin.");
       setCarregando(false);
       return;
     }
