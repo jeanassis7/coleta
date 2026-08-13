@@ -1,13 +1,17 @@
 /**
- * E2E da camada de dados do Módulo 1 — roda contra produção com o
- * motorista-teste (is_teste=true, invisível nos dashboards).
+ * E2E da camada de dados do Módulo 1 — roda contra produção.
+ *
+ * ISOLAMENTO: cria um motorista próprio descartável ("E2E Bot",
+ * is_teste=true) e deleta ele no final. NUNCA toca no Teste 1 nem em
+ * qualquer dado que não criou — o Teste 1 é o ambiente de teste MANUAL
+ * do Evaner e pode ter carga ativa a qualquer momento.
  *
  * Testa: RLS como motorista, unique de 1 carga ativa, inserts idempotentes
  * (client_id 23505), coluna generated peso_liquido, update atômico de
  * carga/adiantamento, queries aninhadas do admin (PostgREST nested filter),
  * cálculo de saldo, acerto com corte_em.
  *
- * LIMPA tudo que criou no final (inclusive storage).
+ * LIMPA tudo que criou no final (registros, fotos, o próprio bot).
  */
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
@@ -51,10 +55,19 @@ const criados = {
 };
 
 async function main() {
-  // ---- setup ----
-  const { data: teste1 } = await svc
-    .from("profiles").select("id, nome, is_teste").eq("role", "motorista").eq("is_teste", true).limit(1).maybeSingle();
-  if (!teste1) throw new Error("nenhum motorista de teste no banco");
+  // ---- setup: motorista descartável só deste run ----
+  const E2E_EMAIL = `e2e-bot-${Date.now()}@coleta.local`;
+  const E2E_SENHA = randomUUID();
+  const { data: criado, error: errBot } = await svc.auth.admin.createUser({
+    email: E2E_EMAIL, password: E2E_SENHA, email_confirm: true,
+  });
+  if (errBot || !criado?.user) throw new Error("criar bot: " + errBot?.message);
+  const { error: errPerfil } = await svc.from("profiles").insert({
+    id: criado.user.id, nome: "E2E Bot", role: "motorista",
+    ativo: true, exige_foto: false, is_teste: true, features: {},
+  });
+  if (errPerfil) throw new Error("perfil bot: " + errPerfil.message);
+  const teste1 = { id: criado.user.id }; // "motorista" deste run
   criados.motoristaId = teste1.id;
 
   const { data: dev } = await svc.from("profiles").select("id").eq("role", "dev").limit(1).maybeSingle();
@@ -68,10 +81,10 @@ async function main() {
   criados.caminhaoId = cam.id;
 
   const { error: errLogin } = await mot.auth.signInWithPassword({
-    email: "teste1@coleta.local",
-    password: "teste123",
+    email: E2E_EMAIL,
+    password: E2E_SENHA,
   });
-  check("login motorista-teste", !errLogin, errLogin?.message);
+  check("login motorista E2E", !errLogin, errLogin?.message);
   if (errLogin) throw new Error("sem login não dá pra seguir");
 
   // ---- 1. motorista lê caminhões ativos (RLS) ----
@@ -287,8 +300,9 @@ async function main() {
 
 async function cleanup() {
   console.log("\n🧹 Limpando dados do E2E...");
-  const m = criados.motoristaId;
   try {
+    // SÓ ids que este run criou — nunca deletes amplos por motorista
+    // (o Teste 1 do Evaner vive no mesmo banco).
     if (criados.acertoId) await svc.from("acertos").delete().eq("id", criados.acertoId);
     if (criados.adiantamentoId) await svc.from("adiantamentos").delete().eq("id", criados.adiantamentoId);
     await svc.from("descargas").delete().eq("client_id", criados.descargaClientId);
@@ -296,10 +310,15 @@ async function cleanup() {
     await svc.from("abastecimentos").delete().eq("client_id", criados.abastClientId);
     await svc.from("coletas").delete().eq("client_id", criados.coletaClientId);
     if (criados.cargaId) await svc.from("cargas").delete().eq("id", criados.cargaId);
-    if (m) await svc.from("cargas").delete().eq("motorista_id", m).eq("status", "ativa");
     if (criados.caminhaoId) await svc.from("caminhoes").delete().eq("id", criados.caminhaoId);
     if (criados.fotos.length) await svc.storage.from("fotos-coletas").remove(criados.fotos);
-    console.log("🧹 Limpo.");
+    // Por fim, o próprio bot
+    if (criados.motoristaId) {
+      await svc.from("app_events").delete().eq("motorista_id", criados.motoristaId);
+      await svc.from("profiles").delete().eq("id", criados.motoristaId);
+      await svc.auth.admin.deleteUser(criados.motoristaId);
+    }
+    console.log("🧹 Limpo (incluindo o bot).");
   } catch (e) {
     console.error("⚠️ cleanup parcial:", e.message);
   }
