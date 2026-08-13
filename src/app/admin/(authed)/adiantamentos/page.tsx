@@ -5,14 +5,15 @@ import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 export const dynamic = "force-dynamic";
 
 export default async function AdiantamentosPage() {
-  await exigirAcessoModulo1OuRedirect();
+  const { ehDev } = await exigirAcessoModulo1OuRedirect();
+  // Dev vê (e pode adiantar pra) motoristas de teste; admin nunca vê.
   const [saldos, motoristas] = await Promise.all([
-    buscarMotoristasComSaldo(),
-    buscarMotoristas(),
+    buscarMotoristasComSaldo({ incluirTeste: ehDev }),
+    buscarMotoristas({ incluirTeste: ehDev }),
   ]);
   const motoristasReais = motoristas
     .filter((m) => m.role === "motorista" && m.ativo)
-    .map((m) => ({ id: m.id, nome: m.nome }));
+    .map((m) => ({ id: m.id, nome: m.is_teste ? `${m.nome} 🧪` : m.nome }));
 
   return (
     <div>

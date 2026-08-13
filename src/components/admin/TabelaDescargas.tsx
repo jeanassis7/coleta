@@ -77,7 +77,12 @@ export function TabelaDescargas({ descargas }: { descargas: DescargaDetalhada[] 
               <td className="py-2 pr-3 whitespace-nowrap">
                 {formatDataHora(d.criado_em)}
               </td>
-              <td className="py-2 pr-3">{d.motorista_nome}</td>
+              <td className="py-2 pr-3 whitespace-nowrap">
+                {d.motorista_nome}
+                {d.motorista_is_teste && (
+                  <span title="Motorista de teste — invisível pro admin"> 🧪</span>
+                )}
+              </td>
               <td className="py-2 pr-3 font-mono">{d.caminhao_placa}</td>
               <td className="py-2 pr-3 text-right font-mono">
                 {d.peso_bruto_kg.toLocaleString("pt-BR")} kg

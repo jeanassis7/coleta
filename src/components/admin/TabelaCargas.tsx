@@ -126,7 +126,12 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                   {c.caminhao_placa}{" "}
                   <span className="text-cinza-suave">{c.caminhao_marca}</span>
                 </td>
-                <td className="py-2 pr-3">{c.motorista_nome}</td>
+                <td className="py-2 pr-3 whitespace-nowrap">
+                  {c.motorista_nome}
+                  {c.motorista_is_teste && (
+                    <span title="Motorista de teste — invisível pro admin"> 🧪</span>
+                  )}
+                </td>
                 <td className="py-2 pr-3 whitespace-nowrap">
                   {c.encerrada_em ? formatDataHora(c.encerrada_em) : "—"}
                 </td>

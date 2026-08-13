@@ -231,6 +231,7 @@ export interface CargaDetalhada {
   id: string;
   motorista_id: string;
   motorista_nome: string;
+  motorista_is_teste: boolean;
   caminhao_id: string;
   caminhao_placa: string;
   caminhao_marca: string;
@@ -325,6 +326,7 @@ export async function buscarCargas(
       id: r.id,
       motorista_id: r.motorista_id,
       motorista_nome: r.profiles?.nome || "—",
+      motorista_is_teste: !!r.profiles?.is_teste,
       caminhao_id: r.caminhao_id,
       caminhao_placa: r.caminhoes?.placa || "—",
       caminhao_marca: r.caminhoes?.marca || "",
@@ -351,6 +353,7 @@ export interface DescargaDetalhada {
   id: string;
   carga_id: string;
   motorista_nome: string;
+  motorista_is_teste: boolean;
   caminhao_placa: string;
   peso_bruto_kg: number;
   peso_tara_kg: number;
@@ -405,6 +408,7 @@ export async function buscarDescargas(
     id: r.id,
     carga_id: r.carga_id,
     motorista_nome: r.cargas?.profiles?.nome || "—",
+    motorista_is_teste: !!r.cargas?.profiles?.is_teste,
     caminhao_placa: r.cargas?.caminhoes?.placa || "—",
     peso_bruto_kg: r.peso_bruto_kg,
     peso_tara_kg: r.peso_tara_kg,
@@ -447,29 +451,36 @@ export interface Acerto {
 export interface MotoristaComSaldo {
   id: string;
   nome: string;
+  is_teste: boolean;
   saldo_atual: number;
   ultimo_adiantamento: Adiantamento | null;
   pular_contador_atual: number;
 }
 
 /**
- * Retorna cada motorista real (não teste) com saldo atual calculado.
+ * Retorna cada motorista com saldo atual calculado.
  * saldo = adiantamentos aceitos desde último acerto
  *       − coletas.valor_pago (desde corte)
  *       − despesas.valor (desde corte)
  *       − abastecimentos.valor (desde corte)
  *       + valor_saldo do último acerto (carry-over)
+ *
+ * incluirTeste: dev vê motoristas de teste (com badge na UI) pra poder
+ * testar adiantamentos; admin nunca vê.
  */
-export async function buscarMotoristasComSaldo(): Promise<MotoristaComSaldo[]> {
+export async function buscarMotoristasComSaldo(
+  opts: { incluirTeste?: boolean } = {}
+): Promise<MotoristaComSaldo[]> {
   const supabase = await getSupabaseServer();
 
-  const { data: motoristas, error: errM } = await supabase
+  let qM = supabase
     .from("profiles")
-    .select("id, nome")
+    .select("id, nome, is_teste")
     .eq("role", "motorista")
-    .eq("is_teste", false)
     .eq("ativo", true)
     .order("nome");
+  if (!opts.incluirTeste) qM = qM.eq("is_teste", false);
+  const { data: motoristas, error: errM } = await qM;
   if (errM) throw errM;
 
   const result: MotoristaComSaldo[] = [];
@@ -550,7 +561,10 @@ export async function buscarMotoristasComSaldo(): Promise<MotoristaComSaldo[]> {
     result.push({
       id: m.id,
       nome: m.nome,
-      saldo_atual: Math.round(saldo),
+      is_teste: !!m.is_teste,
+      // Centavos existem agora (despesas/abastecimentos com decimais) —
+      // arredonda pra 2 casas, não pra inteiro.
+      saldo_atual: Math.round(saldo * 100) / 100,
       ultimo_adiantamento: (ultimo as Adiantamento) || null,
       pular_contador_atual: pendente?.pular_contador ?? 0,
     });

@@ -56,11 +56,13 @@ export async function exigirAcessoModulo1() {
 /**
  * Pra páginas server do Módulo 1: redireciona pra /admin se sem acesso.
  * Chamar no topo do componente da página.
+ * Retorna ehDev pra página decidir se mostra dados de motorista de teste
+ * (dev vê tudo com badge 🧪; admin nunca vê dados de teste).
  */
 export async function exigirAcessoModulo1OuRedirect() {
   const { user, profile } = await getProfileAtual();
   if (!temAcessoModulo1(profile)) {
     redirect("/admin");
   }
-  return user;
+  return { user, ehDev: profile?.role === "dev" };
 }

@@ -5,8 +5,9 @@ import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 export const dynamic = "force-dynamic";
 
 export default async function CargasPage() {
-  await exigirAcessoModulo1OuRedirect();
-  const cargas = await buscarCargas();
+  const { ehDev } = await exigirAcessoModulo1OuRedirect();
+  // Dev vê cargas de motorista de teste (com badge 🧪); admin nunca vê.
+  const cargas = await buscarCargas({ incluirTeste: ehDev });
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Cargas</h1>
