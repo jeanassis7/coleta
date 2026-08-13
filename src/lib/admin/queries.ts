@@ -203,6 +203,384 @@ export async function buscarMotoristasTeste() {
   return data || [];
 }
 
+export interface Caminhao {
+  id: string;
+  placa: string;
+  marca: string;
+  modelo: string | null;
+  cor: string;
+  capacidade_l: number;
+  tara_kg: number;
+  ativo: boolean;
+  motivo_inativo: string | null;
+  criado_em: string;
+}
+
+export async function buscarCaminhoes(): Promise<Caminhao[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("caminhoes")
+    .select("*")
+    .order("ativo", { ascending: false })
+    .order("placa");
+  if (error) throw error;
+  return (data as Caminhao[]) || [];
+}
+
+export interface CargaDetalhada {
+  id: string;
+  motorista_id: string;
+  motorista_nome: string;
+  caminhao_id: string;
+  caminhao_placa: string;
+  caminhao_marca: string;
+  caminhao_cor: string;
+  capacidade_l: number;
+  km_inicial: number;
+  km_final: number | null;
+  status: "ativa" | "encerrada" | "cancelada";
+  iniciada_em: string;
+  encerrada_em: string | null;
+  total_coletas: number;
+  total_litros_coletas: number;
+  total_valor_coletas: number;
+  total_despesas: number;
+  total_valor_despesas: number;
+  total_abastecimentos: number;
+  total_valor_abastecimentos: number;
+  descarga: {
+    peso_bruto_kg: number;
+    peso_tara_kg: number;
+    peso_liquido_kg: number;
+    litros_estimados: number | null;
+    umidade_pct: number | null;
+    criado_em: string;
+  } | null;
+}
+
+/**
+ * Todas as cargas (com dados agregados de coletas/despesas/abast/descarga).
+ * Filtra motoristas de teste por padrão.
+ */
+export async function buscarCargas(
+  opts: { incluirTeste?: boolean; status?: "ativa" | "encerrada" | "cancelada"; motorista_id?: string } = {}
+): Promise<CargaDetalhada[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("cargas")
+    .select(
+      `id, motorista_id, caminhao_id, km_inicial, km_final, status,
+       iniciada_em, encerrada_em,
+       profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+       caminhoes(placa, marca, cor, capacidade_l),
+       coletas(id, litros, valor_pago),
+       despesas(id, valor),
+       abastecimentos(id, valor),
+       descargas(peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
+    )
+    .order("iniciada_em", { ascending: false });
+
+  if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
+  if (opts.status) q = q.eq("status", opts.status);
+  if (opts.motorista_id) q = q.eq("motorista_id", opts.motorista_id);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  type Row = {
+    id: string;
+    motorista_id: string;
+    caminhao_id: string;
+    km_inicial: number;
+    km_final: number | null;
+    status: "ativa" | "encerrada" | "cancelada";
+    iniciada_em: string;
+    encerrada_em: string | null;
+    profiles: { nome: string; is_teste: boolean } | null;
+    caminhoes: { placa: string; marca: string; cor: string; capacidade_l: number } | null;
+    coletas: { id: string; litros: number; valor_pago: number }[] | null;
+    despesas: { id: string; valor: number }[] | null;
+    abastecimentos: { id: string; valor: number }[] | null;
+    descargas:
+      | {
+          peso_bruto_kg: number;
+          peso_tara_kg: number;
+          peso_liquido_kg: number;
+          litros_estimados: number | null;
+          umidade_pct: number | null;
+          criado_em: string;
+        }[]
+      | null;
+  };
+
+  const rows = (data as unknown as Row[]) || [];
+  return rows.map((r): CargaDetalhada => {
+    const coletas = r.coletas || [];
+    const despesas = r.despesas || [];
+    const abast = r.abastecimentos || [];
+    const desc = (r.descargas || []).sort((a, b) =>
+      (a.criado_em || "").localeCompare(b.criado_em || "")
+    );
+    return {
+      id: r.id,
+      motorista_id: r.motorista_id,
+      motorista_nome: r.profiles?.nome || "—",
+      caminhao_id: r.caminhao_id,
+      caminhao_placa: r.caminhoes?.placa || "—",
+      caminhao_marca: r.caminhoes?.marca || "",
+      caminhao_cor: r.caminhoes?.cor || "",
+      capacidade_l: r.caminhoes?.capacidade_l || 0,
+      km_inicial: r.km_inicial,
+      km_final: r.km_final,
+      status: r.status,
+      iniciada_em: r.iniciada_em,
+      encerrada_em: r.encerrada_em,
+      total_coletas: coletas.length,
+      total_litros_coletas: coletas.reduce((s, c) => s + Number(c.litros), 0),
+      total_valor_coletas: coletas.reduce((s, c) => s + Number(c.valor_pago), 0),
+      total_despesas: despesas.length,
+      total_valor_despesas: despesas.reduce((s, d) => s + Number(d.valor), 0),
+      total_abastecimentos: abast.length,
+      total_valor_abastecimentos: abast.reduce((s, a) => s + Number(a.valor), 0),
+      descarga: desc[0] || null,
+    };
+  });
+}
+
+export interface DescargaDetalhada {
+  id: string;
+  carga_id: string;
+  motorista_nome: string;
+  caminhao_placa: string;
+  peso_bruto_kg: number;
+  peso_tara_kg: number;
+  peso_liquido_kg: number;
+  litros_estimados: number | null;
+  umidade_pct: number | null;
+  foto_papel_path: string | null;
+  criado_em: string;
+}
+
+export async function buscarDescargas(
+  opts: { incluirTeste?: boolean; pendenteUmidade?: boolean } = {}
+): Promise<DescargaDetalhada[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("descargas")
+    .select(
+      `id, carga_id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg,
+       litros_estimados, umidade_pct, foto_papel_path, criado_em,
+       cargas!inner(
+         motorista_id,
+         profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+         caminhoes(placa)
+       )`
+    )
+    .order("criado_em", { ascending: false });
+
+  if (!opts.incluirTeste) q = q.eq("cargas.profiles.is_teste", false);
+  if (opts.pendenteUmidade) q = q.is("umidade_pct", null);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  type Row = {
+    id: string;
+    carga_id: string;
+    peso_bruto_kg: number;
+    peso_tara_kg: number;
+    peso_liquido_kg: number;
+    litros_estimados: number | null;
+    umidade_pct: number | null;
+    foto_papel_path: string | null;
+    criado_em: string;
+    cargas: {
+      motorista_id: string;
+      profiles: { nome: string; is_teste: boolean } | null;
+      caminhoes: { placa: string } | null;
+    } | null;
+  };
+  const rows = (data as unknown as Row[]) || [];
+  return rows.map((r) => ({
+    id: r.id,
+    carga_id: r.carga_id,
+    motorista_nome: r.cargas?.profiles?.nome || "—",
+    caminhao_placa: r.cargas?.caminhoes?.placa || "—",
+    peso_bruto_kg: r.peso_bruto_kg,
+    peso_tara_kg: r.peso_tara_kg,
+    peso_liquido_kg: r.peso_liquido_kg,
+    litros_estimados: r.litros_estimados,
+    umidade_pct: r.umidade_pct,
+    foto_papel_path: r.foto_papel_path,
+    criado_em: r.criado_em,
+  }));
+}
+
+// ============================================================================
+// ADIANTAMENTOS
+// ============================================================================
+
+export interface Adiantamento {
+  id: string;
+  motorista_id: string;
+  valor: number;
+  data_envio: string;
+  forma_pagamento: "dinheiro" | "pix";
+  observacao: string | null;
+  status: "pendente" | "aceito" | "cancelado";
+  aceito_em: string | null;
+  pular_contador: number;
+  criado_em: string;
+}
+
+export interface Acerto {
+  id: string;
+  motorista_id: string;
+  corte_em: string;
+  valor_devolvido: number;
+  valor_vale: number;
+  valor_saldo: number;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export interface MotoristaComSaldo {
+  id: string;
+  nome: string;
+  saldo_atual: number;
+  ultimo_adiantamento: Adiantamento | null;
+  pular_contador_atual: number;
+}
+
+/**
+ * Retorna cada motorista real (não teste) com saldo atual calculado.
+ * saldo = adiantamentos aceitos desde último acerto
+ *       − coletas.valor_pago (desde corte)
+ *       − despesas.valor (desde corte)
+ *       − abastecimentos.valor (desde corte)
+ *       + valor_saldo do último acerto (carry-over)
+ */
+export async function buscarMotoristasComSaldo(): Promise<MotoristaComSaldo[]> {
+  const supabase = await getSupabaseServer();
+
+  const { data: motoristas, error: errM } = await supabase
+    .from("profiles")
+    .select("id, nome")
+    .eq("role", "motorista")
+    .eq("is_teste", false)
+    .eq("ativo", true)
+    .order("nome");
+  if (errM) throw errM;
+
+  const result: MotoristaComSaldo[] = [];
+  for (const m of motoristas || []) {
+    // Último acerto (pra descobrir corte_em)
+    const { data: acerto } = await supabase
+      .from("acertos")
+      .select("corte_em, valor_saldo")
+      .eq("motorista_id", m.id)
+      .order("corte_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const corte = acerto?.corte_em || "1970-01-01T00:00:00Z";
+    const carryOver = acerto?.valor_saldo || 0;
+
+    // Soma adiantamentos aceitos após corte
+    const { data: adiantamentos } = await supabase
+      .from("adiantamentos")
+      .select("valor, aceito_em")
+      .eq("motorista_id", m.id)
+      .eq("status", "aceito")
+      .gt("aceito_em", corte);
+    const somaAd = (adiantamentos || []).reduce(
+      (s, a) => s + Number(a.valor),
+      0
+    );
+
+    // Soma gastos após corte
+    const [{ data: coletas }, { data: despesas }, { data: abast }] = await Promise.all([
+      supabase
+        .from("coletas")
+        .select("valor_pago")
+        .eq("motorista_id", m.id)
+        .gt("criado_em", corte),
+      supabase
+        .from("despesas")
+        .select("valor")
+        .eq("motorista_id", m.id)
+        .gt("criado_em", corte),
+      supabase
+        .from("abastecimentos")
+        .select("valor")
+        .eq("motorista_id", m.id)
+        .gt("criado_em", corte),
+    ]);
+    const somaColetas = (coletas || []).reduce(
+      (s, c) => s + Number(c.valor_pago),
+      0
+    );
+    const somaDespesas = (despesas || []).reduce(
+      (s, d) => s + Number(d.valor),
+      0
+    );
+    const somaAbast = (abast || []).reduce((s, a) => s + Number(a.valor), 0);
+
+    const saldo = somaAd - somaColetas - somaDespesas - somaAbast + carryOver;
+
+    // Último adiantamento (qualquer status) pra mostrar no painel
+    const { data: ultimo } = await supabase
+      .from("adiantamentos")
+      .select("*")
+      .eq("motorista_id", m.id)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Pular contador da última pendente (pra alerta 10+)
+    const { data: pendente } = await supabase
+      .from("adiantamentos")
+      .select("pular_contador")
+      .eq("motorista_id", m.id)
+      .eq("status", "pendente")
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    result.push({
+      id: m.id,
+      nome: m.nome,
+      saldo_atual: Math.round(saldo),
+      ultimo_adiantamento: (ultimo as Adiantamento) || null,
+      pular_contador_atual: pendente?.pular_contador ?? 0,
+    });
+  }
+  return result;
+}
+
+/**
+ * Histórico de adiantamentos + acertos de um motorista específico.
+ */
+export async function buscarHistoricoAdiantamentos(motoristaId: string) {
+  const supabase = await getSupabaseServer();
+  const [{ data: adiantamentos }, { data: acertos }] = await Promise.all([
+    supabase
+      .from("adiantamentos")
+      .select("*")
+      .eq("motorista_id", motoristaId)
+      .order("criado_em", { ascending: false }),
+    supabase
+      .from("acertos")
+      .select("*")
+      .eq("motorista_id", motoristaId)
+      .order("criado_em", { ascending: false }),
+  ]);
+  return {
+    adiantamentos: (adiantamentos as Adiantamento[]) || [],
+    acertos: (acertos as Acerto[]) || [],
+  };
+}
+
 /**
  * Motoristas com o email do login (que vive no Supabase Auth, não no profiles).
  * Usa o cliente service_role pra listar os usuários do Auth e casar por id.

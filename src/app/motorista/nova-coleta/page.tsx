@@ -12,6 +12,7 @@ import { formatBRL, parseLitros, parseValorInteiro } from "@/lib/format";
 import { CertificadoPicker } from "@/components/motorista/CertificadoPicker";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { SugestaoLocal } from "@/components/motorista/SugestaoLocal";
+import { getCargaAtivaCached } from "@/lib/motorista/carga";
 import type { CertificadoTipo, ColetaLocal } from "@/lib/types";
 
 export default function NovaColetaPage() {
@@ -85,6 +86,9 @@ export default function NovaColetaPage() {
 
     // Se GPS já resolveu durante o preenchimento, usa de cara. Senão marca pendente.
     const gpsJaResolvido = gpsResultado;
+    // Se motorista tem carga ativa (features.carga=true), vincula coleta a ela.
+    // Se não tem features ligado, cargaAtiva volta null e carga_id fica null.
+    const cargaAtiva = getCargaAtivaCached();
     const coleta: ColetaLocal = {
       client_id,
       motorista_id: motoristaId,
@@ -109,6 +113,7 @@ export default function NovaColetaPage() {
       registro_subido: false,
       tentativas: 0,
       ultimo_erro: null,
+      carga_id: cargaAtiva?.id ?? null,
     };
 
     const db = getLocalDB();

@@ -37,15 +37,28 @@ export type EventType =
   | "js_unhandled_rejection"
   // PWA / admin
   | "app_install"
-  | "foto_toggle_changed";
+  | "foto_toggle_changed"
+  // Módulo 1: cargas
+  | "carga_iniciada"
+  | "carga_encerrada"
+  | "carga_cancelada"
+  | "descarga_saved_local"
+  | "despesa_saved_local"
+  | "abastecimento_saved_local"
+  // Adiantamentos
+  | "adiantamento_aceito"
+  | "adiantamento_pulado";
 
 export interface Profile {
   id: string;
   nome: string;
-  role: "motorista" | "admin";
+  role: "motorista" | "admin" | "dev";
   ativo: boolean;
   exige_foto: boolean;
   senha_visivel: string | null;
+  is_teste?: boolean;
+  features?: Record<string, unknown> | null;
+  mostra_saldo_app?: boolean;
   criado_em: string;
 }
 
@@ -97,6 +110,20 @@ export interface ColetaLocal {
   gps_pendente: boolean;          // true enquanto GPS ainda não resolveu (sucesso ou timeout)
   tentativas: number;
   ultimo_erro: string | null;
+  carga_id?: string | null;       // Módulo 1: coleta vinculada à carga ativa
+}
+
+/** Info da carga ativa em cache local do motorista (pra funcionar offline). */
+export interface CargaAtivaCache {
+  id: string;
+  caminhao_id: string;
+  caminhao_placa: string;
+  caminhao_marca: string;
+  caminhao_cor: string;
+  capacidade_l: number;
+  tara_kg: number;
+  km_inicial: number;
+  iniciada_em: string;
 }
 
 export interface EventoLocal {

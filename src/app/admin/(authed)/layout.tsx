@@ -39,8 +39,12 @@ export default async function AdminLayout({
               <img src="/icons/icon-192.png" alt="" className="w-7 h-7" />
               Coleta
             </Link>
-            <nav className="hidden md:flex gap-4 text-base">
+            <nav className="hidden md:flex gap-3 text-base flex-wrap">
               <Link href="/admin" className="hover:text-verde">Dashboard</Link>
+              <Link href="/admin/cargas" className="hover:text-verde">Cargas</Link>
+              <Link href="/admin/descarregamentos" className="hover:text-verde">Descargas</Link>
+              <Link href="/admin/adiantamentos" className="hover:text-verde">Adiantamentos</Link>
+              <Link href="/admin/caminhoes" className="hover:text-verde">Caminhões</Link>
               <Link href="/admin/mapa" className="hover:text-verde">Mapa</Link>
               <Link href="/admin/observacoes" className="hover:text-verde">Observações</Link>
               <Link href="/admin/curadoria" className="hover:text-verde">Curadoria</Link>

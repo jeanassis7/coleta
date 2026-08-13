@@ -13,6 +13,12 @@ class ColetaDatabase extends Dexie {
       coletas_locais: "client_id, motorista_id, criado_em, registro_subido, foto_subida",
       eventos_locais: "id, motorista_id, criado_em, enviado, event_type",
     });
+    // v2: adiciona carga_id como campo indexável em coletas_locais
+    // (não quebra registros antigos — coletas antigas ficam com carga_id undefined)
+    this.version(2).stores({
+      coletas_locais: "client_id, motorista_id, carga_id, criado_em, registro_subido, foto_subida",
+      eventos_locais: "id, motorista_id, criado_em, enviado, event_type",
+    });
   }
 }
 

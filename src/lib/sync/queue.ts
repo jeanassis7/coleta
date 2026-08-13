@@ -211,6 +211,9 @@ async function sincronizarUmaColeta(
         app_version: coleta.app_version,
         criado_em: new Date(coleta.criado_em).toISOString(),
         client_id: coleta.client_id,
+        // Módulo 1: se motorista tem features.carga ligado, coleta vai atrelada
+        // à carga ativa dele. Sem features: sempre null (backward compat).
+        carga_id: coleta.carga_id ?? null,
       });
 
       if (insertErr) {
