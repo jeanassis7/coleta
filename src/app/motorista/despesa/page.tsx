@@ -9,7 +9,7 @@ import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
 import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
-import { parseValorInteiro } from "@/lib/format";
+import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
 import type { CargaAtivaCache, DespesaLocal } from "@/lib/types";
 
 /**
@@ -22,7 +22,7 @@ export default function DespesaPage() {
   const [carga, setCarga] = useState<CargaAtivaCache | null>(null);
   const [salvando, setSalvando] = useState(false);
 
-  const [valorTexto, setValorTexto] = useState("");
+  const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [descricao, setDescricao] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
@@ -54,20 +54,21 @@ export default function DespesaPage() {
     };
   }, [motoristaId]);
 
-  const valor = parseValorInteiro(valorTexto);
   const podeSalvar =
     !!motoristaId &&
     !!carga &&
-    valor !== null &&
-    valor > 0 &&
+    valorCentavos !== null &&
+    valorCentavos > 0 &&
     descricao.trim().length >= 3 &&
     foto !== null &&
     !salvando;
 
   async function salvar() {
-    if (!podeSalvar || !motoristaId || !carga || valor === null || !foto) return;
+    if (!podeSalvar || !motoristaId || !carga || valorCentavos === null || !foto)
+      return;
     setSalvando(true);
 
+    const valor = centavosParaReais(valorCentavos);
     const client_id = uuid();
     const gpsJa = gpsResultado;
     const despesa: DespesaLocal = {
@@ -133,15 +134,11 @@ export default function DespesaPage() {
       <div className="space-y-6">
         <div>
           <label className="block text-xl font-semibold mb-3">
-            💰 Valor (R$)
+            💰 Valor
           </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            className="input-grande text-2xl"
-            value={valorTexto}
-            onChange={(e) => setValorTexto(e.target.value)}
-            placeholder=""
+          <InputDinheiro
+            centavos={valorCentavos}
+            onChange={setValorCentavos}
             autoFocus
           />
         </div>

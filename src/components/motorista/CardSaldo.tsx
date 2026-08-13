@@ -84,6 +84,8 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
         const somaD = (despesas || []).reduce((s, d) => s + Number(d.valor), 0);
         const somaA = (abast || []).reduce((s, a) => s + Number(a.valor), 0);
 
+        // Centavos existem (despesas/combustível) — arredonda pra 2 casas
+        const cent = (x: number) => Math.round(x * 100) / 100;
         setDados({
           ultimo_recebido: ultimo
             ? {
@@ -92,10 +94,10 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
                 forma_pagamento: ultimo.forma_pagamento,
               }
             : null,
-          gasto_coletas: Math.round(somaC),
-          gasto_despesas: Math.round(somaD),
-          gasto_abast: Math.round(somaA),
-          saldo: Math.round(somaAd - somaC - somaD - somaA + carry),
+          gasto_coletas: cent(somaC),
+          gasto_despesas: cent(somaD),
+          gasto_abast: cent(somaA),
+          saldo: cent(somaAd - somaC - somaD - somaA + carry),
         });
       } catch {
         // silencioso — card só aparece se conseguir dados

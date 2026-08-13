@@ -2,14 +2,17 @@
  * Formatação BR — pura, sem dependências de I/O.
  */
 
-export function formatBRL(valorInteiro: number): string {
-  // valor armazenado como inteiro (R$ 100 = 100)
+export function formatBRL(valor: number): string {
+  // Valores inteiros (coletas, adiantamentos redondos) aparecem sem
+  // centavos — "R$ 5.000". Valores com centavos (despesas, combustível)
+  // aparecem com 2 casas — "R$ 680,47".
+  const inteiro = Number.isInteger(valor);
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(valorInteiro);
+    minimumFractionDigits: inteiro ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(valor);
 }
 
 export function formatLitros(litros: number): string {
@@ -61,11 +64,14 @@ export function parseLitros(raw: string): number | null {
 }
 
 /**
- * Aceita só dígitos. Valor inteiro. "100" → 100. "1.000" → null (rejeita).
+ * Valor INTEIRO em reais (convenção das coletas: "valor cheio sempre").
+ * Aceita SÓ dígitos: "100" → 100.
+ * Qualquer vírgula/ponto/letra → null (REJEITA, nunca descarta em
+ * silêncio — "100,50" virando 10050 foi um bug real de campo).
  */
 export function parseValorInteiro(raw: string): number | null {
-  const cleaned = raw.trim().replace(/\D/g, "");
-  if (cleaned === "") return null;
+  const cleaned = raw.trim();
+  if (cleaned === "" || !/^\d+$/.test(cleaned)) return null;
   const n = parseInt(cleaned, 10);
   if (isNaN(n) || n <= 0) return null;
   return n;

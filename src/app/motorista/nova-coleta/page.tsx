@@ -317,6 +317,11 @@ export default function NovaColetaPage() {
               {valorFormatado}
             </p>
           )}
+          {valorTexto.trim() !== "" && valor === null && (
+            <p className="text-base text-alerta mt-1">
+              Só número inteiro, sem vírgula (ex: 150)
+            </p>
+          )}
         </div>
 
         {/* 5. FOTO (condicional) */}

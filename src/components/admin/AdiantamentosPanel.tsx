@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatDataHora } from "@/lib/format";
+import {
+  InputDinheiro,
+  centavosParaReais,
+  reaisParaCentavos,
+} from "@/components/InputDinheiro";
 import type { MotoristaComSaldo } from "@/lib/admin/queries";
 
 interface Motorista {
@@ -71,6 +76,11 @@ export function AdiantamentosPanel({
                 <tr key={s.id} className="border-b border-cinza-borda">
                   <td className="py-3 pr-3 font-medium">
                     {s.nome}
+                    {s.is_teste && (
+                      <span title="Motorista de teste — invisível pro admin">
+                        {" "}🧪
+                      </span>
+                    )}
                     {s.pular_contador_atual >= 10 && (
                       <span className="ml-2 text-xs font-semibold text-yellow-800 bg-yellow-100 border border-yellow-300 rounded px-1.5 py-0.5">
                         ⏸ pulou {s.pular_contador_atual}×
@@ -175,15 +185,14 @@ function ModalNovoAdiantamento({
   const router = useRouter();
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [valor, setValor] = useState("");
+  const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [forma, setForma] = useState<"dinheiro" | "pix">("dinheiro");
   const [obs, setObs] = useState("");
 
   const nome = motoristas.find((m) => m.id === motoristaId)?.nome || "—";
 
   async function enviar() {
-    const v = Number(valor);
-    if (!Number.isFinite(v) || v <= 0) {
+    if (valorCentavos === null || valorCentavos <= 0) {
       setErro("Valor inválido");
       return;
     }
@@ -195,7 +204,7 @@ function ModalNovoAdiantamento({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           motorista_id: motoristaId,
-          valor: v,
+          valor: centavosParaReais(valorCentavos),
           forma_pagamento: forma,
           observacao: obs.trim() || null,
         }),
@@ -217,15 +226,12 @@ function ModalNovoAdiantamento({
       <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
         <h2 className="text-xl font-bold">Novo adiantamento — {nome}</h2>
         <div>
-          <label className="block text-sm font-medium mb-1">Valor (R$)</label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl text-lg"
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
+          <label className="block text-sm font-medium mb-1">Valor</label>
+          <InputDinheiro
+            centavos={valorCentavos}
+            onChange={setValorCentavos}
+            grande={false}
             autoFocus
-            min={1}
           />
         </div>
         <div>
@@ -304,22 +310,28 @@ function ModalAcerto({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [devolvido, setDevolvido] = useState<string>(String(saldoAtual));
-  const [vale, setVale] = useState<string>("0");
-  const [saldo, setSaldo] = useState<string>("0");
+  // Tudo em CENTAVOS — validação exata sem surpresa de arredondamento
+  const saldoCent = reaisParaCentavos(saldoAtual);
+  const [devolvido, setDevolvido] = useState<number | null>(
+    saldoCent > 0 ? saldoCent : null
+  );
+  const [vale, setVale] = useState<number | null>(null);
+  const [saldo, setSaldo] = useState<number | null>(null);
   const [obs, setObs] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const d = Math.round(Number(devolvido) || 0);
-  const v = Math.round(Number(vale) || 0);
-  const s = Math.round(Number(saldo) || 0);
+  const d = devolvido ?? 0;
+  const v = vale ?? 0;
+  const s = saldo ?? 0;
   const soma = d + v + s;
-  const bate = soma === saldoAtual;
+  const bate = soma === saldoCent;
 
   async function confirmar() {
     if (!bate) {
-      setErro(`Soma (${soma}) não bate com saldo (${saldoAtual}).`);
+      setErro(
+        `Soma (${formatBRL(soma / 100)}) não bate com saldo (${formatBRL(saldoAtual)}).`
+      );
       return;
     }
     setErro(null);
@@ -330,9 +342,9 @@ function ModalAcerto({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           motorista_id: motoristaId,
-          valor_devolvido: d,
-          valor_vale: v,
-          valor_saldo: s,
+          valor_devolvido: centavosParaReais(d),
+          valor_vale: centavosParaReais(v),
+          valor_saldo: centavosParaReais(s),
           observacao: obs.trim() || null,
         }),
       });
@@ -364,44 +376,24 @@ function ModalAcerto({
           <label className="block text-sm font-medium mb-1">
             Devolvido (em cash)
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-            value={devolvido}
-            onChange={(e) => setDevolvido(e.target.value)}
-            min={0}
-          />
+          <InputDinheiro centavos={devolvido} onChange={setDevolvido} grande={false} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
             Vale (desconto salário)
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-            value={vale}
-            onChange={(e) => setVale(e.target.value)}
-            min={0}
-          />
+          <InputDinheiro centavos={vale} onChange={setVale} grande={false} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
             Fica de saldo (próximo ciclo)
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-            value={saldo}
-            onChange={(e) => setSaldo(e.target.value)}
-            min={0}
-          />
+          <InputDinheiro centavos={saldo} onChange={setSaldo} grande={false} />
         </div>
 
         <div className={`text-sm ${bate ? "text-green-700" : "text-alerta"}`}>
-          Total: {formatBRL(soma)} {bate ? "✓" : `(precisa ser ${formatBRL(saldoAtual)})`}
+          Total: {formatBRL(soma / 100)}{" "}
+          {bate ? "✓" : `(precisa ser ${formatBRL(saldoAtual)})`}
         </div>
 
         <div>

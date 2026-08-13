@@ -9,7 +9,8 @@ import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
 import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
-import { parseLitros, parseValorInteiro } from "@/lib/format";
+import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
+import { parseLitros } from "@/lib/format";
 import type { CargaAtivaCache, AbastecimentoLocal } from "@/lib/types";
 
 const LAST_KM_KEY_PREFIX = "coleta_ultimo_km_";
@@ -25,7 +26,7 @@ export default function AbastecimentoPage() {
 
   const [postoNome, setPostoNome] = useState("");
   const [litrosTexto, setLitrosTexto] = useState("");
-  const [valorTexto, setValorTexto] = useState("");
+  const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [kmTexto, setKmTexto] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
@@ -59,7 +60,6 @@ export default function AbastecimentoPage() {
   }, [motoristaId]);
 
   const litros = parseLitros(litrosTexto);
-  const valor = parseValorInteiro(valorTexto);
   const km = Number(kmTexto);
   const podeSalvar =
     !!motoristaId &&
@@ -67,8 +67,8 @@ export default function AbastecimentoPage() {
     postoNome.trim().length >= 3 &&
     litros !== null &&
     litros > 0 &&
-    valor !== null &&
-    valor > 0 &&
+    valorCentavos !== null &&
+    valorCentavos > 0 &&
     Number.isFinite(km) &&
     km > 0 &&
     foto !== null &&
@@ -80,12 +80,13 @@ export default function AbastecimentoPage() {
       !motoristaId ||
       !carga ||
       litros === null ||
-      valor === null ||
+      valorCentavos === null ||
       !foto
     )
       return;
     setSalvando(true);
 
+    const valor = centavosParaReais(valorCentavos);
     const client_id = uuid();
     const gpsJa = gpsResultado;
     const abastecimento: AbastecimentoLocal = {
@@ -185,15 +186,9 @@ export default function AbastecimentoPage() {
 
         <div>
           <label className="block text-xl font-semibold mb-3">
-            💰 Valor total (R$)
+            💰 Valor total
           </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            className="input-grande text-2xl"
-            value={valorTexto}
-            onChange={(e) => setValorTexto(e.target.value)}
-          />
+          <InputDinheiro centavos={valorCentavos} onChange={setValorCentavos} />
         </div>
 
         <div>

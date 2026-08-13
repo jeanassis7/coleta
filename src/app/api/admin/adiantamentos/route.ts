@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
     .from("adiantamentos")
     .insert({
       motorista_id,
-      valor: Math.round(valor),
+      // Centavos são válidos (coluna numeric) — arredonda só pra 2 casas
+      valor: Math.round(valor * 100) / 100,
       forma_pagamento,
       observacao,
       registrado_por: admin.id,

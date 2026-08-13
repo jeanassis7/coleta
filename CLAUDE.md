@@ -57,7 +57,9 @@ Guaíra, Toledo, Cascavel, Foz do Iguaçu (oeste do PR). Muita área rural sem s
 
 - **Tudo em português** (UI, comentários, variáveis quando faz sentido)
 - **Timezone:** `America/Sao_Paulo` (UTC-3 fixo). Helpers `nowBrParts`, `fromBrParts` em `src/lib/admin/queries.ts`
-- **Valor pago é INTEIRO** (R$ sem decimal) — coluna `valor_pago integer`
+- **Dinheiro tem DUAS convenções** (decisão do Evaner após teste de campo):
+  - **Coleta:** `valor_pago integer`, valor cheio sempre (100, 125, 200). UI rejeita vírgula com aviso.
+  - **Despesa/abastecimento/adiantamento/acerto:** `numeric(10,2)` COM centavos (combustível nunca é redondo). UI usa `InputDinheiro` (src/components/InputDinheiro.tsx) — máscara estilo banco, digita algarismos e preenche da direita ("68047" → R$ 680,47). NUNCA usar input de texto livre pra dinheiro — o parser antigo descartava vírgula e "520,12" virava 52.012.
 - **Períodos** alinhados ao calendário BR:
   - Hoje = 00:00-23:59 BR
   - Semana = domingo a sábado da semana atual

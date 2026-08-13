@@ -10,9 +10,11 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const body = await req.json();
   const motorista_id = String(body.motorista_id || "");
-  const valor_devolvido = Math.round(Number(body.valor_devolvido) || 0);
-  const valor_vale = Math.round(Number(body.valor_vale) || 0);
-  const valor_saldo = Math.round(Number(body.valor_saldo) || 0);
+  // Centavos são válidos (colunas numeric) — arredonda só pra 2 casas
+  const aCentavos = (x: unknown) => Math.round((Number(x) || 0) * 100) / 100;
+  const valor_devolvido = aCentavos(body.valor_devolvido);
+  const valor_vale = aCentavos(body.valor_vale);
+  const valor_saldo = aCentavos(body.valor_saldo);
   const observacao = body.observacao ? String(body.observacao).trim() : null;
 
   if (!motorista_id) return NextResponse.json({ error: "motorista_id obrigatório" }, { status: 400 });
