@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/admin/LogoutButton";
+import { podeAcessarAdmin, isDev } from "@/lib/auth/roles";
 
 export default async function AdminLayout({
   children,
@@ -23,9 +24,11 @@ export default async function AdminLayout({
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!profile || profile.role !== "admin") {
+  if (!profile || !podeAcessarAdmin(profile)) {
     redirect("/admin/login?erro=acesso");
   }
+
+  const dev = isDev(profile);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -46,6 +49,14 @@ export default async function AdminLayout({
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            {dev && (
+              <span
+                className="text-xs font-bold px-2 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-300"
+                title="Você está logado como DEV — vê recursos em teste"
+              >
+                🧪 DEV
+              </span>
+            )}
             <span className="text-sm text-cinza-suave hidden md:inline">
               {profile.nome}
             </span>
