@@ -17,6 +17,8 @@ import { FotoPicker } from "@/components/motorista/FotoPicker";
 import type { CargaAtivaCache, DescargaLocal } from "@/lib/types";
 
 const DENSIDADE_KG_POR_L = 0.9;
+const LAST_KM_KEY_PREFIX = "coleta_ultimo_km_";
+const SALTO_MAXIMO_KM = 1500;
 
 /**
  * Offline-first: a descarga salva no IndexedDB e a carga encerra
@@ -31,6 +33,7 @@ export default function DescarregarPage() {
   const [salvando, setSalvando] = useState(false);
 
   const [pesoBrutoTexto, setPesoBrutoTexto] = useState("");
+  const [kmTexto, setKmTexto] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
   // Validações aparecem SÓ quando aperta confirmar (nunca enquanto digita)
@@ -38,6 +41,8 @@ export default function DescarregarPage() {
   const [aviso, setAviso] = useState<
     | { tipo: "sem_coletas" }
     | { tipo: "divergencia"; diffPct: number; esperadoKg: number }
+    | { tipo: "km_menor"; ultimoKm: number }
+    | { tipo: "km_salto"; salto: number }
     | null
   >(null);
 
@@ -55,6 +60,10 @@ export default function DescarregarPage() {
     }
     setCarga(c);
     resumoCargaAtiva(c.id, id).then(setResumo);
+    // Sugere o último km conhecido do caminhão (do início da carga ou do
+    // último abastecimento) — motorista só confirma ou corrige.
+    const kmSug = localStorage.getItem(LAST_KM_KEY_PREFIX + c.caminhao_id);
+    setKmTexto(kmSug || String(c.km_inicial));
   }, [router]);
 
   useEffect(() => {
@@ -74,12 +83,22 @@ export default function DescarregarPage() {
   const litrosEstimados =
     pesoLiquidoKg > 0 ? Math.round(pesoLiquidoKg / DENSIDADE_KG_POR_L) : 0;
 
-  // Botão fica clicável assim que digitou algo — validações rodam no clique
-  const podeSalvar = !!carga && !!motoristaId && pesoDigitado && !salvando;
+  const km = Number(kmTexto);
+  const kmDigitado = kmTexto.trim() !== "" && Number.isFinite(km) && km > 0;
+
+  // Botão fica clicável assim que digitou os números — validações no clique
+  const podeSalvar =
+    !!carga && !!motoristaId && pesoDigitado && kmDigitado && !salvando;
 
   function trocarPeso(s: string) {
     setPesoBrutoTexto(s);
     // Editou o número → validações antigas não valem mais
+    setErro(null);
+    setAviso(null);
+  }
+
+  function trocarKm(s: string) {
+    setKmTexto(s);
     setErro(null);
     setAviso(null);
   }
@@ -94,11 +113,35 @@ export default function DescarregarPage() {
       );
       return;
     }
+    // Validação 2: odômetro não anda pra trás
+    const kmNum = Math.round(km);
+    if (kmNum < carga.km_inicial) {
+      setErro(
+        `Km menor que o km do início da carga (${carga.km_inicial.toLocaleString("pt-BR")}) — confere se lançou certo.`
+      );
+      return;
+    }
     setErro(null);
 
     // Antiburros em duas etapas: primeiro clique mostra o aviso NO APP,
     // segundo clique ("CONFIRMAR MESMO ASSIM") prossegue.
     if (!aviso) {
+      const ultimoKmRaw = localStorage.getItem(
+        LAST_KM_KEY_PREFIX + carga.caminhao_id
+      );
+      const ultimoKm = ultimoKmRaw ? Number(ultimoKmRaw) : null;
+      if (ultimoKm !== null && Number.isFinite(ultimoKm) && kmNum < ultimoKm) {
+        setAviso({ tipo: "km_menor", ultimoKm });
+        return;
+      }
+      const referencia = Math.max(
+        carga.km_inicial,
+        ultimoKm !== null && Number.isFinite(ultimoKm) ? ultimoKm : 0
+      );
+      if (kmNum - referencia > SALTO_MAXIMO_KM) {
+        setAviso({ tipo: "km_salto", salto: kmNum - referencia });
+        return;
+      }
       if (resumo.coletas === 0) {
         setAviso({ tipo: "sem_coletas" });
         return;
@@ -128,6 +171,7 @@ export default function DescarregarPage() {
       peso_bruto_kg: Math.round(pesoBruto),
       peso_tara_kg: carga.tara_kg,
       litros_estimados: litrosEstimados,
+      km_final: Math.round(km),
       latitude: gpsJa?.ok ? gpsJa.latitude : null,
       longitude: gpsJa?.ok ? gpsJa.longitude : null,
       gps_pendente: gpsJa === null,
@@ -142,8 +186,14 @@ export default function DescarregarPage() {
 
     const db = getLocalDB();
     await db.descargas_locais.add(descarga);
+    // Guarda o km pra sugerir na próxima carga desse caminhão
+    localStorage.setItem(
+      LAST_KM_KEY_PREFIX + carga.caminhao_id,
+      String(Math.round(km))
+    );
 
     await logEvent(motoristaId, "descarga_saved_local", {
+      km_final: Math.round(km),
       client_id,
       carga_id: carga.id,
       peso_bruto_kg: descarga.peso_bruto_kg,
@@ -164,6 +214,7 @@ export default function DescarregarPage() {
       `/motorista/carga-encerrada?peso_bruto=${descarga.peso_bruto_kg}` +
         `&tara=${descarga.peso_tara_kg}&liquido=${pesoLiquidoKg}` +
         `&litros=${litrosEstimados}&coletas=${resumo.coletas}` +
+        `&km=${Math.max(0, Math.round(km) - carga.km_inicial)}` +
         `&iniciada=${encodeURIComponent(carga.iniciada_em)}`
     );
 
@@ -239,6 +290,22 @@ export default function DescarregarPage() {
           )}
         </div>
 
+        <div>
+          <label className="block text-xl font-semibold mb-3">
+            📍 Km do painel agora
+          </label>
+          <input
+            type="number"
+            inputMode="numeric"
+            className="input-grande text-2xl"
+            value={kmTexto}
+            onChange={(e) => trocarKm(e.target.value)}
+          />
+          <p className="text-sm text-cinza-suave mt-1">
+            Saiu com {carga.km_inicial.toLocaleString("pt-BR")} km
+          </p>
+        </div>
+
         {motoristaId && (
           <div>
             <label className="block text-xl font-semibold mb-3">
@@ -261,6 +328,28 @@ export default function DescarregarPage() {
               Essa carga não tem nenhuma coleta lançada. Se você coletou e
               esqueceu de lançar, volta e lança primeiro. Se quer descarregar
               assim mesmo, aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
+        {aviso?.tipo === "km_menor" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Km menor que o último registro</p>
+            <p>
+              O último km registrado desse caminhão foi{" "}
+              {aviso.ultimoKm.toLocaleString("pt-BR")} — confere se lançou certo.
+              Se o número estiver certo mesmo, aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
+        {aviso?.tipo === "km_salto" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Salto grande de km</p>
+            <p>
+              Esse caminhão andou {aviso.salto.toLocaleString("pt-BR")} km desde
+              o último registro? Confere se lançou certo. Se estiver certo mesmo,
+              aperta o botão de novo.
             </p>
           </div>
         )}

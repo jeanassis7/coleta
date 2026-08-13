@@ -692,6 +692,8 @@ export async function buscarMotoristasComSaldo(
 ): Promise<MotoristaComSaldo[]> {
   const supabase = await getSupabaseServer();
 
+  // 3 idas ao banco no total, não importa quantos motoristas existam.
+  // (Antes: ~7 por motorista, em fila — era o que fazia o painel demorar.)
   let qM = supabase
     .from("profiles")
     .select("id, nome, is_teste")
@@ -699,96 +701,44 @@ export async function buscarMotoristasComSaldo(
     .eq("ativo", true)
     .order("nome");
   if (!opts.incluirTeste) qM = qM.eq("is_teste", false);
-  const { data: motoristas, error: errM } = await qM;
+
+  const [{ data: motoristas, error: errM }, { data: saldos }, { data: adiantamentos }] =
+    await Promise.all([
+      qM,
+      // A conta inteira feita dentro do Postgres (migration 0013)
+      supabase.rpc("saldos_motoristas"),
+      // Todos os adiantamentos de uma vez; o "último de cada" sai em memória
+      supabase
+        .from("adiantamentos")
+        .select("*")
+        .order("criado_em", { ascending: false }),
+    ]);
   if (errM) throw errM;
 
-  const result: MotoristaComSaldo[] = [];
-  for (const m of motoristas || []) {
-    // Último acerto (pra descobrir corte_em)
-    const { data: acerto } = await supabase
-      .from("acertos")
-      .select("corte_em, valor_saldo")
-      .eq("motorista_id", m.id)
-      .order("corte_em", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  const saldoPorId = new Map<string, number>(
+    ((saldos as { motorista_id: string; saldo: number }[]) || []).map((s) => [
+      s.motorista_id,
+      Number(s.saldo),
+    ])
+  );
 
-    const corte = acerto?.corte_em || "1970-01-01T00:00:00Z";
-    const carryOver = acerto?.valor_saldo || 0;
-
-    // Soma adiantamentos aceitos após corte
-    const { data: adiantamentos } = await supabase
-      .from("adiantamentos")
-      .select("valor, aceito_em")
-      .eq("motorista_id", m.id)
-      .eq("status", "aceito")
-      .gt("aceito_em", corte);
-    const somaAd = (adiantamentos || []).reduce(
-      (s, a) => s + Number(a.valor),
-      0
-    );
-
-    // Soma gastos após corte
-    const [{ data: coletas }, { data: despesas }, { data: abast }] = await Promise.all([
-      supabase
-        .from("coletas")
-        .select("valor_pago")
-        .eq("motorista_id", m.id)
-        .gt("criado_em", corte),
-      supabase
-        .from("despesas")
-        .select("valor")
-        .eq("motorista_id", m.id)
-        .gt("criado_em", corte),
-      supabase
-        .from("abastecimentos")
-        .select("valor")
-        .eq("motorista_id", m.id)
-        .gt("criado_em", corte),
-    ]);
-    const somaColetas = (coletas || []).reduce(
-      (s, c) => s + Number(c.valor_pago),
-      0
-    );
-    const somaDespesas = (despesas || []).reduce(
-      (s, d) => s + Number(d.valor),
-      0
-    );
-    const somaAbast = (abast || []).reduce((s, a) => s + Number(a.valor), 0);
-
-    const saldo = somaAd - somaColetas - somaDespesas - somaAbast + carryOver;
-
-    // Último adiantamento (qualquer status) pra mostrar no painel
-    const { data: ultimo } = await supabase
-      .from("adiantamentos")
-      .select("*")
-      .eq("motorista_id", m.id)
-      .order("criado_em", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Pular contador da última pendente (pra alerta 10+)
-    const { data: pendente } = await supabase
-      .from("adiantamentos")
-      .select("pular_contador")
-      .eq("motorista_id", m.id)
-      .eq("status", "pendente")
-      .order("criado_em", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    result.push({
-      id: m.id,
-      nome: m.nome,
-      is_teste: !!m.is_teste,
-      // Centavos existem agora (despesas/abastecimentos com decimais) —
-      // arredonda pra 2 casas, não pra inteiro.
-      saldo_atual: Math.round(saldo * 100) / 100,
-      ultimo_adiantamento: (ultimo as Adiantamento) || null,
-      pular_contador_atual: pendente?.pular_contador ?? 0,
-    });
+  const ultimoPorId = new Map<string, Adiantamento>();
+  const pendentePorId = new Map<string, Adiantamento>();
+  for (const a of (adiantamentos as Adiantamento[]) || []) {
+    if (!ultimoPorId.has(a.motorista_id)) ultimoPorId.set(a.motorista_id, a);
+    if (a.status === "pendente" && !pendentePorId.has(a.motorista_id)) {
+      pendentePorId.set(a.motorista_id, a);
+    }
   }
-  return result;
+
+  return (motoristas || []).map((m) => ({
+    id: m.id,
+    nome: m.nome,
+    is_teste: !!m.is_teste,
+    saldo_atual: saldoPorId.get(m.id) ?? 0,
+    ultimo_adiantamento: ultimoPorId.get(m.id) ?? null,
+    pular_contador_atual: pendentePorId.get(m.id)?.pular_contador ?? 0,
+  }));
 }
 
 /**

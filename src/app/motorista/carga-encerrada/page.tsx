@@ -12,6 +12,7 @@ function CargaEncerradaConteudo() {
   const liquido = Number(params.get("liquido") || "0");
   const litros = Number(params.get("litros") || "0");
   const coletas = Number(params.get("coletas") || "0");
+  const kmRodado = Number(params.get("km") || "0");
   const iniciadaRaw = params.get("iniciada");
 
   let duracaoDias: number | null = null;
@@ -38,6 +39,12 @@ function CargaEncerradaConteudo() {
         <div className="text-cinza-suave">
           📍 Coletas: {coletas} {coletas === 1 ? "local" : "locais"}
         </div>
+
+        {kmRodado > 0 && (
+          <div className="text-cinza-suave">
+            🛣 Rodou: {kmRodado.toLocaleString("pt-BR")} km
+          </div>
+        )}
 
         <div className="border-t border-cinza-borda pt-4 space-y-2 text-left">
           <div className="flex justify-between">

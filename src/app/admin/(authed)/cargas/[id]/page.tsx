@@ -5,6 +5,7 @@ import { buscarCargaCompleta } from "@/lib/admin/queries";
 import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { LinhaDoTempoCarga } from "@/components/admin/LinhaDoTempoCarga";
+import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import type { PontoCarga } from "@/components/admin/MapaCarga";
 
 const MapaCarga = nextDynamic(() => import("@/components/admin/MapaCarga"), {
@@ -119,14 +120,25 @@ export default async function CargaDetalhePage({
             carga.encerrada_em ? formatDataHora(carga.encerrada_em) : "em andamento"
           }
         />
-        <Info
-          rotulo="Km rodado"
-          valor={
-            kmRodado !== null
+        <div>
+          <p className="text-cinza-suave text-xs">Km rodado</p>
+          <p className="font-medium">
+            {kmRodado !== null
               ? `${kmRodado.toLocaleString("pt-BR")} km`
-              : `saiu com ${carga.km_inicial.toLocaleString("pt-BR")}`
-          }
-        />
+              : `saiu com ${carga.km_inicial.toLocaleString("pt-BR")}`}
+          </p>
+          {/* Foto do odômetro tirada ao iniciar a carga — é a prova do km
+              declarado. Antes ficava só guardada, sem ninguém poder ver. */}
+          {carga.foto_painel_path && (
+            <p className="text-xs mt-1">
+              <VisualizadorFoto
+                path={carga.foto_painel_path}
+                legenda={`Painel no início da carga · ${carga.km_inicial.toLocaleString("pt-BR")} km · ${formatDataHora(carga.iniciada_em)}`}
+              />{" "}
+              <span className="text-cinza-suave">foto do painel</span>
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Resumo */}

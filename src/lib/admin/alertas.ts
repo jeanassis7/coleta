@@ -1,5 +1,8 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { buscarMotoristasComSaldo } from "@/lib/admin/queries";
+import {
+  buscarMotoristasComSaldo,
+  type MotoristaComSaldo,
+} from "@/lib/admin/queries";
 import { formatBRL, formatData } from "@/lib/format";
 
 /**
@@ -54,7 +57,12 @@ function diaBr(): string {
 }
 
 export async function buscarAlertas(
-  opts: { incluirTeste?: boolean } = {}
+  opts: {
+    incluirTeste?: boolean;
+    /** Quem já calculou os saldos passa aqui — evita recalcular (o
+     *  dashboard chamava duas vezes e dobrava o tempo de carregamento). */
+    saldos?: MotoristaComSaldo[];
+  } = {}
 ): Promise<Alerta[]> {
   const supabase = await getSupabaseServer();
   const alertas: Alerta[] = [];
@@ -259,28 +267,29 @@ export async function buscarAlertas(
   // Dinheiro parado na mão do motorista
   // ---------------------------------------------------------------------
   try {
-    const saldos = await buscarMotoristasComSaldo({ incluirTeste });
-    for (const s of saldos) {
-      if (s.saldo_atual < SALDO_ALTO) continue;
+    const saldos =
+      opts.saldos ?? (await buscarMotoristasComSaldo({ incluirTeste }));
+    const candidatos = saldos.filter((s) => s.saldo_atual >= SALDO_ALTO);
+    if (candidatos.length > 0) {
+      // Quem lançou ALGO nos últimos dias — 3 consultas no total, não 3
+      // por motorista (era outro pedaço da lentidão do dashboard).
       const desde = new Date(Date.now() - DIAS_SEM_GASTO * DIA_MS).toISOString();
-      const [{ count: nc }, { count: nd }, { count: na }] = await Promise.all([
-        supabase
-          .from("coletas")
-          .select("id", { count: "exact", head: true })
-          .eq("motorista_id", s.id)
-          .gte("criado_em", desde),
-        supabase
-          .from("despesas")
-          .select("id", { count: "exact", head: true })
-          .eq("motorista_id", s.id)
-          .gte("criado_em", desde),
+      const [{ data: lc }, { data: ld }, { data: la }] = await Promise.all([
+        supabase.from("coletas").select("motorista_id").gte("criado_em", desde),
+        supabase.from("despesas").select("motorista_id").gte("criado_em", desde),
         supabase
           .from("abastecimentos")
-          .select("id", { count: "exact", head: true })
-          .eq("motorista_id", s.id)
+          .select("motorista_id")
           .gte("criado_em", desde),
       ]);
-      if ((nc ?? 0) + (nd ?? 0) + (na ?? 0) === 0) {
+      const ativos = new Set<string>([
+        ...(lc || []).map((x) => x.motorista_id),
+        ...(ld || []).map((x) => x.motorista_id),
+        ...(la || []).map((x) => x.motorista_id),
+      ]);
+
+      for (const s of candidatos) {
+        if (ativos.has(s.id)) continue;
         alertas.push({
           chave: `vale_alto:${s.id}:${diaBr()}`,
           icone: "💰",

@@ -367,12 +367,14 @@ async function sincronizarDescargas(
       if (d.carga_encerrada_servidor) return;
       const supabase = getSupabaseBrowser();
       // encerrada_em = momento REAL da descarga (não do sync).
+      // km_final vem junto: é o que fecha o cálculo de km rodado e consumo.
       // 0 rows afetadas = carga já encerrada por retry anterior — sucesso.
       const { error } = await supabase
         .from("cargas")
         .update({
           status: "encerrada",
           encerrada_em: new Date(d.criado_em).toISOString(),
+          ...(d.km_final ? { km_final: d.km_final } : {}),
         })
         .eq("id", d.carga_id)
         .eq("status", "ativa");

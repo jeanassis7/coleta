@@ -176,6 +176,8 @@ export interface DescargaLocal {
   peso_bruto_kg: number;
   peso_tara_kg: number;
   litros_estimados: number;
+  /** Km do painel ao encerrar — o sync grava em cargas.km_final */
+  km_final: number;
   latitude: number | null;
   longitude: number | null;
   gps_pendente: boolean;

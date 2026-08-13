@@ -178,9 +178,16 @@ async function main() {
 
   // ---- 9. fechar carga atomicamente (como o sync faz) ----
   const { data: fech1 } = await mot.from("cargas")
-    .update({ status: "encerrada", encerrada_em: new Date().toISOString() })
-    .eq("id", carga.id).eq("status", "ativa").select();
+    .update({
+      status: "encerrada",
+      encerrada_em: new Date().toISOString(),
+      km_final: 100500,
+    })
+    .eq("id", carga.id).eq("status", "ativa").select("id, km_final, km_inicial");
   check("fechar carga atômico: 1ª vez fecha", (fech1 || []).length === 1);
+  check("km_final gravado no encerramento (km rodado = 500)",
+    (fech1 || [])[0]?.km_final - (fech1 || [])[0]?.km_inicial === 500,
+    `km_final=${(fech1 || [])[0]?.km_final}`);
   const { data: fech2 } = await mot.from("cargas")
     .update({ status: "encerrada" })
     .eq("id", carga.id).eq("status", "ativa").select();
@@ -264,6 +271,13 @@ async function main() {
   const saldo = somaAd - (await soma("coletas", "valor_pago")) -
     (await soma("despesas", "valor")) - (await soma("abastecimentos", "valor"));
   check("saldo calculado = 3875", saldo === 3875, `saldo=${saldo}`);
+
+  // ---- 14b. a função saldos_motoristas() dá o MESMO número (perf fix) ----
+  const { data: saldosRpc, error: eRpc } = await svc.rpc("saldos_motoristas");
+  check("rpc saldos_motoristas roda", !eRpc, eRpc?.message);
+  const saldoRpcBot = (saldosRpc || []).find((s) => s.motorista_id === teste1.id);
+  check("rpc bate com o cálculo manual (3875)",
+    Number(saldoRpcBot?.saldo) === 3875, `rpc=${saldoRpcBot?.saldo}`);
 
   // ---- 15. acerto com corte: saldo pós-acerto = valor_saldo carry ----
   const { data: acerto, error: e15 } = await svc.from("acertos").insert({

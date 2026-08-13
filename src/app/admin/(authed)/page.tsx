@@ -55,16 +55,17 @@ export default async function AdminDashboardPage({
   let alertas: Alerta[] = [];
   const saldoPorMotorista = new Map<string, number | null>();
   if (verModulo1) {
-    const [ativas, todas, saldos, alerts] = await Promise.all([
-      buscarCargas({ incluirTeste: ehDev, status: "ativa" }),
+    // Uma busca de cargas só (as ativas saem daqui por filtro em memória)
+    // e os saldos são calculados UMA vez e repassados pros alertas —
+    // antes o dashboard fazia tudo em dobro e demorava ~4s.
+    const [todas, saldos] = await Promise.all([
       buscarCargas({ incluirTeste: ehDev }),
       buscarMotoristasComSaldo({ incluirTeste: ehDev }),
-      buscarAlertas({ incluirTeste: ehDev }),
     ]);
-    cargasAtivas = ativas;
     cargasTodas = todas;
-    alertas = alerts;
+    cargasAtivas = todas.filter((c) => c.status === "ativa");
     for (const s of saldos) saldoPorMotorista.set(s.id, s.saldo_atual);
+    alertas = await buscarAlertas({ incluirTeste: ehDev, saldos });
   }
 
   const motoristasMotoristas = motoristas.filter((m) => m.role === "motorista");
