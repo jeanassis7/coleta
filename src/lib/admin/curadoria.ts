@@ -55,11 +55,15 @@ function normalizarNome(s: string): string {
 
 export async function buscarColetasSemLocal(): Promise<ColetaSemLocal[]> {
   const supabase = await getSupabaseServer();
+  // !inner + filtro is_teste: coletas de motorista de teste NÃO aparecem
+  // na curadoria (regra do plano — teste é invisível fora de
+  // motoristas/eventos/dev-features).
   const { data, error } = await supabase
     .from("coletas")
     .select(
-      "id, motorista_id, local_nome, litros, valor_pago, latitude, longitude, gps_capturado, criado_em, profiles!coletas_motorista_id_fkey(nome)"
+      "id, motorista_id, local_nome, litros, valor_pago, latitude, longitude, gps_capturado, criado_em, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)"
     )
+    .eq("profiles.is_teste", false)
     .is("local_id", null)
     .order("criado_em", { ascending: false })
     .limit(500);
