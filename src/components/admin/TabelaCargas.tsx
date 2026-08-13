@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDataHora } from "@/lib/format";
 import type { CargaDetalhada } from "@/lib/admin/queries";
@@ -131,7 +132,13 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                 className="border-b border-cinza-borda hover:bg-slate-50"
               >
                 <td className="py-2 pr-3 whitespace-nowrap">
-                  {formatDataHora(c.iniciada_em)}
+                  <Link
+                    href={`/admin/cargas/${c.id}`}
+                    className="text-verde hover:underline font-medium"
+                    title="Abrir o detalhe da carga (lançamentos, fotos e trajeto)"
+                  >
+                    {formatDataHora(c.iniciada_em)}
+                  </Link>
                 </td>
                 <td className="py-2 pr-3 font-mono">
                   {c.caminhao_placa}{" "}

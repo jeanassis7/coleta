@@ -1,16 +1,16 @@
 import {
-  buscarAbastecimentos,
+  buscarDespesas,
   buscarMotoristas,
   buscarCaminhoes,
 } from "@/lib/admin/queries";
-import { TabelaAbastecimentos } from "@/components/admin/TabelaAbastecimentos";
+import { TabelaDespesas } from "@/components/admin/TabelaDespesas";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
 import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function AbastecimentosPage({
+export default async function DespesasPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
@@ -18,8 +18,8 @@ export default async function AbastecimentosPage({
   const { ehDev } = await exigirAcessoModulo1OuRedirect();
   const params = await searchParams;
 
-  const [abastecimentos, motoristas, caminhoes] = await Promise.all([
-    buscarAbastecimentos({
+  const [despesas, motoristas, caminhoes] = await Promise.all([
+    buscarDespesas({
       incluirTeste: ehDev,
       periodo: params.periodo,
       inicio: params.inicio,
@@ -31,21 +31,16 @@ export default async function AbastecimentosPage({
     buscarCaminhoes(),
   ]);
 
-  const total = abastecimentos.reduce((s, a) => s + a.valor, 0);
-  const litros = abastecimentos.reduce((s, a) => s + a.litros, 0);
-  const precoMedio = litros > 0 ? total / litros : 0;
-  const resumo =
-    `${abastecimentos.length} ${abastecimentos.length === 1 ? "abastecimento" : "abastecimentos"} · ` +
-    `${litros.toLocaleString("pt-BR")} L · ${formatBRL(total)}` +
-    (litros > 0 ? ` · média ${formatBRL(precoMedio)}/L` : "");
+  const total = despesas.reduce((s, d) => s + d.valor, 0);
+  const resumo = `${despesas.length} ${despesas.length === 1 ? "lançamento" : "lançamentos"} · ${formatBRL(total)}`;
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Abastecimentos</h1>
+      <h1 className="text-2xl font-bold mb-4">Despesas</h1>
       <p className="text-sm text-cinza-suave mb-4">
-        Todos os abastecimentos, do mais recente pro mais antigo. Clique em 📷 pra
-        ver o cupom. Se o motorista lançou errado mesmo com o antiburro, dá pra
-        editar ou apagar. Motoristas de teste aparecem só pra você (dev), com 🧪.
+        Tudo que o motorista gastou fora combustível (almoço, hotel, lavagem…),
+        do mais recente pro mais antigo. Clique em 📷 pra ver o comprovante.
+        Motoristas de teste aparecem só pra você (dev), marcados com 🧪.
       </p>
 
       <FiltrosOperacao
@@ -59,7 +54,7 @@ export default async function AbastecimentosPage({
         resumo={resumo}
       />
 
-      <TabelaAbastecimentos abastecimentos={abastecimentos} />
+      <TabelaDespesas despesas={despesas} />
     </div>
   );
 }

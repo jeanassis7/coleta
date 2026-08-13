@@ -357,6 +357,31 @@ export async function buscarCargas(
 // (A antiga aba /admin/descarregamentos foi fundida na tabela de Cargas —
 //  a umidade é lançada direto na coluna Umid. Decisão do Evaner: um menu só.)
 
+/** Filtros das abas de operação (Despesas, Abastecimentos). */
+export interface FiltrosOperacaoParams {
+  /** hoje | semana | mes | customizado | tudo */
+  periodo?: string;
+  inicio?: string;
+  fim?: string;
+  motorista?: string;
+  caminhao?: string;
+  incluirTeste?: boolean;
+}
+
+/** Intervalo do filtro; null = "tudo" (sem recorte de data). */
+function resolveIntervaloOperacao(
+  f: FiltrosOperacaoParams
+): { inicio: Date; fim: Date } | null {
+  const periodo = f.periodo || "mes";
+  if (periodo === "tudo") return null;
+  if (periodo === "customizado" && (!f.inicio || !f.fim)) return null;
+  return resolvePeriodo({
+    periodo: periodo as FiltrosDashboard["periodo"],
+    inicio: f.inicio,
+    fim: f.fim,
+  });
+}
+
 export interface AbastecimentoAdmin {
   id: string;
   carga_id: string;
@@ -372,11 +397,11 @@ export interface AbastecimentoAdmin {
 }
 
 /**
- * Todos os abastecimentos, mais recente primeiro. O admin pode editar
+ * Abastecimentos, mais recente primeiro. O admin pode editar e apagar
  * (motorista lançou errado mesmo com antiburro). incluirTeste = dev.
  */
 export async function buscarAbastecimentos(
-  opts: { incluirTeste?: boolean } = {}
+  opts: FiltrosOperacaoParams = {}
 ): Promise<AbastecimentoAdmin[]> {
   const supabase = await getSupabaseServer();
   let q = supabase
@@ -384,11 +409,23 @@ export async function buscarAbastecimentos(
     .select(
       `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em,
        profiles!abastecimentos_motorista_id_fkey!inner(nome, is_teste),
-       cargas(caminhoes(placa))`
+       cargas!inner(caminhao_id, caminhoes(placa))`
     )
     .order("criado_em", { ascending: false })
-    .limit(500);
+    .limit(1000);
   if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
+  if (opts.motorista && opts.motorista !== "todos") {
+    q = q.eq("motorista_id", opts.motorista);
+  }
+  if (opts.caminhao && opts.caminhao !== "todos") {
+    q = q.eq("cargas.caminhao_id", opts.caminhao);
+  }
+  const intervalo = resolveIntervaloOperacao(opts);
+  if (intervalo) {
+    q = q
+      .gte("criado_em", intervalo.inicio.toISOString())
+      .lte("criado_em", intervalo.fim.toISOString());
+  }
 
   const { data, error } = await q;
   if (error) throw error;
@@ -419,6 +456,187 @@ export async function buscarAbastecimentos(
     foto_path: r.foto_path,
     criado_em: r.criado_em,
   }));
+}
+
+export interface DespesaAdmin {
+  id: string;
+  carga_id: string;
+  motorista_nome: string;
+  motorista_is_teste: boolean;
+  caminhao_placa: string;
+  valor: number;
+  descricao: string;
+  foto_path: string | null;
+  criado_em: string;
+}
+
+/** Despesas (almoço, hotel, lavagem…), mais recente primeiro. */
+export async function buscarDespesas(
+  opts: FiltrosOperacaoParams = {}
+): Promise<DespesaAdmin[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("despesas")
+    .select(
+      `id, carga_id, valor, descricao, foto_path, criado_em,
+       profiles!despesas_motorista_id_fkey!inner(nome, is_teste),
+       cargas!inner(caminhao_id, caminhoes(placa))`
+    )
+    .order("criado_em", { ascending: false })
+    .limit(1000);
+  if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
+  if (opts.motorista && opts.motorista !== "todos") {
+    q = q.eq("motorista_id", opts.motorista);
+  }
+  if (opts.caminhao && opts.caminhao !== "todos") {
+    q = q.eq("cargas.caminhao_id", opts.caminhao);
+  }
+  const intervalo = resolveIntervaloOperacao(opts);
+  if (intervalo) {
+    q = q
+      .gte("criado_em", intervalo.inicio.toISOString())
+      .lte("criado_em", intervalo.fim.toISOString());
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  type Row = {
+    id: string;
+    carga_id: string;
+    valor: number;
+    descricao: string;
+    foto_path: string | null;
+    criado_em: string;
+    profiles: { nome: string; is_teste: boolean } | null;
+    cargas: { caminhoes: { placa: string } | null } | null;
+  };
+  const rows = (data as unknown as Row[]) || [];
+  return rows.map((r) => ({
+    id: r.id,
+    carga_id: r.carga_id,
+    motorista_nome: r.profiles?.nome || "—",
+    motorista_is_teste: !!r.profiles?.is_teste,
+    caminhao_placa: r.cargas?.caminhoes?.placa || "—",
+    valor: Number(r.valor),
+    descricao: r.descricao,
+    foto_path: r.foto_path,
+    criado_em: r.criado_em,
+  }));
+}
+
+// ============================================================================
+// DRILL-DOWN de uma carga
+// ============================================================================
+
+export interface CargaCompleta {
+  id: string;
+  motorista_id: string;
+  motorista_nome: string;
+  motorista_is_teste: boolean;
+  caminhao_placa: string;
+  caminhao_marca: string;
+  caminhao_cor: string;
+  capacidade_l: number;
+  caminhao_tara_kg: number;
+  km_inicial: number;
+  km_final: number | null;
+  status: string;
+  iniciada_em: string;
+  encerrada_em: string | null;
+  foto_painel_path: string | null;
+  coletas: {
+    id: string;
+    local_nome: string;
+    litros: number;
+    valor_pago: number;
+    foto_path: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    observacao: string | null;
+    criado_em: string;
+  }[];
+  despesas: {
+    id: string;
+    valor: number;
+    descricao: string;
+    foto_path: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    criado_em: string;
+  }[];
+  abastecimentos: {
+    id: string;
+    posto_nome: string;
+    litros: number;
+    valor: number;
+    km_atual: number;
+    foto_path: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    criado_em: string;
+  }[];
+  descarga: {
+    id: string;
+    peso_bruto_kg: number;
+    peso_tara_kg: number;
+    peso_liquido_kg: number;
+    litros_estimados: number | null;
+    umidade_pct: number | null;
+    foto_papel_path: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    criado_em: string;
+  } | null;
+}
+
+export async function buscarCargaCompleta(
+  cargaId: string
+): Promise<CargaCompleta | null> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("cargas")
+    .select(
+      `id, motorista_id, km_inicial, km_final, status, iniciada_em, encerrada_em,
+       foto_painel_path,
+       profiles!cargas_motorista_id_fkey(nome, is_teste),
+       caminhoes(placa, marca, cor, capacidade_l, tara_kg),
+       coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, criado_em),
+       despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),
+       abastecimentos(id, posto_nome, litros, valor, km_atual, foto_path, latitude, longitude, criado_em),
+       descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, foto_papel_path, latitude, longitude, criado_em)`
+    )
+    .eq("id", cargaId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = data as any;
+  const ordenar = <T extends { criado_em: string }>(lista: T[]): T[] =>
+    [...lista].sort((a, b) => a.criado_em.localeCompare(b.criado_em));
+
+  return {
+    id: r.id,
+    motorista_id: r.motorista_id,
+    motorista_nome: r.profiles?.nome || "—",
+    motorista_is_teste: !!r.profiles?.is_teste,
+    caminhao_placa: r.caminhoes?.placa || "—",
+    caminhao_marca: r.caminhoes?.marca || "",
+    caminhao_cor: r.caminhoes?.cor || "",
+    capacidade_l: r.caminhoes?.capacidade_l || 0,
+    caminhao_tara_kg: r.caminhoes?.tara_kg || 0,
+    km_inicial: r.km_inicial,
+    km_final: r.km_final,
+    status: r.status,
+    iniciada_em: r.iniciada_em,
+    encerrada_em: r.encerrada_em,
+    foto_painel_path: r.foto_painel_path,
+    coletas: ordenar(r.coletas || []),
+    despesas: ordenar(r.despesas || []),
+    abastecimentos: ordenar(r.abastecimentos || []),
+    descarga: (r.descargas || [])[0] || null,
+  };
 }
 
 // ============================================================================

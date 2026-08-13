@@ -338,6 +338,44 @@ async function main() {
     (vistos || []).some((v) => v.chave === chaveTeste));
   await svc.from("alertas_vistos").delete().eq("chave", chaveTeste);
 
+  // ---- 20. queries das abas de operacao (filtro por caminhao via join) ----
+  const { error: eO1 } = await svc.from("despesas").select(
+    `id, carga_id, valor, descricao, foto_path, criado_em,
+     profiles!despesas_motorista_id_fkey!inner(nome, is_teste),
+     cargas!inner(caminhao_id, caminhoes(placa))`
+  ).eq("profiles.is_teste", false).eq("cargas.caminhao_id", cam.id);
+  check("aba Despesas: query com filtro de caminhao roda", !eO1, eO1?.message);
+
+  const { error: eO2 } = await svc.from("abastecimentos").select(
+    `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em,
+     profiles!abastecimentos_motorista_id_fkey!inner(nome, is_teste),
+     cargas!inner(caminhao_id, caminhoes(placa))`
+  ).eq("profiles.is_teste", false).eq("cargas.caminhao_id", cam.id);
+  check("aba Abastecimentos: query com filtro de caminhao roda", !eO2, eO2?.message);
+
+  // ---- 21. drill-down: carga completa com todos os filhos ----
+  const { data: completa, error: eD } = await svc.from("cargas").select(
+    `id, motorista_id, km_inicial, km_final, status, iniciada_em, encerrada_em,
+     foto_painel_path,
+     profiles!cargas_motorista_id_fkey(nome, is_teste),
+     caminhoes(placa, marca, cor, capacidade_l, tara_kg),
+     coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, criado_em),
+     despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),
+     abastecimentos(id, posto_nome, litros, valor, km_atual, foto_path, latitude, longitude, criado_em),
+     descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, foto_papel_path, latitude, longitude, criado_em)`
+  ).eq("id", carga.id).maybeSingle();
+  check("drill-down: query da carga completa roda", !eD, eD?.message);
+  check("drill-down: traz coleta, despesa, abastecimento e descarga",
+    !!completa && completa.coletas?.length === 1 && completa.despesas?.length === 1 &&
+    completa.abastecimentos?.length === 1 && completa.descargas?.length === 1,
+    completa ? `c=${completa.coletas?.length} d=${completa.despesas?.length} a=${completa.abastecimentos?.length} desc=${completa.descargas?.length}` : "carga nao veio");
+
+  // ---- 22. foto: admin consegue gerar link temporario (auditoria) ----
+  const { data: signed, error: eS } = await svc.storage
+    .from("fotos-coletas").createSignedUrl(fotoDespesa, 60);
+  check("foto da despesa: admin gera link pra visualizar",
+    !eS && !!signed?.signedUrl, eS?.message);
+
   await mot.auth.signOut();
 }
 
