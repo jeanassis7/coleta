@@ -295,6 +295,49 @@ async function main() {
   check("curadoria: coleta do teste invisível", !e17 &&
     !(cur || []).some((c) => c.client_id === criados.coletaClientId), e17?.message);
 
+  // ---- 18. queries do motor de alertas (PostgREST aninhado — risco de 400) ----
+  const { error: eA1 } = await svc.from("cargas").select(
+    `id, iniciada_em,
+     profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+     caminhoes(placa, capacidade_l),
+     coletas(litros, criado_em),
+     despesas(criado_em),
+     abastecimentos(criado_em)`
+  ).eq("status", "ativa").eq("profiles.is_teste", false);
+  check("alertas: query de cargas ativas roda", !eA1, eA1?.message);
+
+  const { error: eA2 } = await svc.from("descargas").select(
+    `id, peso_liquido_kg, umidade_pct, criado_em,
+     cargas!inner(
+       profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+       coletas(litros)
+     )`
+  ).eq("cargas.profiles.is_teste", false);
+  check("alertas: query de descargas roda", !eA2, eA2?.message);
+
+  const { error: eA3 } = await svc.from("adiantamentos").select(
+    `id, valor, pular_contador,
+     profiles!adiantamentos_motorista_id_fkey!inner(nome, is_teste)`
+  ).eq("status", "pendente").gte("pular_contador", 10).eq("profiles.is_teste", false);
+  check("alertas: query de adiantamentos pulados roda", !eA3, eA3?.message);
+
+  const { error: eA4 } = await svc.from("coletas").select(
+    `id, motorista_id, litros, valor_pago, gps_capturado, foto_path, local_nome, criado_em,
+     profiles!coletas_motorista_id_fkey!inner(nome, is_teste, exige_foto)`
+  ).eq("profiles.is_teste", false).limit(5);
+  check("alertas: query de coletas (foto/gps/preco) roda", !eA4, eA4?.message);
+
+  // ---- 19. alertas_vistos: dispensar e ler de volta ----
+  const chaveTeste = `e2e_teste:${criados.coletaClientId}`;
+  const { error: eV1 } = await svc.from("alertas_vistos").upsert({
+    chave: chaveTeste, visto_por: dev.id,
+  });
+  check("alertas_vistos: dispensa grava", !eV1, eV1?.message);
+  const { data: vistos } = await svc.from("alertas_vistos").select("chave");
+  check("alertas_vistos: dispensa aparece na leitura",
+    (vistos || []).some((v) => v.chave === chaveTeste));
+  await svc.from("alertas_vistos").delete().eq("chave", chaveTeste);
+
   await mot.auth.signOut();
 }
 

@@ -54,6 +54,21 @@ export async function exigirAcessoModulo1() {
 }
 
 /**
+ * Pra páginas COMPARTILHADAS (ex: dashboard, que o Jean acessa sempre):
+ * diz se o viewer atual enxerga as partes do Módulo 1 — sem redirecionar.
+ */
+export async function acessoModulo1Atual(): Promise<{
+  temAcesso: boolean;
+  ehDev: boolean;
+}> {
+  const { profile } = await getProfileAtual();
+  return {
+    temAcesso: temAcessoModulo1(profile),
+    ehDev: profile?.role === "dev",
+  };
+}
+
+/**
  * Pra páginas server do Módulo 1: redireciona pra /admin se sem acesso.
  * Chamar no topo do componente da página.
  * Retorna ehDev pra página decidir se mostra dados de motorista de teste
