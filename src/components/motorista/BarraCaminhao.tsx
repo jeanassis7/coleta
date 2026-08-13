@@ -42,7 +42,8 @@ export function BarraCaminhao({
       </div>
       {pct >= 80 && pct <= 100 && (
         <div className="text-xs text-yellow-800 mt-2">
-          Se você já descarregou, não esquece de finalizar
+          Se você já descarregou no depósito, não se esquece de apertar
+          descarregar aqui no aplicativo
         </div>
       )}
       {pct > 100 && (

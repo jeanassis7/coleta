@@ -1,8 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatDataHora } from "@/lib/format";
 import type { CargaDetalhada } from "@/lib/admin/queries";
+
+interface UmidadeModalDados {
+  descargaId: string;
+  motorista: string;
+  data: string;
+  atual: number | null;
+}
 
 type SortKey =
   | "data"
@@ -17,6 +25,9 @@ type SortKey =
 export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
   const [sortBy, setSortBy] = useState<SortKey>("data");
   const [asc, setAsc] = useState(false);
+  const [umidadeModal, setUmidadeModal] = useState<UmidadeModalDados | null>(
+    null
+  );
 
   const sorted = [...cargas].sort((a, b) => {
     const dir = asc ? 1 : -1;
@@ -150,8 +161,9 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                     : "—"}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono text-cinza-suave">
-                  {c.descarga
-                    ? `${c.descarga.peso_tara_kg.toLocaleString("pt-BR")} kg`
+                  {/* Antes da descarga, mostra a tara do CADASTRO do caminhão */}
+                  {(c.descarga?.peso_tara_kg ?? c.caminhao_tara_kg) > 0
+                    ? `${(c.descarga?.peso_tara_kg ?? c.caminhao_tara_kg).toLocaleString("pt-BR")} kg`
                     : "—"}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono font-semibold">
@@ -165,10 +177,33 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                     : "—"}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono">
-                  {c.descarga?.umidade_pct !== null &&
-                  c.descarga?.umidade_pct !== undefined
-                    ? `${c.descarga.umidade_pct}%`
-                    : "—"}
+                  {c.descarga ? (
+                    <button
+                      onClick={() =>
+                        setUmidadeModal({
+                          descargaId: c.descarga!.id,
+                          motorista: c.motorista_nome,
+                          data: formatDataHora(c.descarga!.criado_em),
+                          atual: c.descarga!.umidade_pct,
+                        })
+                      }
+                      className="hover:underline"
+                      title="Clique pra lançar/editar a umidade"
+                    >
+                      {c.descarga.umidade_pct !== null &&
+                      c.descarga.umidade_pct !== undefined ? (
+                        <span className="text-green-700">
+                          {c.descarga.umidade_pct}%
+                        </span>
+                      ) : (
+                        <span className="text-verde font-sans text-xs font-semibold">
+                          lançar
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono">
                   R$ {c.total_valor_coletas.toLocaleString("pt-BR")}
@@ -196,6 +231,119 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
           })}
         </tbody>
       </table>
+      {umidadeModal && (
+        <ModalUmidade
+          dados={umidadeModal}
+          onClose={() => setUmidadeModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Modal DO APP pra lançar/editar umidade — nada de prompt() do navegador.
+ * (Futuro: vira uma tela dedicada com mais contexto da descarga.)
+ */
+function ModalUmidade({
+  dados,
+  onClose,
+}: {
+  dados: UmidadeModalDados;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [texto, setTexto] = useState(
+    dados.atual !== null ? String(dados.atual).replace(".", ",") : ""
+  );
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function salvar(valor: number | null) {
+    if (valor !== null && (!Number.isFinite(valor) || valor < 0 || valor > 100)) {
+      setErro("Umidade deve ser um número entre 0 e 100");
+      return;
+    }
+    setErro(null);
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/admin/descargas/${dados.descargaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ umidade_pct: valor }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErro(data.error || "erro");
+        return;
+      }
+      router.refresh();
+      onClose();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
+        <h2 className="text-lg font-bold">Umidade da descarga</h2>
+        <p className="text-sm text-cinza-suave">
+          {dados.motorista} · {dados.data}
+        </p>
+        <div>
+          <label className="block text-sm font-medium mb-1">Umidade (%)</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            className="w-full px-3 py-2 border border-cinza-borda rounded-xl text-lg"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder="ex: 12,5"
+            autoFocus
+          />
+        </div>
+        {erro && (
+          <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+            {erro}
+          </div>
+        )}
+        <div className="flex gap-2 justify-between items-center">
+          {dados.atual !== null ? (
+            <button
+              onClick={() => salvar(null)}
+              disabled={salvando}
+              className="text-sm text-alerta hover:underline"
+            >
+              Apagar umidade
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-cinza-borda"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                const n = Number(texto.trim().replace(",", "."));
+                if (texto.trim() === "") {
+                  setErro("Digite a umidade — ou use 'Apagar umidade'");
+                  return;
+                }
+                salvar(n);
+              }}
+              disabled={salvando}
+              className="px-5 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
+            >
+              {salvando ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

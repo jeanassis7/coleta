@@ -12,8 +12,9 @@ export default async function CargasPage() {
     <div>
       <h1 className="text-2xl font-bold mb-4">Cargas</h1>
       <p className="text-sm text-cinza-suave mb-6">
-        Todas as cargas dos motoristas (ativas, encerradas e canceladas). Motoristas
-        de teste ficam invisíveis por padrão. Clique nas colunas pra ordenar.
+        Todas as cargas dos motoristas (ativas, encerradas e canceladas).
+        Motoristas de teste aparecem só pra você (dev), marcados com 🧪 — o
+        admin não vê. Clique nas colunas pra ordenar.
       </p>
       <TabelaCargas cargas={cargas} />
     </div>

@@ -152,7 +152,7 @@ export default function DespesaPage() {
             className="input-grande"
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
-            placeholder="ex: almoço Foz"
+            placeholder=""
             required
           />
         </div>

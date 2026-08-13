@@ -22,6 +22,9 @@ interface AdiantamentoPendente {
 export function AdiantamentoBlocking({ motoristaId }: { motoristaId: string }) {
   const [pendente, setPendente] = useState<AdiantamentoPendente | null>(null);
   const [confirmando, setConfirmando] = useState(false);
+  // Confirmação em DUAS ETAPAS dentro do próprio app — nada de confirm()
+  // do navegador (regra do Evaner: todo popup é do app).
+  const [etapa, setEtapa] = useState<"pergunta" | "confirmacao">("pergunta");
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,13 +44,6 @@ export function AdiantamentoBlocking({ motoristaId }: { motoristaId: string }) {
 
   async function aceitar() {
     if (!pendente) return;
-    if (
-      !confirm(
-        `Tem certeza que já recebeu ${formatBRL(pendente.valor)}? Isso não tem volta.`
-      )
-    ) {
-      return;
-    }
     setErro(null);
     setConfirmando(true);
     try {
@@ -82,6 +78,8 @@ export function AdiantamentoBlocking({ motoristaId }: { motoristaId: string }) {
         forma_pagamento: pendente.forma_pagamento,
       });
       setPendente(null);
+      // Avisa o CardSaldo pra recarregar na hora (sem F5 manual)
+      window.dispatchEvent(new Event("coleta-saldo-mudou"));
     } finally {
       setConfirmando(false);
     }
@@ -140,30 +138,59 @@ export function AdiantamentoBlocking({ motoristaId }: { motoristaId: string }) {
         </div>
 
         <div className="border-t border-cinza-borda pt-4">
-          <p className="text-center text-lg font-medium mb-4">
-            Você já recebeu esse dinheiro?
-          </p>
           {erro && (
             <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 mb-3 text-center text-sm">
               {erro}
             </div>
           )}
-          <div className="space-y-2">
-            <button
-              onClick={aceitar}
-              disabled={confirmando}
-              className="w-full bg-verde text-white rounded-2xl p-4 text-lg font-bold shadow active:bg-verde-escuro disabled:opacity-50"
-            >
-              {confirmando ? "Confirmando..." : "✓ JÁ RECEBI"}
-            </button>
-            <button
-              onClick={pular}
-              disabled={confirmando}
-              className="w-full bg-slate-100 text-slate-700 rounded-2xl p-4 text-lg font-medium border border-cinza-borda disabled:opacity-50"
-            >
-              ⏸ AINDA NÃO RECEBI
-            </button>
-          </div>
+          {etapa === "pergunta" ? (
+            <>
+              <p className="text-center text-lg font-medium mb-4">
+                Você já recebeu esse dinheiro?
+              </p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => setEtapa("confirmacao")}
+                  disabled={confirmando}
+                  className="w-full bg-verde text-white rounded-2xl p-4 text-lg font-bold shadow active:bg-verde-escuro disabled:opacity-50"
+                >
+                  ✓ JÁ RECEBI
+                </button>
+                <button
+                  onClick={pular}
+                  disabled={confirmando}
+                  className="w-full bg-slate-100 text-slate-700 rounded-2xl p-4 text-lg font-medium border border-cinza-borda disabled:opacity-50"
+                >
+                  ⏸ AINDA NÃO RECEBI
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-center text-lg font-medium mb-4">
+                Tem certeza que já recebeu {formatBRL(pendente.valor)}?
+                <span className="block text-base text-cinza-suave mt-1">
+                  Isso não tem volta.
+                </span>
+              </p>
+              <div className="space-y-2">
+                <button
+                  onClick={aceitar}
+                  disabled={confirmando}
+                  className="w-full bg-verde text-white rounded-2xl p-4 text-lg font-bold shadow active:bg-verde-escuro disabled:opacity-50"
+                >
+                  {confirmando ? "Confirmando..." : "✓ SIM, TENHO CERTEZA"}
+                </button>
+                <button
+                  onClick={() => setEtapa("pergunta")}
+                  disabled={confirmando}
+                  className="w-full bg-slate-100 text-slate-700 rounded-2xl p-4 text-lg font-medium border border-cinza-borda disabled:opacity-50"
+                >
+                  ← VOLTAR
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

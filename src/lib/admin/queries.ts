@@ -237,6 +237,8 @@ export interface CargaDetalhada {
   caminhao_marca: string;
   caminhao_cor: string;
   capacidade_l: number;
+  /** Tara do CADASTRO do caminhão — mostrada em cargas ainda sem descarga */
+  caminhao_tara_kg: number;
   km_inicial: number;
   km_final: number | null;
   status: "ativa" | "encerrada" | "cancelada";
@@ -250,6 +252,7 @@ export interface CargaDetalhada {
   total_abastecimentos: number;
   total_valor_abastecimentos: number;
   descarga: {
+    id: string;
     peso_bruto_kg: number;
     peso_tara_kg: number;
     peso_liquido_kg: number;
@@ -273,11 +276,11 @@ export async function buscarCargas(
       `id, motorista_id, caminhao_id, km_inicial, km_final, status,
        iniciada_em, encerrada_em,
        profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
-       caminhoes(placa, marca, cor, capacidade_l),
+       caminhoes(placa, marca, cor, capacidade_l, tara_kg),
        coletas(id, litros, valor_pago),
        despesas(id, valor),
        abastecimentos(id, valor),
-       descargas(peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
+       descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
     )
     .order("iniciada_em", { ascending: false });
 
@@ -298,12 +301,13 @@ export async function buscarCargas(
     iniciada_em: string;
     encerrada_em: string | null;
     profiles: { nome: string; is_teste: boolean } | null;
-    caminhoes: { placa: string; marca: string; cor: string; capacidade_l: number } | null;
+    caminhoes: { placa: string; marca: string; cor: string; capacidade_l: number; tara_kg: number } | null;
     coletas: { id: string; litros: number; valor_pago: number }[] | null;
     despesas: { id: string; valor: number }[] | null;
     abastecimentos: { id: string; valor: number }[] | null;
     descargas:
       | {
+          id: string;
           peso_bruto_kg: number;
           peso_tara_kg: number;
           peso_liquido_kg: number;
@@ -332,6 +336,7 @@ export async function buscarCargas(
       caminhao_marca: r.caminhoes?.marca || "",
       caminhao_cor: r.caminhoes?.cor || "",
       capacidade_l: r.caminhoes?.capacidade_l || 0,
+      caminhao_tara_kg: r.caminhoes?.tara_kg || 0,
       km_inicial: r.km_inicial,
       km_final: r.km_final,
       status: r.status,
@@ -349,76 +354,8 @@ export async function buscarCargas(
   });
 }
 
-export interface DescargaDetalhada {
-  id: string;
-  carga_id: string;
-  motorista_nome: string;
-  motorista_is_teste: boolean;
-  caminhao_placa: string;
-  peso_bruto_kg: number;
-  peso_tara_kg: number;
-  peso_liquido_kg: number;
-  litros_estimados: number | null;
-  umidade_pct: number | null;
-  foto_papel_path: string | null;
-  criado_em: string;
-}
-
-export async function buscarDescargas(
-  opts: { incluirTeste?: boolean; pendenteUmidade?: boolean } = {}
-): Promise<DescargaDetalhada[]> {
-  const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("descargas")
-    .select(
-      `id, carga_id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg,
-       litros_estimados, umidade_pct, foto_papel_path, criado_em,
-       cargas!inner(
-         motorista_id,
-         profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
-         caminhoes(placa)
-       )`
-    )
-    .order("criado_em", { ascending: false });
-
-  if (!opts.incluirTeste) q = q.eq("cargas.profiles.is_teste", false);
-  if (opts.pendenteUmidade) q = q.is("umidade_pct", null);
-
-  const { data, error } = await q;
-  if (error) throw error;
-
-  type Row = {
-    id: string;
-    carga_id: string;
-    peso_bruto_kg: number;
-    peso_tara_kg: number;
-    peso_liquido_kg: number;
-    litros_estimados: number | null;
-    umidade_pct: number | null;
-    foto_papel_path: string | null;
-    criado_em: string;
-    cargas: {
-      motorista_id: string;
-      profiles: { nome: string; is_teste: boolean } | null;
-      caminhoes: { placa: string } | null;
-    } | null;
-  };
-  const rows = (data as unknown as Row[]) || [];
-  return rows.map((r) => ({
-    id: r.id,
-    carga_id: r.carga_id,
-    motorista_nome: r.cargas?.profiles?.nome || "—",
-    motorista_is_teste: !!r.cargas?.profiles?.is_teste,
-    caminhao_placa: r.cargas?.caminhoes?.placa || "—",
-    peso_bruto_kg: r.peso_bruto_kg,
-    peso_tara_kg: r.peso_tara_kg,
-    peso_liquido_kg: r.peso_liquido_kg,
-    litros_estimados: r.litros_estimados,
-    umidade_pct: r.umidade_pct,
-    foto_papel_path: r.foto_papel_path,
-    criado_em: r.criado_em,
-  }));
-}
+// (A antiga aba /admin/descarregamentos foi fundida na tabela de Cargas —
+//  a umidade é lançada direto na coluna Umid. Decisão do Evaner: um menu só.)
 
 // ============================================================================
 // ADIANTAMENTOS

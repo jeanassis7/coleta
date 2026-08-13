@@ -47,6 +47,9 @@ export default function IniciarCargaPage() {
   const [caminhaoId, setCaminhaoId] = useState<string>("");
   const [kmInicial, setKmInicial] = useState<string>("");
   const [fotoPainel, setFotoPainel] = useState<Blob | null>(null);
+  // Tela de boas-vindas antes do formulário (pedido do Evaner)
+  const [formAberto, setFormAberto] = useState(false);
+  const [nomeMotorista, setNomeMotorista] = useState("");
 
   const preparar = useCallback(
     async (id: string) => {
@@ -105,6 +108,7 @@ export default function IniciarCargaPage() {
       return;
     }
     setMotoristaId(id);
+    setNomeMotorista(sessionStorage.getItem("coleta_motorista_nome") || "");
     preparar(id);
 
     // Se o sinal voltar enquanto ele olha a tela de offline, tenta de novo
@@ -266,6 +270,26 @@ export default function IniciarCargaPage() {
         <p className="text-cinza-suave">
           Nenhum caminhão foi cadastrado ainda. Fala com o Jean.
         </p>
+      </main>
+    );
+  }
+
+  if (!formAberto) {
+    return (
+      <main className="min-h-screen p-4 max-w-md mx-auto flex flex-col justify-center">
+        <div className="text-center space-y-6">
+          <div className="text-6xl">🚚</div>
+          <h1 className="text-3xl font-bold">
+            Seja bem-vindo{nomeMotorista ? `, ${nomeMotorista}` : ""}!
+          </h1>
+          <p className="text-xl text-cinza-suave">Bom trabalho!</p>
+          <button
+            onClick={() => setFormAberto(true)}
+            className="btn-primario text-2xl"
+          >
+            🚀 INICIAR NOVA CARGA
+          </button>
+        </div>
       </main>
     );
   }

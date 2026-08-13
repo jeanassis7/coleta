@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { formatBRL, formatDataHora } from "@/lib/format";
 
@@ -20,8 +20,7 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
   const [dados, setDados] = useState<Dados | null>(null);
   const [aberto, setAberto] = useState(false);
 
-  useEffect(() => {
-    (async () => {
+  const carregar = useCallback(async () => {
       const supabase = getSupabaseBrowser();
       try {
         // Último acerto pra saber corte
@@ -102,8 +101,16 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
       } catch {
         // silencioso — card só aparece se conseguir dados
       }
-    })();
   }, [motoristaId]);
+
+  useEffect(() => {
+    carregar();
+    // Recarrega na hora quando um adiantamento é aceito (evento do app,
+    // disparado pelo AdiantamentoBlocking) — sem precisar de F5.
+    const onMudou = () => carregar();
+    window.addEventListener("coleta-saldo-mudou", onMudou);
+    return () => window.removeEventListener("coleta-saldo-mudou", onMudou);
+  }, [carregar]);
 
   if (!dados) return null;
 

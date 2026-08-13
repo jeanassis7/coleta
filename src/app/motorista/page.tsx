@@ -13,6 +13,7 @@ import { EventLogger } from "@/components/motorista/EventLogger";
 import { BarraCaminhao } from "@/components/motorista/BarraCaminhao";
 import { AdiantamentoBlocking } from "@/components/motorista/AdiantamentoBlocking";
 import { CardSaldo } from "@/components/motorista/CardSaldo";
+import { CancelarCarga } from "@/components/motorista/CancelarCarga";
 import {
   fetchCargaAtiva,
   getCargaAtivaCached,
@@ -224,7 +225,7 @@ export default function MotoristaHomePage() {
         </div>
       </Link>
 
-      {usaFluxoCarga && temCarga && (
+      {usaFluxoCarga && temCarga && carga && (
         <>
           <Link href="/motorista/descarregar" className="block mb-4">
             <div className="bg-red-500 rounded-3xl p-8 text-center shadow-lg active:bg-red-600 transition-colors">
@@ -233,11 +234,26 @@ export default function MotoristaHomePage() {
             </div>
           </Link>
 
-          <Link href="/motorista/menu-carga" className="block mb-4">
-            <div className="bg-slate-100 rounded-3xl p-6 text-center border-2 border-slate-200 active:bg-slate-200 transition-colors">
-              <p className="text-slate-800 text-xl font-bold">≡ MENU CARGA</p>
-            </div>
-          </Link>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <Link href="/motorista/abastecimento" className="block">
+              <div className="bg-slate-800 rounded-2xl p-5 text-center shadow active:bg-slate-900 transition-colors h-full">
+                <div className="text-3xl mb-1">⛽</div>
+                <p className="text-white text-base font-bold">ABASTECIMENTO</p>
+              </div>
+            </Link>
+            <Link href="/motorista/despesa" className="block">
+              <div className="bg-slate-800 rounded-2xl p-5 text-center shadow active:bg-slate-900 transition-colors h-full">
+                <div className="text-3xl mb-1">💵</div>
+                <p className="text-white text-base font-bold">DESPESAS</p>
+              </div>
+            </Link>
+          </div>
+
+          <CancelarCarga
+            carga={carga}
+            motoristaId={perfil.id}
+            onCancelada={() => setCarga(null)}
+          />
         </>
       )}
 

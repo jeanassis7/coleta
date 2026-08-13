@@ -10,18 +10,40 @@ import {
 } from "@/lib/sync/queue";
 
 let inFlight = false;
+let rerunPedido = false;
+
+/** Evento que a UI escuta pra atualizar o contador de pendentes. */
+export const EVENTO_SYNC_FINALIZADO = "coleta-sync-finalizado";
+
+async function umaRodada(): Promise<SyncResult> {
+  await limparGpsPendenteStale();
+  const result = await runSync();
+  // Depois do sync, limpa lançamentos antigos que já subiram (>24h)
+  await limparColetasSincronizadasAntigas();
+  return result;
+}
 
 async function safeSync(): Promise<SyncResult> {
-  if (inFlight) return { total: 0, enviadas: 0, falhas: 0 };
+  if (inFlight) {
+    // Já tem sync rodando. Um lançamento recém-salvo pode ter entrado na
+    // fila DEPOIS do sync em curso começar — sem isso ele ficava "1
+    // pendente" esperando o próximo gatilho (bug real de campo).
+    rerunPedido = true;
+    return { total: 0, enviadas: 0, falhas: 0 };
+  }
   inFlight = true;
   try {
-    await limparGpsPendenteStale();
-    const result = await runSync();
-    // Depois do sync, limpa coletas antigas que já subiram (>24h)
-    await limparColetasSincronizadasAntigas();
+    let result = await umaRodada();
+    while (rerunPedido) {
+      rerunPedido = false;
+      result = await umaRodada();
+    }
     return result;
   } finally {
     inFlight = false;
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(EVENTO_SYNC_FINALIZADO));
+    }
   }
 }
 
@@ -69,15 +91,23 @@ export function useSyncTriggers() {
       }
     };
 
+    // Sempre que QUALQUER ciclo de sync termina (inclusive o disparado em
+    // background após salvar), atualiza o contador de pendentes na tela.
+    const onSyncFinalizado = () => {
+      if (mounted) refreshCount();
+    };
+
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener(EVENTO_SYNC_FINALIZADO, onSyncFinalizado);
 
     return () => {
       mounted = false;
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener(EVENTO_SYNC_FINALIZADO, onSyncFinalizado);
     };
   }, [refreshCount]);
 

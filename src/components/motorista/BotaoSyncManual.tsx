@@ -95,7 +95,8 @@ export function BotaoSyncManual({ pendentes, online, onSyncDone, motoristaId }: 
         {carregando ? "Enviando..." : `📤 Enviar agora`}
       </button>
       <p className="text-center text-base text-cinza-suave">
-        {pendentes} {pendentes === 1 ? "coleta pendente" : "coletas pendentes"}
+        {pendentes}{" "}
+        {pendentes === 1 ? "lançamento pendente" : "lançamentos pendentes"}
       </p>
       {feedback && (
         <div
