@@ -57,7 +57,12 @@ export async function middleware(request: NextRequest) {
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!profile || profile.role !== "admin" || !profile.ativo) {
+    // Dev tem tudo que admin tem + gates dev-only (features em teste).
+    // Regra: role in ('admin','dev') passa. Motorista ou role desconhecida
+    // é sinal de tentativa de acesso indevido — apaga sessão e volta pro login.
+    const rolePermitida =
+      profile?.role === "admin" || profile?.role === "dev";
+    if (!profile || !rolePermitida || !profile.ativo) {
       await supabase.auth.signOut();
       return NextResponse.redirect(new URL("/admin/login?erro=acesso", request.url));
     }

@@ -94,7 +94,11 @@ export default function MotoristaLoginPage() {
       return;
     }
 
-    if (profile.role === "admin") {
+    // Admin ou dev logando pelo motorista/login vai direto pro admin.
+    // (Fluxo esperado: dev pode logar aqui com um motorista de teste
+    //  pra testar; se logar com credencial dev própria, é engano — manda
+    //  pro painel dele.)
+    if (profile.role === "admin" || profile.role === "dev") {
       router.push("/admin");
       return;
     }
