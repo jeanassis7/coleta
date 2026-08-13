@@ -172,7 +172,12 @@ export default function MotoristaHomePage() {
         <MenuLogout nome={perfil.nome} motoristaId={perfil.id} />
       </header>
 
-      <AdiantamentoBlocking motoristaId={perfil.id} />
+      {/* Tela de aceite de adiantamento — só pra quem tem a feature "saldo"
+          ligada. Protege motorista real de ver tela estranha se alguém enviar
+          adiantamento por engano antes da feature ser promovida. */}
+      {!!perfil.features?.saldo && (
+        <AdiantamentoBlocking motoristaId={perfil.id} />
+      )}
 
       <InstallPrompt />
 

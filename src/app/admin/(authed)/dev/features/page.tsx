@@ -12,9 +12,9 @@ const FEATURES_DISPONIVEIS = [
   },
   {
     key: "saldo",
-    label: "Mostra saldo no app",
+    label: "Adiantamentos no app (aceite + card de saldo)",
     descricao:
-      "Se ON, motorista vê o card 'Dinheiro na mão' na home dele. Se OFF, saldo fica invisível pra ele (só Jean vê).",
+      "Se ON, motorista vê a tela de aceite quando recebe adiantamento E o card 'Seu dinheiro' na home. Se OFF, nada disso aparece pra ele (adiantamentos pendentes ficam invisíveis até ligar).",
   },
 ];
 

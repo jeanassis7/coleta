@@ -60,9 +60,18 @@ export async function PATCH(
 
   const features = { ...(atual.features || {}), [feature]: valor };
 
+  const updates: Record<string, unknown> = { features };
+  // A feature "saldo" controla a experiência de adiantamento inteira do
+  // motorista: a tela de aceite (gated por features.saldo) E o card
+  // "Seu dinheiro" (gated por mostra_saldo_app). O toggle do painel dev
+  // liga/desliga os dois juntos pra não ter estado pela metade.
+  if (feature === "saldo") {
+    updates.mostra_saldo_app = valor;
+  }
+
   const { error: errWrite } = await adminClient
     .from("profiles")
-    .update({ features })
+    .update(updates)
     .eq("id", id);
   if (errWrite) return NextResponse.json({ error: errWrite.message }, { status: 400 });
 

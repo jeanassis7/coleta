@@ -1,9 +1,11 @@
 import { buscarMotoristas, buscarMotoristasComSaldo } from "@/lib/admin/queries";
 import { AdiantamentosPanel } from "@/components/admin/AdiantamentosPanel";
+import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdiantamentosPage() {
+  await exigirAcessoModulo1OuRedirect();
   const [saldos, motoristas] = await Promise.all([
     buscarMotoristasComSaldo(),
     buscarMotoristas(),

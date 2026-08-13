@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { podeAcessarAdmin } from "@/lib/auth/roles";
+import { exigirAcessoModulo1 } from "@/lib/auth/gate-modulo1";
 
-async function exigirAdmin() {
-  const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase
-    .from("profiles").select("role, ativo").eq("id", user.id).maybeSingle();
-  if (!profile || !profile.ativo || !podeAcessarAdmin(profile)) return null;
-  return user;
-}
+// Módulo 1 — Estágio 1: dev-only. Promoção pro Jean é um flip em gate-modulo1.ts.
+const exigirAdmin = exigirAcessoModulo1;
 
 interface RouteParams {
   params: Promise<{ id: string }>;

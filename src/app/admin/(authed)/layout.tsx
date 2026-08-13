@@ -3,6 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/admin/LogoutButton";
 import { podeAcessarAdmin, isDev } from "@/lib/auth/roles";
+import { MODULO1_LIBERADO_PARA_ADMIN } from "@/lib/auth/gate-modulo1";
 
 export default async function AdminLayout({
   children,
@@ -41,10 +42,15 @@ export default async function AdminLayout({
             </Link>
             <nav className="hidden md:flex gap-3 text-base flex-wrap">
               <Link href="/admin" className="hover:text-verde">Dashboard</Link>
-              <Link href="/admin/cargas" className="hover:text-verde">Cargas</Link>
-              <Link href="/admin/descarregamentos" className="hover:text-verde">Descargas</Link>
-              <Link href="/admin/adiantamentos" className="hover:text-verde">Adiantamentos</Link>
-              <Link href="/admin/caminhoes" className="hover:text-verde">Caminhões</Link>
+              {/* Módulo 1 — Estágio 1 (dev-only). Promoção pro Jean: flip em gate-modulo1.ts */}
+              {(dev || MODULO1_LIBERADO_PARA_ADMIN) && (
+                <>
+                  <Link href="/admin/cargas" className="hover:text-verde">Cargas</Link>
+                  <Link href="/admin/descarregamentos" className="hover:text-verde">Descargas</Link>
+                  <Link href="/admin/adiantamentos" className="hover:text-verde">Adiantamentos</Link>
+                  <Link href="/admin/caminhoes" className="hover:text-verde">Caminhões</Link>
+                </>
+              )}
               <Link href="/admin/mapa" className="hover:text-verde">Mapa</Link>
               <Link href="/admin/observacoes" className="hover:text-verde">Observações</Link>
               <Link href="/admin/curadoria" className="hover:text-verde">Curadoria</Link>

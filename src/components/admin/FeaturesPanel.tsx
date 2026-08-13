@@ -50,26 +50,6 @@ export function FeaturesPanel({
     }
   }
 
-  async function toggleMostraSaldo(motoristaId: string, valorAtual: boolean) {
-    const key = `${motoristaId}:saldo`;
-    setLoadingKey(key);
-    try {
-      const res = await fetch(`/api/admin/motoristas/${motoristaId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mostra_saldo_app: !valorAtual }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert("Erro: " + err.error);
-      } else {
-        router.refresh();
-      }
-    } finally {
-      setLoadingKey(null);
-    }
-  }
-
   return (
     <div className="space-y-6">
       {motoristas.map((m) => (
@@ -83,22 +63,8 @@ export function FeaturesPanel({
 
           <div className="space-y-3">
             {featuresDisponiveis.map((f) => {
-              // "saldo" é campo separado no schema (profiles.mostra_saldo_app),
-              // não vive dentro de profiles.features
-              if (f.key === "saldo") {
-                const ligado = !!m.mostra_saldo_app;
-                const loading = loadingKey === `${m.id}:saldo`;
-                return (
-                  <FeatureRow
-                    key={f.key}
-                    def={f}
-                    ligado={ligado}
-                    loading={loading}
-                    onToggle={() => toggleMostraSaldo(m.id, ligado)}
-                  />
-                );
-              }
-
+              // Todos os toggles vivem em profiles.features (jsonb).
+              // O servidor sincroniza mostra_saldo_app quando feature === "saldo".
               const ligado = !!(m.features?.[f.key]);
               const loading = loadingKey === `${m.id}:${f.key}`;
               return (
