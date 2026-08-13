@@ -9,6 +9,7 @@ import {
   reaisParaCentavos,
 } from "@/components/InputDinheiro";
 import type { MotoristaComSaldo } from "@/lib/admin/queries";
+import { ModalConfirmar } from "./Modais";
 
 interface Motorista {
   id: string;
@@ -26,6 +27,8 @@ export function AdiantamentosPanel({
   const [modal, setModal] = useState<"novo" | "acerto" | null>(null);
   const [motoristaSelId, setMotoristaSelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [modalCancelar, setModalCancelar] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   function abrirNovo(motoristaId: string) {
     setMotoristaSelId(motoristaId);
@@ -37,7 +40,6 @@ export function AdiantamentosPanel({
   }
 
   async function cancelarPendente(id: string) {
-    if (!confirm("Cancelar esse adiantamento pendente?")) return;
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/adiantamentos/${id}`, {
@@ -45,12 +47,14 @@ export function AdiantamentosPanel({
       });
       const data = await res.json();
       if (!res.ok) {
-        alert("Erro: " + data.error);
+        setAviso("Erro: " + data.error);
+        setTimeout(() => setAviso(null), 8000);
       } else {
         router.refresh();
       }
     } finally {
       setLoading(false);
+      setModalCancelar(null);
     }
   }
 
@@ -75,7 +79,13 @@ export function AdiantamentosPanel({
               return (
                 <tr key={s.id} className="border-b border-cinza-borda">
                   <td className="py-3 pr-3 font-medium">
-                    {s.nome}
+                    <a
+                      href={`/admin/adiantamentos/${s.id}`}
+                      className="hover:text-verde hover:underline"
+                      title="Ver histórico completo"
+                    >
+                      {s.nome}
+                    </a>
                     {s.is_teste && (
                       <span title="Motorista de teste — invisível pro admin">
                         {" "}🧪
@@ -114,7 +124,7 @@ export function AdiantamentosPanel({
                       </button>
                       {u?.status === "pendente" ? (
                         <button
-                          onClick={() => cancelarPendente(u.id)}
+                          onClick={() => setModalCancelar(u.id)}
                           className="text-alerta hover:underline"
                           disabled={loading}
                         >
@@ -137,6 +147,24 @@ export function AdiantamentosPanel({
           </tbody>
         </table>
       </div>
+
+      {aviso && (
+        <div className="mt-3 bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+          {aviso}
+        </div>
+      )}
+
+      {modalCancelar && (
+        <ModalConfirmar
+          titulo="Cancelar esse adiantamento pendente?"
+          descricao="O motorista não vai mais ver a tela de aceite. Se precisar, cria outro."
+          confirmarLabel="Cancelar adiantamento"
+          perigo
+          carregando={loading}
+          onConfirmar={() => cancelarPendente(modalCancelar)}
+          onFechar={() => setModalCancelar(null)}
+        />
+      )}
 
       {modal === "novo" && motoristaSelId && (
         <ModalNovoAdiantamento

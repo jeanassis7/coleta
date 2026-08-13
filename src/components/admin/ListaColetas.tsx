@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatDataHora, formatLitros } from "@/lib/format";
 import { DrawerDetalhe } from "@/components/admin/DrawerDetalhe";
+import { ModalInputTexto } from "@/components/admin/Modais";
 
 interface Coleta {
   id: string;
@@ -30,6 +31,8 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
   const [selecionada, setSelecionada] = useState<Coleta | null>(null);
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
   const [apagando, setApagando] = useState(false);
+  const [modalApagar, setModalApagar] = useState(false);
+  const [resultadoApagar, setResultadoApagar] = useState<string | null>(null);
 
   if (coletas.length === 0) {
     return (
@@ -56,13 +59,6 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
 
   async function apagarMarcadas() {
     if (marcadas.size === 0) return;
-    const confirma = prompt(
-      `Vai apagar ${marcadas.size} ${marcadas.size === 1 ? "coleta" : "coletas"} permanentemente (incluindo fotos). Digite APAGAR pra confirmar:`
-    );
-    if (confirma !== "APAGAR") {
-      if (confirma !== null) alert("Confirmação errada, cancelado.");
-      return;
-    }
     setApagando(true);
     try {
       const res = await fetch("/api/admin/coletas/bulk-delete", {
@@ -72,9 +68,9 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert("Erro: " + data.error);
+        setResultadoApagar("Erro: " + data.error);
       } else {
-        alert(
+        setResultadoApagar(
           `${data.apagadas} coleta(s) apagadas${data.fotos_apagadas > 0 ? ` (${data.fotos_apagadas} fotos)` : ""}.`
         );
         setMarcadas(new Set());
@@ -82,6 +78,8 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
       }
     } finally {
       setApagando(false);
+      setModalApagar(false);
+      setTimeout(() => setResultadoApagar(null), 8000);
     }
   }
 
@@ -106,7 +104,7 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
         </label>
         {marcadas.size > 0 && (
           <button
-            onClick={apagarMarcadas}
+            onClick={() => setModalApagar(true)}
             disabled={apagando}
             className="px-4 py-2 bg-alerta text-white rounded-xl font-medium text-sm hover:opacity-90 disabled:opacity-50"
           >
@@ -116,6 +114,28 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
           </button>
         )}
       </div>
+
+      {resultadoApagar && (
+        <div className="card mb-3 bg-slate-50 text-sm text-cinza-texto">
+          {resultadoApagar}
+        </div>
+      )}
+
+      {modalApagar && (
+        <ModalInputTexto
+          titulo={`Apagar ${marcadas.size} ${marcadas.size === 1 ? "coleta" : "coletas"}?`}
+          descricao="Apaga permanentemente, incluindo fotos. Digite APAGAR pra confirmar."
+          placeholder="APAGAR"
+          confirmarLabel="Apagar de vez"
+          perigo
+          carregando={apagando}
+          validar={(v) =>
+            v.trim() === "APAGAR" ? null : "Digite exatamente APAGAR pra confirmar"
+          }
+          onConfirmar={() => apagarMarcadas()}
+          onFechar={() => setModalApagar(false)}
+        />
+      )}
 
       <div className="space-y-2">
         {coletas.map((c) => {

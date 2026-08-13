@@ -46,6 +46,7 @@ export default async function AdminLayout({
               {(dev || MODULO1_LIBERADO_PARA_ADMIN) && (
                 <>
                   <Link href="/admin/cargas" className="hover:text-verde">Cargas</Link>
+                  <Link href="/admin/abastecimentos" className="hover:text-verde">Abastecimentos</Link>
                   <Link href="/admin/adiantamentos" className="hover:text-verde">Adiantamentos</Link>
                   <Link href="/admin/caminhoes" className="hover:text-verde">Caminhões</Link>
                 </>

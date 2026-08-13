@@ -28,6 +28,13 @@ export default function AbastecimentoPage() {
   const [litrosTexto, setLitrosTexto] = useState("");
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [kmTexto, setKmTexto] = useState("");
+  // Antiburro do km — erro duro e avisos de segundo toque, tudo no app
+  const [erroKm, setErroKm] = useState<string | null>(null);
+  const [avisoKm, setAvisoKm] = useState<
+    | { tipo: "menor_que_ultimo"; ultimoKm: number }
+    | { tipo: "salto_grande"; salto: number }
+    | null
+  >(null);
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
 
@@ -74,6 +81,15 @@ export default function AbastecimentoPage() {
     foto !== null &&
     !salvando;
 
+  // Salto entre abastecimentos acima disso pede confirmação extra
+  const SALTO_MAXIMO_KM = 1500;
+
+  function trocarKm(s: string) {
+    setKmTexto(s);
+    setErroKm(null);
+    setAvisoKm(null);
+  }
+
   async function salvar() {
     if (
       !podeSalvar ||
@@ -84,6 +100,39 @@ export default function AbastecimentoPage() {
       !foto
     )
       return;
+
+    const kmNum = Math.round(km);
+
+    // REGRA DURA: odômetro nunca volta — km menor que o início da carga
+    // é fisicamente impossível (provável dígito a menos).
+    if (kmNum < carga.km_inicial) {
+      setErroKm(
+        `Km menor que o km do início da carga (${carga.km_inicial.toLocaleString("pt-BR")}) — confere se lançou certo.`
+      );
+      return;
+    }
+    setErroKm(null);
+
+    // AVISOS de segundo toque (primeiro toque mostra, segundo confirma)
+    if (!avisoKm) {
+      const ultimoKmRaw = localStorage.getItem(
+        LAST_KM_KEY_PREFIX + carga.caminhao_id
+      );
+      const ultimoKm = ultimoKmRaw ? Number(ultimoKmRaw) : null;
+      if (ultimoKm !== null && Number.isFinite(ultimoKm) && kmNum < ultimoKm) {
+        setAvisoKm({ tipo: "menor_que_ultimo", ultimoKm });
+        return;
+      }
+      const referencia = Math.max(
+        carga.km_inicial,
+        ultimoKm !== null && Number.isFinite(ultimoKm) ? ultimoKm : 0
+      );
+      if (kmNum - referencia > SALTO_MAXIMO_KM) {
+        setAvisoKm({ tipo: "salto_grande", salto: kmNum - referencia });
+        return;
+      }
+    }
+
     setSalvando(true);
 
     const valor = centavosParaReais(valorCentavos);
@@ -200,7 +249,7 @@ export default function AbastecimentoPage() {
             inputMode="numeric"
             className="input-grande text-2xl"
             value={kmTexto}
-            onChange={(e) => setKmTexto(e.target.value)}
+            onChange={(e) => trocarKm(e.target.value)}
           />
         </div>
 
@@ -216,12 +265,44 @@ export default function AbastecimentoPage() {
           </div>
         )}
 
+        {erroKm && (
+          <div className="bg-alerta/10 border-2 border-alerta text-alerta rounded-2xl p-4 text-center text-lg font-medium">
+            {erroKm}
+          </div>
+        )}
+
+        {avisoKm?.tipo === "menor_que_ultimo" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Km menor que o último registro</p>
+            <p>
+              O último km registrado desse caminhão foi{" "}
+              {avisoKm.ultimoKm.toLocaleString("pt-BR")} — confere se lançou
+              certo. Se o número estiver certo mesmo, aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
+        {avisoKm?.tipo === "salto_grande" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Salto grande de km</p>
+            <p>
+              Esse caminhão andou {avisoKm.salto.toLocaleString("pt-BR")} km
+              desde o último registro? Confere se lançou certo. Se estiver certo
+              mesmo, aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
         <button
           onClick={salvar}
           disabled={!podeSalvar}
           className="btn-primario text-2xl"
         >
-          {salvando ? "Salvando..." : "✅ SALVAR ABASTECIMENTO"}
+          {salvando
+            ? "Salvando..."
+            : avisoKm
+              ? "⚠️ CONFIRMAR MESMO ASSIM"
+              : "✅ SALVAR ABASTECIMENTO"}
         </button>
       </div>
     </main>

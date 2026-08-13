@@ -4,55 +4,66 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Caminhao } from "@/lib/admin/queries";
 import { FormCaminhao } from "./FormCaminhao";
+import { ModalConfirmar, ModalInputTexto } from "./Modais";
 
 export function TabelaCaminhoes({ caminhoes }: { caminhoes: Caminhao[] }) {
   const router = useRouter();
   const [editando, setEditando] = useState<Caminhao | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [modalMotivo, setModalMotivo] = useState<Caminhao | null>(null);
+  const [modalDeletar, setModalDeletar] = useState<Caminhao | null>(null);
+  const [erroAcao, setErroAcao] = useState<string | null>(null);
 
-  async function toggleAtivo(c: Caminhao) {
-    const proximoAtivo = !c.ativo;
-    let motivo: string | null = null;
-    if (!proximoAtivo) {
-      motivo = prompt(
-        `Motivo pra desativar ${c.placa}:`,
-        "Ex: quebrou · vendeu em agosto de 2026"
-      );
-      if (motivo === null) return;
-    }
+  async function executarToggle(
+    c: Caminhao,
+    ativo: boolean,
+    motivo: string | null
+  ) {
     setLoadingId(c.id);
+    setErroAcao(null);
     try {
       const res = await fetch(`/api/admin/caminhoes/${c.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ativo: proximoAtivo, motivo_inativo: motivo }),
+        body: JSON.stringify({ ativo, motivo_inativo: motivo }),
       });
       if (!res.ok) {
         const err = await res.json();
-        alert("Erro: " + err.error);
+        setErroAcao("Erro: " + err.error);
       } else {
         router.refresh();
       }
     } finally {
       setLoadingId(null);
+      setModalMotivo(null);
     }
   }
 
-  async function deletar(c: Caminhao) {
-    if (!confirm(`Deletar caminhão ${c.placa}?`)) return;
+  function toggleAtivo(c: Caminhao) {
+    if (c.ativo) {
+      // Desativar exige motivo — modal do app
+      setModalMotivo(c);
+    } else {
+      executarToggle(c, true, null);
+    }
+  }
+
+  async function executarDeletar(c: Caminhao) {
     setLoadingId(c.id);
+    setErroAcao(null);
     try {
       const res = await fetch(`/api/admin/caminhoes/${c.id}`, {
         method: "DELETE",
       });
       const data = await res.json();
       if (!res.ok) {
-        alert("Erro: " + data.error);
+        setErroAcao("Erro: " + data.error);
       } else {
         router.refresh();
       }
     } finally {
       setLoadingId(null);
+      setModalDeletar(null);
     }
   }
 
@@ -130,7 +141,7 @@ export function TabelaCaminhoes({ caminhoes }: { caminhoes: Caminhao[] }) {
                       Editar
                     </button>
                     <button
-                      onClick={() => deletar(c)}
+                      onClick={() => setModalDeletar(c)}
                       disabled={loadingId === c.id}
                       className="text-alerta hover:underline text-left"
                     >
@@ -142,6 +153,38 @@ export function TabelaCaminhoes({ caminhoes }: { caminhoes: Caminhao[] }) {
             ))}
           </tbody>
         </table>
+      )}
+
+      {erroAcao && (
+        <div className="mt-3 bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+          {erroAcao}
+        </div>
+      )}
+
+      {modalMotivo && (
+        <ModalInputTexto
+          titulo={`Desativar ${modalMotivo.placa}`}
+          descricao="Qual o motivo? Fica registrado no cadastro."
+          placeholder="Ex: quebrou · vendeu em agosto de 2026"
+          confirmarLabel="Desativar"
+          perigo
+          carregando={loadingId === modalMotivo.id}
+          validar={(v) => (v.trim().length >= 3 ? null : "Escreve o motivo")}
+          onConfirmar={(motivo) => executarToggle(modalMotivo, false, motivo.trim())}
+          onFechar={() => setModalMotivo(null)}
+        />
+      )}
+
+      {modalDeletar && (
+        <ModalConfirmar
+          titulo={`Deletar caminhão ${modalDeletar.placa}?`}
+          descricao="Só é possível se ele nunca teve carga. Se já rodou, desative em vez de deletar."
+          confirmarLabel="Deletar"
+          perigo
+          carregando={loadingId === modalDeletar.id}
+          onConfirmar={() => executarDeletar(modalDeletar)}
+          onFechar={() => setModalDeletar(null)}
+        />
       )}
     </div>
   );

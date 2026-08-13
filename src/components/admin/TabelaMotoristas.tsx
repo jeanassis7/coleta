@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatData } from "@/lib/format";
+import { ModalConfirmar, ModalInputTexto } from "./Modais";
 
 interface Motorista {
   id: string;
@@ -22,6 +23,15 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
   const [senhasVisiveis, setSenhasVisiveis] = useState<Set<string>>(new Set());
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [nomeEdit, setNomeEdit] = useState("");
+  const [modalSenha, setModalSenha] = useState<{ id: string; nome: string } | null>(null);
+  const [modalDeletar, setModalDeletar] = useState<{ id: string; nome: string } | null>(null);
+  const [modalForcar, setModalForcar] = useState<{ id: string; nome: string; coletas: number } | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  function mostrarAviso(msg: string) {
+    setAviso(msg);
+    setTimeout(() => setAviso(null), 8000);
+  }
 
   function iniciarEdicao(id: string, nomeAtual: string) {
     setEditandoId(id);
@@ -31,7 +41,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
   async function salvarNome(id: string) {
     const novo = nomeEdit.trim();
     if (!novo) {
-      alert("O nome não pode ficar vazio.");
+      mostrarAviso("O nome não pode ficar vazio.");
       return;
     }
     await atualizar(id, { nome: novo });
@@ -48,7 +58,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert("Erro: " + err.error);
+        mostrarAviso("Erro: " + err.error);
       } else {
         router.refresh();
       }
@@ -57,13 +67,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
     }
   }
 
-  async function resetSenha(id: string, nome: string) {
-    const senha = prompt(`Nova senha para ${nome}:`);
-    if (!senha) return;
-    if (senha.length < 6) {
-      alert("Senha precisa ter ao menos 6 caracteres");
-      return;
-    }
+  async function executarResetSenha(id: string, senha: string) {
     setLoadingId(id);
     try {
       const res = await fetch(`/api/admin/motoristas/${id}`, {
@@ -73,54 +77,48 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert("Erro: " + data.error);
+        mostrarAviso("Erro: " + data.error);
       } else {
         router.refresh();
       }
     } finally {
       setLoadingId(null);
+      setModalSenha(null);
     }
   }
 
-  async function deletar(id: string, nome: string) {
-    const confirmacao = prompt(
-      `Pra deletar ${nome}, digita o nome exato:`
-    );
-    if (confirmacao !== nome) {
-      if (confirmacao !== null) alert("Nome não bateu, operação cancelada.");
-      return;
-    }
-
+  async function executarDeletar(id: string, nome: string, forcado: boolean) {
     setLoadingId(id);
     try {
-      let res = await fetch(`/api/admin/motoristas/${id}`, {
-        method: "DELETE",
-      });
-      let data = await res.json();
+      const res = await fetch(
+        `/api/admin/motoristas/${id}${forcado ? "?forcado=1" : ""}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
 
       if (res.status === 409 && data.error === "tem_coletas") {
-        const forcar = confirm(
-          `${nome} tem ${data.coletas} coleta(s). Deletar mesmo assim apaga TODAS as coletas e fotos dele permanentemente. Continuar?`
-        );
-        if (!forcar) return;
-
-        res = await fetch(`/api/admin/motoristas/${id}?forcado=1`, {
-          method: "DELETE",
-        });
-        data = await res.json();
+        // Tem coletas — pede a segunda confirmação (modal do app)
+        setModalForcar({ id, nome, coletas: data.coletas });
+        return;
       }
 
       if (!res.ok) {
-        alert("Erro: " + data.error);
+        mostrarAviso("Erro: " + data.error);
       } else {
         const apagadas = data.coletas_deletadas || 0;
-        alert(
+        mostrarAviso(
           `${nome} deletado${apagadas > 0 ? ` (${apagadas} coletas apagadas)` : ""}.`
         );
         router.refresh();
       }
     } finally {
       setLoadingId(null);
+      setModalDeletar(null);
+      if (!forcado) {
+        // modalForcar pode ter acabado de abrir — não fechar aqui
+      } else {
+        setModalForcar(null);
+      }
     }
   }
 
@@ -261,14 +259,14 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
               <td className="py-3 pr-3">
                 <div className="flex flex-col gap-1 text-sm">
                   <button
-                    onClick={() => resetSenha(m.id, m.nome)}
+                    onClick={() => setModalSenha({ id: m.id, nome: m.nome })}
                     disabled={loadingId === m.id}
                     className="text-verde hover:underline text-left"
                   >
                     Resetar senha
                   </button>
                   <button
-                    onClick={() => deletar(m.id, m.nome)}
+                    onClick={() => setModalDeletar({ id: m.id, nome: m.nome })}
                     disabled={loadingId === m.id}
                     className="text-alerta hover:underline text-left"
                   >
@@ -280,6 +278,55 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
           ))}
         </tbody>
       </table>
+
+      {aviso && (
+        <div className="mt-3 bg-slate-50 border border-cinza-borda rounded-xl p-2 text-sm">
+          {aviso}
+        </div>
+      )}
+
+      {modalSenha && (
+        <ModalInputTexto
+          titulo={`Nova senha pra ${modalSenha.nome}`}
+          descricao="Mínimo 6 caracteres. Fica visível na coluna Senha."
+          confirmarLabel="Trocar senha"
+          carregando={loadingId === modalSenha.id}
+          validar={(v) =>
+            v.length >= 6 ? null : "Senha precisa ter ao menos 6 caracteres"
+          }
+          onConfirmar={(senha) => executarResetSenha(modalSenha.id, senha)}
+          onFechar={() => setModalSenha(null)}
+        />
+      )}
+
+      {modalDeletar && (
+        <ModalInputTexto
+          titulo={`Deletar ${modalDeletar.nome}?`}
+          descricao={`Pra confirmar, digite o nome exato: ${modalDeletar.nome}`}
+          confirmarLabel="Deletar"
+          perigo
+          carregando={loadingId === modalDeletar.id}
+          validar={(v) =>
+            v.trim() === modalDeletar.nome ? null : "Nome não bateu"
+          }
+          onConfirmar={() => executarDeletar(modalDeletar.id, modalDeletar.nome, false)}
+          onFechar={() => setModalDeletar(null)}
+        />
+      )}
+
+      {modalForcar && (
+        <ModalConfirmar
+          titulo={`${modalForcar.nome} tem ${modalForcar.coletas} coleta(s)`}
+          descricao="Deletar mesmo assim apaga TODAS as coletas e fotos dele permanentemente. Continuar?"
+          confirmarLabel="Apagar tudo de vez"
+          perigo
+          carregando={loadingId === modalForcar.id}
+          onConfirmar={() =>
+            executarDeletar(modalForcar.id, modalForcar.nome, true)
+          }
+          onFechar={() => setModalForcar(null)}
+        />
+      )}
     </div>
   );
 }

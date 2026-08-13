@@ -357,6 +357,70 @@ export async function buscarCargas(
 // (A antiga aba /admin/descarregamentos foi fundida na tabela de Cargas —
 //  a umidade é lançada direto na coluna Umid. Decisão do Evaner: um menu só.)
 
+export interface AbastecimentoAdmin {
+  id: string;
+  carga_id: string;
+  motorista_nome: string;
+  motorista_is_teste: boolean;
+  caminhao_placa: string;
+  posto_nome: string;
+  litros: number;
+  valor: number;
+  km_atual: number;
+  foto_path: string | null;
+  criado_em: string;
+}
+
+/**
+ * Todos os abastecimentos, mais recente primeiro. O admin pode editar
+ * (motorista lançou errado mesmo com antiburro). incluirTeste = dev.
+ */
+export async function buscarAbastecimentos(
+  opts: { incluirTeste?: boolean } = {}
+): Promise<AbastecimentoAdmin[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("abastecimentos")
+    .select(
+      `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em,
+       profiles!abastecimentos_motorista_id_fkey!inner(nome, is_teste),
+       cargas(caminhoes(placa))`
+    )
+    .order("criado_em", { ascending: false })
+    .limit(500);
+  if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  type Row = {
+    id: string;
+    carga_id: string;
+    posto_nome: string;
+    litros: number;
+    valor: number;
+    km_atual: number;
+    foto_path: string | null;
+    criado_em: string;
+    profiles: { nome: string; is_teste: boolean } | null;
+    cargas: { caminhoes: { placa: string } | null } | null;
+  };
+  const rows = (data as unknown as Row[]) || [];
+  return rows.map((r) => ({
+    id: r.id,
+    carga_id: r.carga_id,
+    motorista_nome: r.profiles?.nome || "—",
+    motorista_is_teste: !!r.profiles?.is_teste,
+    caminhao_placa: r.cargas?.caminhoes?.placa || "—",
+    posto_nome: r.posto_nome,
+    litros: Number(r.litros),
+    valor: Number(r.valor),
+    km_atual: r.km_atual,
+    foto_path: r.foto_path,
+    criado_em: r.criado_em,
+  }));
+}
+
 // ============================================================================
 // ADIANTAMENTOS
 // ============================================================================
