@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { getLocalDB } from "@/lib/db/dexie";
 import { logEvent } from "@/lib/events/log";
+import { clearCargaAtivaCached } from "@/lib/motorista/carga";
 
 export function MenuLogout({ nome, motoristaId }: { nome: string; motoristaId: string }) {
   const [aberto, setAberto] = useState(false);
@@ -13,20 +14,58 @@ export function MenuLogout({ nome, motoristaId }: { nome: string; motoristaId: s
   const router = useRouter();
 
   async function sair() {
-    // Bloqueia se tem pendentes
+    // Bloqueia se tem QUALQUER lançamento não enviado (coleta, despesa,
+    // abastecimento ou descarga) — sair com pendência perderia o vínculo
+    // com esta conta.
     const db = getLocalDB();
-    const pendentes = await db.coletas_locais
-      .filter((c) => c.motorista_id === motoristaId && (!c.registro_subido || !c.foto_subida))
-      .count();
+    const [coletasP, despesasP, abastP, descargasP] = await Promise.all([
+      db.coletas_locais
+        .filter(
+          (c) =>
+            c.motorista_id === motoristaId &&
+            (!c.registro_subido || !c.foto_subida)
+        )
+        .count(),
+      db.despesas_locais
+        .filter(
+          (d) =>
+            d.motorista_id === motoristaId &&
+            (!d.registro_subido || !d.foto_subida)
+        )
+        .count(),
+      db.abastecimentos_locais
+        .filter(
+          (a) =>
+            a.motorista_id === motoristaId &&
+            (!a.registro_subido || !a.foto_subida)
+        )
+        .count(),
+      db.descargas_locais
+        .filter(
+          (d) =>
+            d.motorista_id === motoristaId &&
+            (!d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor)
+        )
+        .count(),
+    ]);
+    const pendentes = coletasP + despesasP + abastP + descargasP;
 
     if (pendentes > 0) {
       setMensagem(
-        `Você tem ${pendentes} ${pendentes === 1 ? "coleta não enviada" : "coletas não enviadas"}. Conecte na internet e envie antes de sair.`
+        `Você tem ${pendentes} ${pendentes === 1 ? "lançamento não enviado" : "lançamentos não enviados"}. Conecte na internet e envie antes de sair.`
       );
       return;
     }
 
     await logEvent(motoristaId, "logout", {});
+    // Limpa caches locais dessa conta — evita que outro motorista logando
+    // neste celular herde a carga ativa ou o perfil de quem saiu.
+    clearCargaAtivaCached();
+    localStorage.removeItem("coleta_perfil_id");
+    localStorage.removeItem("coleta_perfil_nome");
+    localStorage.removeItem("coleta_perfil_exige_foto");
+    localStorage.removeItem("coleta_perfil_features");
+    localStorage.removeItem("coleta_perfil_mostra_saldo");
     const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     router.push("/motorista/login");

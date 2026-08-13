@@ -16,7 +16,7 @@ import { CardSaldo } from "@/components/motorista/CardSaldo";
 import {
   fetchCargaAtiva,
   getCargaAtivaCached,
-  somaLitrosCargaAtiva,
+  resumoCargaAtiva,
 } from "@/lib/motorista/carga";
 import type { CargaAtivaCache } from "@/lib/types";
 
@@ -28,11 +28,21 @@ interface PerfilLocal {
   mostra_saldo_app: boolean;
 }
 
+/**
+ * Estado da carga ativa:
+ *  - undefined = ainda resolvendo (cache vazio + esperando servidor)
+ *  - null      = resolvido: NÃO tem carga → gate manda pra "Iniciar carga"
+ *  - objeto    = resolvido: tem carga ativa
+ * O redirect só dispara com null — nunca no meio da resolução (evita o
+ * vai-e-volta de mandar pro iniciar-carga quando o servidor tinha carga).
+ */
 export default function MotoristaHomePage() {
   const router = useRouter();
   const [perfil, setPerfil] = useState<PerfilLocal | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [carga, setCarga] = useState<CargaAtivaCache | null>(null);
+  const [carga, setCarga] = useState<CargaAtivaCache | null | undefined>(
+    undefined
+  );
   const [litrosCarga, setLitrosCarga] = useState(0);
   const { pendentes, online, refresh } = useSyncTriggers();
 
@@ -48,8 +58,9 @@ export default function MotoristaHomePage() {
       const cachedFeatures = cachedFeaturesRaw
         ? (JSON.parse(cachedFeaturesRaw) as Record<string, unknown>)
         : {};
+      const cachedMostraSaldo =
+        localStorage.getItem("coleta_perfil_mostra_saldo") === "true";
 
-      const cachedMostraSaldo = localStorage.getItem("coleta_perfil_mostra_saldo") === "true";
       if (cachedId && cachedNome) {
         const p: PerfilLocal = {
           id: cachedId,
@@ -63,10 +74,19 @@ export default function MotoristaHomePage() {
         sessionStorage.setItem("coleta_motorista_id", p.id);
         sessionStorage.setItem("coleta_motorista_nome", p.nome);
         setCarregando(false);
-        // Se features.carga tá ligado, tenta pegar carga do cache imediatamente
+
         if (cachedFeatures?.carga) {
-          const cachedCarga = getCargaAtivaCached();
-          setCarga(cachedCarga);
+          const cachedCarga = getCargaAtivaCached(cachedId);
+          if (cachedCarga) {
+            setCarga(cachedCarga);
+          } else if (!navigator.onLine) {
+            // Offline sem cache: resolvido — sem carga. O iniciar-carga
+            // mostra a tela honesta de "sem sinal".
+            setCarga(null);
+          }
+          // Online sem cache: fica undefined até o fetch abaixo resolver.
+        } else {
+          setCarga(null);
         }
       }
 
@@ -79,7 +99,7 @@ export default function MotoristaHomePage() {
         return;
       }
 
-      // 3. Se online, atualiza perfil em background
+      // 3. Se online, atualiza perfil + carga em background
       if (navigator.onLine) {
         try {
           const { data: profile, error } = await supabase
@@ -88,6 +108,10 @@ export default function MotoristaHomePage() {
             .eq("id", session.user.id)
             .maybeSingle();
           if (error) {
+            // Rede falhou no meio — resolve carga com o cache
+            if (cachedFeatures?.carga) {
+              setCarga(getCargaAtivaCached(session.user.id) ?? null);
+            }
             if (!cachedId) setCarregando(false);
             return;
           }
@@ -96,6 +120,7 @@ export default function MotoristaHomePage() {
             localStorage.removeItem("coleta_perfil_nome");
             localStorage.removeItem("coleta_perfil_exige_foto");
             localStorage.removeItem("coleta_perfil_features");
+            localStorage.removeItem("coleta_perfil_mostra_saldo");
             await supabase.auth.signOut();
             router.push("/motorista/login");
             return;
@@ -117,13 +142,15 @@ export default function MotoristaHomePage() {
           localStorage.setItem("coleta_perfil_nome", p.nome);
           localStorage.setItem("coleta_perfil_exige_foto", String(p.exige_foto));
           localStorage.setItem("coleta_perfil_features", JSON.stringify(features));
-          localStorage.setItem("coleta_perfil_mostra_saldo", String(p.mostra_saldo_app));
+          localStorage.setItem(
+            "coleta_perfil_mostra_saldo",
+            String(p.mostra_saldo_app)
+          );
           sessionStorage.setItem("coleta_exige_foto", String(p.exige_foto));
           sessionStorage.setItem("coleta_motorista_id", p.id);
           sessionStorage.setItem("coleta_motorista_nome", p.nome);
           setCarregando(false);
 
-          // Se features.carga ligado: busca carga ativa do servidor
           if (features.carga) {
             const c = await fetchCargaAtiva(profile.id);
             setCarga(c);
@@ -131,6 +158,9 @@ export default function MotoristaHomePage() {
             setCarga(null);
           }
         } catch {
+          if (cachedFeatures?.carga && cachedId) {
+            setCarga(getCargaAtivaCached(cachedId) ?? null);
+          }
           if (!cachedId) setCarregando(false);
         }
       } else if (!cachedId) {
@@ -140,17 +170,17 @@ export default function MotoristaHomePage() {
     carregar();
   }, [router]);
 
-  // Se features.carga ligado e não tem carga → força iniciar
+  // Gate: features.carga ligado + resolvido SEM carga → obriga iniciar
   useEffect(() => {
-    if (perfil?.features?.carga && !carga && !carregando) {
+    if (perfil?.features?.carga && carga === null && !carregando) {
       router.push("/motorista/iniciar-carga");
     }
   }, [perfil, carga, carregando, router]);
 
-  // Soma litros da carga (pra barra de %) — atualiza sempre que carga muda
+  // Barra do caminhão: litros da carga (servidor snapshot + locais)
   useEffect(() => {
     if (!carga || !perfil) return;
-    somaLitrosCargaAtiva(carga.id, perfil.id).then(setLitrosCarga);
+    resumoCargaAtiva(carga.id, perfil.id).then((r) => setLitrosCarga(r.litros));
   }, [carga, perfil, pendentes]);
 
   if (carregando || !perfil) {
@@ -183,7 +213,7 @@ export default function MotoristaHomePage() {
 
       {perfil.mostra_saldo_app && <CardSaldo motoristaId={perfil.id} />}
 
-      {usaFluxoCarga && temCarga && (
+      {usaFluxoCarga && temCarga && carga && (
         <BarraCaminhao carga={carga} litrosCarregados={litrosCarga} />
       )}
 

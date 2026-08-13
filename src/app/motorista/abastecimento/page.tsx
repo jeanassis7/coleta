@@ -2,28 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { v4 as uuid } from "uuid";
+import { getLocalDB } from "@/lib/db/dexie";
 import { getCargaAtivaCached } from "@/lib/motorista/carga";
-import { captureGPS } from "@/lib/gps/capture";
+import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
+import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { parseLitros, parseValorInteiro } from "@/lib/format";
-import type { CargaAtivaCache } from "@/lib/types";
+import type { CargaAtivaCache, AbastecimentoLocal } from "@/lib/types";
 
 const LAST_KM_KEY_PREFIX = "coleta_ultimo_km_";
 
+/**
+ * Offline-first: salva no IndexedDB e sincroniza quando houver sinal.
+ */
 export default function AbastecimentoPage() {
   const router = useRouter();
   const [motoristaId, setMotoristaId] = useState<string | null>(null);
   const [carga, setCarga] = useState<CargaAtivaCache | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
 
   const [postoNome, setPostoNome] = useState("");
   const [litrosTexto, setLitrosTexto] = useState("");
   const [valorTexto, setValorTexto] = useState("");
   const [kmTexto, setKmTexto] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
+  const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -32,16 +37,26 @@ export default function AbastecimentoPage() {
       return;
     }
     setMotoristaId(id);
-    const c = getCargaAtivaCached();
+    const c = getCargaAtivaCached(id);
     if (!c) {
       router.push("/motorista");
       return;
     }
     setCarga(c);
-    // Sugere último km conhecido daquele caminhão
     const kmSug = localStorage.getItem(LAST_KM_KEY_PREFIX + c.caminhao_id);
     if (kmSug) setKmTexto(kmSug);
   }, [router]);
+
+  useEffect(() => {
+    if (!motoristaId) return;
+    let cancelado = false;
+    captureGPS().then((r) => {
+      if (!cancelado) setGpsResultado(r);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [motoristaId]);
 
   const litros = parseLitros(litrosTexto);
   const valor = parseValorInteiro(valorTexto);
@@ -69,55 +84,60 @@ export default function AbastecimentoPage() {
       !foto
     )
       return;
-    if (!navigator.onLine) {
-      setErro("Precisa de sinal pra lançar abastecimento. Tenta quando pegar sinal.");
-      return;
-    }
-    setErro(null);
     setSalvando(true);
-    try {
-      const supabase = getSupabaseBrowser();
-      const gps = await captureGPS();
-      const path = `${motoristaId}/abast-${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from("fotos-coletas")
-        .upload(path, foto, {
-          cacheControl: "31536000",
-          upsert: true,
-          contentType: "image/jpeg",
+
+    const client_id = uuid();
+    const gpsJa = gpsResultado;
+    const abastecimento: AbastecimentoLocal = {
+      client_id,
+      motorista_id: motoristaId,
+      carga_id: carga.id,
+      posto_nome: postoNome.trim(),
+      litros,
+      valor,
+      km_atual: Math.round(km),
+      latitude: gpsJa?.ok ? gpsJa.latitude : null,
+      longitude: gpsJa?.ok ? gpsJa.longitude : null,
+      gps_pendente: gpsJa === null,
+      criado_em: Date.now(),
+      foto_blob: foto,
+      foto_subida: false,
+      registro_subido: false,
+      tentativas: 0,
+      ultimo_erro: null,
+    };
+
+    const db = getLocalDB();
+    await db.abastecimentos_locais.add(abastecimento);
+    localStorage.setItem(
+      LAST_KM_KEY_PREFIX + carga.caminhao_id,
+      String(Math.round(km))
+    );
+
+    await logEvent(motoristaId, "abastecimento_saved_local", {
+      client_id,
+      carga_id: carga.id,
+      posto_nome: abastecimento.posto_nome,
+      litros,
+      valor,
+      km_atual: abastecimento.km_atual,
+      gps_ja_resolvido: gpsJa !== null,
+    });
+
+    router.push("/motorista");
+
+    if (!gpsJa) {
+      (async () => {
+        const gps = await captureGPS();
+        await db.abastecimentos_locais.update(client_id, {
+          latitude: gps.ok ? gps.latitude : null,
+          longitude: gps.ok ? gps.longitude : null,
+          gps_pendente: false,
         });
-      if (upErr) {
-        setErro("Não consegui subir a foto: " + upErr.message);
-        return;
-      }
-      const { error: insErr } = await supabase.from("abastecimentos").insert({
-        carga_id: carga.id,
-        motorista_id: motoristaId,
-        posto_nome: postoNome.trim(),
-        litros,
-        valor,
-        km_atual: Math.round(km),
-        foto_path: path,
-        latitude: gps.ok ? gps.latitude : null,
-        longitude: gps.ok ? gps.longitude : null,
-      });
-      if (insErr) {
-        setErro("Não consegui salvar: " + insErr.message);
-        return;
-      }
-      localStorage.setItem(LAST_KM_KEY_PREFIX + carga.caminhao_id, String(Math.round(km)));
-      await logEvent(motoristaId, "abastecimento_saved_local", {
-        carga_id: carga.id,
-        posto_nome: postoNome.trim(),
-        litros,
-        valor,
-        km_atual: Math.round(km),
-      });
-      router.push("/motorista");
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro inesperado");
-    } finally {
-      setSalvando(false);
+        triggerSyncAfterSave();
+      })();
+    } else {
+      triggerSyncAfterSave();
     }
   }
 
@@ -198,12 +218,6 @@ export default function AbastecimentoPage() {
               </span>
             </label>
             <FotoPicker onChange={setFoto} motoristaId={motoristaId} />
-          </div>
-        )}
-
-        {erro && (
-          <div className="bg-alerta/10 border border-alerta text-alerta rounded-2xl p-4 text-center text-lg font-medium">
-            {erro}
           </div>
         )}
 

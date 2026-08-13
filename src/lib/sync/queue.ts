@@ -125,10 +125,266 @@ export async function runSync(): Promise<SyncResult> {
     }
   }
 
-  // 2. Sincroniza eventos pendentes
+  // 2. Sincroniza lançamentos offline do Módulo 1
+  await sincronizarDespesas(sessionUserId, result);
+  await sincronizarAbastecimentos(sessionUserId, result);
+  await sincronizarDescargas(sessionUserId, result);
+
+  // 3. Sincroniza eventos pendentes
   await sincronizarEventos();
 
   return result;
+}
+
+// ============================================================================
+// Sync dos lançamentos offline do Módulo 1 (despesas, abastecimentos,
+// descargas). Mesmo contrato das coletas: foto sobe primeiro (path
+// determinístico por client_id, upsert), depois INSERT idempotente —
+// client_id é unique no servidor, então 23505 = "já subiu antes" = sucesso.
+// ============================================================================
+
+interface LancamentoBase {
+  client_id: string;
+  motorista_id: string;
+  foto_blob: Blob | null;
+  foto_subida: boolean;
+  registro_subido: boolean;
+  gps_pendente: boolean;
+  criado_em: number;
+  tentativas: number;
+}
+
+type TabelaLancamento =
+  | "despesas_locais"
+  | "abastecimentos_locais"
+  | "descargas_locais";
+
+async function sincronizarLancamentos<T extends LancamentoBase>(opts: {
+  tabela: TabelaLancamento;
+  tipo: string; // pra log e path da foto: "despesa" | "abastecimento" | "descarga"
+  tabelaServidor: string;
+  precisaSync: (item: T) => boolean;
+  buildPayload: (item: T, fotoPath: string | null) => Record<string, unknown>;
+  posInsert: ((item: T) => Promise<void>) | null;
+  sessionUserId: string;
+  result: SyncResult;
+}): Promise<void> {
+  const db = getLocalDB();
+  const supabase = getSupabaseBrowser();
+  const { result } = opts;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tab = db[opts.tabela] as any;
+
+  const pendentes: T[] = await tab
+    .filter((i: T) => opts.precisaSync(i) && !i.gps_pendente)
+    .toArray();
+
+  result.total += pendentes.length;
+
+  for (const item of pendentes) {
+    if (item.motorista_id !== opts.sessionUserId) {
+      await logEvent(item.motorista_id, "sync_skipped_wrong_motorista", {
+        tipo: opts.tipo,
+        client_id: item.client_id,
+        item_motorista_id: item.motorista_id,
+        sessao_motorista_id: opts.sessionUserId,
+      });
+      result.falhas++;
+      continue;
+    }
+
+    try {
+      // Passo 1: foto (se tem e ainda não subiu)
+      let fotoPath: string | null = null;
+      if (item.foto_blob) {
+        fotoPath = `${item.motorista_id}/${opts.tipo}-${item.client_id}.jpg`;
+        if (!item.foto_subida) {
+          const { error: upErr } = await supabase.storage
+            .from("fotos-coletas")
+            .upload(fotoPath, item.foto_blob, {
+              cacheControl: "31536000",
+              upsert: true,
+              contentType: "image/jpeg",
+            });
+          if (upErr) {
+            const motivo = `upload ${opts.tipo}: ${upErr.message}`;
+            await tab.update(item.client_id, {
+              tentativas: (item.tentativas || 0) + 1,
+              ultimo_erro: motivo,
+            });
+            await logEvent(item.motorista_id, "sync_failure", {
+              tipo: opts.tipo,
+              client_id: item.client_id,
+              motivo,
+              fase: "upload_foto",
+            });
+            result.falhas++;
+            if (!result.ultimo_erro) {
+              result.ultimo_erro = motivo;
+              result.ultimo_erro_kind = classificarErro(motivo);
+            }
+            continue;
+          }
+          await tab.update(item.client_id, { foto_subida: true });
+        }
+      } else if (!item.foto_subida) {
+        // sem foto (ex: descarga sem papel) — nada a subir
+        await tab.update(item.client_id, { foto_subida: true });
+      }
+
+      // Passo 2: INSERT idempotente
+      if (!item.registro_subido) {
+        const { error: insErr } = await supabase
+          .from(opts.tabelaServidor)
+          .insert(opts.buildPayload(item, fotoPath));
+        if (insErr && insErr.code !== "23505") {
+          const motivo = `insert ${opts.tipo}: ${insErr.message}${insErr.code ? ` (${insErr.code})` : ""}`;
+          await tab.update(item.client_id, {
+            tentativas: (item.tentativas || 0) + 1,
+            ultimo_erro: motivo,
+          });
+          await logEvent(item.motorista_id, "sync_failure", {
+            tipo: opts.tipo,
+            client_id: item.client_id,
+            motivo,
+            fase: "insert",
+          });
+          result.falhas++;
+          if (!result.ultimo_erro) {
+            result.ultimo_erro = motivo;
+            result.ultimo_erro_kind = classificarErro(motivo);
+          }
+          continue;
+        }
+        await tab.update(item.client_id, { registro_subido: true });
+      }
+
+      // Passo 3: pós-insert (descarga fecha a carga no servidor)
+      if (opts.posInsert) {
+        await opts.posInsert(item);
+      }
+
+      result.enviadas++;
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : String(err);
+      await tab.update(item.client_id, {
+        tentativas: (item.tentativas || 0) + 1,
+        ultimo_erro: motivo,
+      });
+      await logEvent(item.motorista_id, "sync_failure", {
+        tipo: opts.tipo,
+        client_id: item.client_id,
+        motivo,
+      });
+      result.falhas++;
+      if (!result.ultimo_erro) {
+        result.ultimo_erro = motivo;
+        result.ultimo_erro_kind = classificarErro(motivo);
+      }
+    }
+  }
+}
+
+async function sincronizarDespesas(
+  sessionUserId: string,
+  result: SyncResult
+): Promise<void> {
+  await sincronizarLancamentos<import("@/lib/types").DespesaLocal>({
+    tabela: "despesas_locais",
+    tipo: "despesa",
+    tabelaServidor: "despesas",
+    precisaSync: (d) => !d.registro_subido || !d.foto_subida,
+    buildPayload: (d, fotoPath) => ({
+      client_id: d.client_id,
+      carga_id: d.carga_id,
+      motorista_id: d.motorista_id,
+      valor: d.valor,
+      descricao: d.descricao,
+      foto_path: fotoPath,
+      latitude: d.latitude,
+      longitude: d.longitude,
+      criado_em: new Date(d.criado_em).toISOString(),
+    }),
+    posInsert: null,
+    sessionUserId,
+    result,
+  });
+}
+
+async function sincronizarAbastecimentos(
+  sessionUserId: string,
+  result: SyncResult
+): Promise<void> {
+  await sincronizarLancamentos<import("@/lib/types").AbastecimentoLocal>({
+    tabela: "abastecimentos_locais",
+    tipo: "abastecimento",
+    tabelaServidor: "abastecimentos",
+    precisaSync: (a) => !a.registro_subido || !a.foto_subida,
+    buildPayload: (a, fotoPath) => ({
+      client_id: a.client_id,
+      carga_id: a.carga_id,
+      motorista_id: a.motorista_id,
+      posto_nome: a.posto_nome,
+      litros: a.litros,
+      valor: a.valor,
+      km_atual: a.km_atual,
+      foto_path: fotoPath,
+      latitude: a.latitude,
+      longitude: a.longitude,
+      criado_em: new Date(a.criado_em).toISOString(),
+    }),
+    posInsert: null,
+    sessionUserId,
+    result,
+  });
+}
+
+async function sincronizarDescargas(
+  sessionUserId: string,
+  result: SyncResult
+): Promise<void> {
+  await sincronizarLancamentos<import("@/lib/types").DescargaLocal>({
+    tabela: "descargas_locais",
+    tipo: "descarga",
+    tabelaServidor: "descargas",
+    // Descarga só está "pronta" quando o registro subiu E a carga foi
+    // fechada no servidor — senão o servidor ainda vê a carga como ativa
+    // e bloquearia a próxima carga do motorista.
+    precisaSync: (d) =>
+      !d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor,
+    buildPayload: (d, fotoPath) => ({
+      client_id: d.client_id,
+      carga_id: d.carga_id,
+      peso_bruto_kg: d.peso_bruto_kg,
+      peso_tara_kg: d.peso_tara_kg,
+      litros_estimados: d.litros_estimados,
+      foto_papel_path: fotoPath,
+      latitude: d.latitude,
+      longitude: d.longitude,
+      criado_em: new Date(d.criado_em).toISOString(),
+    }),
+    posInsert: async (d) => {
+      if (d.carga_encerrada_servidor) return;
+      const supabase = getSupabaseBrowser();
+      // encerrada_em = momento REAL da descarga (não do sync).
+      // 0 rows afetadas = carga já encerrada por retry anterior — sucesso.
+      const { error } = await supabase
+        .from("cargas")
+        .update({
+          status: "encerrada",
+          encerrada_em: new Date(d.criado_em).toISOString(),
+        })
+        .eq("id", d.carga_id)
+        .eq("status", "ativa");
+      if (error) throw new Error(`fechar carga: ${error.message}`);
+      const db = getLocalDB();
+      await db.descargas_locais.update(d.client_id, {
+        carga_encerrada_servidor: true,
+      });
+    },
+    sessionUserId,
+    result,
+  });
 }
 
 async function sincronizarUmaColeta(
@@ -297,12 +553,31 @@ async function sincronizarEventos(): Promise<void> {
     .delete();
 }
 
-/** Conta quantas coletas estão pendentes de envio. */
+/**
+ * Conta quantos lançamentos estão pendentes de envio — coletas, despesas,
+ * abastecimentos e descargas. É o número do botão "Enviar agora".
+ */
 export async function countPendentes(): Promise<number> {
   const db = getLocalDB();
-  return db.coletas_locais
-    .filter((c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente)
-    .count();
+  const [coletas, despesas, abastecimentos, descargas] = await Promise.all([
+    db.coletas_locais
+      .filter((c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente)
+      .count(),
+    db.despesas_locais
+      .filter((d) => (!d.registro_subido || !d.foto_subida) && !d.gps_pendente)
+      .count(),
+    db.abastecimentos_locais
+      .filter((a) => (!a.registro_subido || !a.foto_subida) && !a.gps_pendente)
+      .count(),
+    db.descargas_locais
+      .filter(
+        (d) =>
+          (!d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor) &&
+          !d.gps_pendente
+      )
+      .count(),
+  ]);
+  return coletas + despesas + abastecimentos + descargas;
 }
 
 /**
@@ -315,14 +590,40 @@ const GPS_PENDENTE_TIMEOUT_MS = 30_000;
 export async function limparGpsPendenteStale(): Promise<number> {
   const db = getLocalDB();
   const cutoff = Date.now() - GPS_PENDENTE_TIMEOUT_MS;
-  const stale = await db.coletas_locais
+  let total = 0;
+
+  const staleColetas = await db.coletas_locais
     .filter((c) => c.gps_pendente === true && c.criado_em < cutoff)
     .toArray();
-
-  for (const c of stale) {
+  for (const c of staleColetas) {
     await db.coletas_locais.update(c.client_id, { gps_pendente: false });
+    total++;
   }
-  return stale.length;
+
+  // Mesma recuperação pras filas do Módulo 1
+  const staleDespesas = await db.despesas_locais
+    .filter((d) => d.gps_pendente === true && d.criado_em < cutoff)
+    .toArray();
+  for (const d of staleDespesas) {
+    await db.despesas_locais.update(d.client_id, { gps_pendente: false });
+    total++;
+  }
+  const staleAbast = await db.abastecimentos_locais
+    .filter((a) => a.gps_pendente === true && a.criado_em < cutoff)
+    .toArray();
+  for (const a of staleAbast) {
+    await db.abastecimentos_locais.update(a.client_id, { gps_pendente: false });
+    total++;
+  }
+  const staleDescargas = await db.descargas_locais
+    .filter((d) => d.gps_pendente === true && d.criado_em < cutoff)
+    .toArray();
+  for (const d of staleDescargas) {
+    await db.descargas_locais.update(d.client_id, { gps_pendente: false });
+    total++;
+  }
+
+  return total;
 }
 
 /**
@@ -339,14 +640,46 @@ const RETENCAO_APOS_SYNC_MS = 24 * 60 * 60 * 1000;
 export async function limparColetasSincronizadasAntigas(): Promise<number> {
   const db = getLocalDB();
   const cutoff = Date.now() - RETENCAO_APOS_SYNC_MS;
+  let total = 0;
+
   const antigas = await db.coletas_locais
     .filter(
       (c) => c.registro_subido === true && c.foto_subida === true && c.criado_em < cutoff
     )
     .toArray();
-
   for (const c of antigas) {
     await db.coletas_locais.delete(c.client_id);
+    total++;
   }
-  return antigas.length;
+
+  // Mesma limpeza pras filas do Módulo 1 (blobs de foto não acumulam)
+  const despesasAntigas = await db.despesas_locais
+    .filter((d) => d.registro_subido && d.foto_subida && d.criado_em < cutoff)
+    .toArray();
+  for (const d of despesasAntigas) {
+    await db.despesas_locais.delete(d.client_id);
+    total++;
+  }
+  const abastAntigos = await db.abastecimentos_locais
+    .filter((a) => a.registro_subido && a.foto_subida && a.criado_em < cutoff)
+    .toArray();
+  for (const a of abastAntigos) {
+    await db.abastecimentos_locais.delete(a.client_id);
+    total++;
+  }
+  const descargasAntigas = await db.descargas_locais
+    .filter(
+      (d) =>
+        d.registro_subido &&
+        d.foto_subida &&
+        d.carga_encerrada_servidor &&
+        d.criado_em < cutoff
+    )
+    .toArray();
+  for (const d of descargasAntigas) {
+    await db.descargas_locais.delete(d.client_id);
+    total++;
+  }
+
+  return total;
 }

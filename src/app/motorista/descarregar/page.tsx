@@ -2,29 +2,37 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { v4 as uuid } from "uuid";
+import { getLocalDB } from "@/lib/db/dexie";
 import {
   getCargaAtivaCached,
   clearCargaAtivaCached,
-  somaLitrosCargaAtiva,
+  resumoCargaAtiva,
+  type ResumoCarga,
 } from "@/lib/motorista/carga";
-import { captureGPS } from "@/lib/gps/capture";
+import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
+import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
-import type { CargaAtivaCache } from "@/lib/types";
+import type { CargaAtivaCache, DescargaLocal } from "@/lib/types";
 
 const DENSIDADE_KG_POR_L = 0.9;
 
+/**
+ * Offline-first: a descarga salva no IndexedDB e a carga encerra
+ * LOCALMENTE na hora (motorista segue a vida). O sync envia a descarga
+ * e fecha a carga no servidor quando houver sinal.
+ */
 export default function DescarregarPage() {
   const router = useRouter();
   const [motoristaId, setMotoristaId] = useState<string | null>(null);
   const [carga, setCarga] = useState<CargaAtivaCache | null>(null);
-  const [litrosEsperados, setLitrosEsperados] = useState(0);
+  const [resumo, setResumo] = useState<ResumoCarga>({ litros: 0, coletas: 0 });
   const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
 
   const [pesoBrutoTexto, setPesoBrutoTexto] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
+  const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -33,39 +41,55 @@ export default function DescarregarPage() {
       return;
     }
     setMotoristaId(id);
-    const c = getCargaAtivaCached();
+    const c = getCargaAtivaCached(id);
     if (!c) {
       router.push("/motorista");
       return;
     }
     setCarga(c);
-    somaLitrosCargaAtiva(c.id, id).then(setLitrosEsperados);
+    resumoCargaAtiva(c.id, id).then(setResumo);
   }, [router]);
 
+  useEffect(() => {
+    if (!motoristaId) return;
+    let cancelado = false;
+    captureGPS().then((r) => {
+      if (!cancelado) setGpsResultado(r);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [motoristaId]);
+
   const pesoBruto = Number(pesoBrutoTexto);
-  const pesoLiquidoKg =
-    Number.isFinite(pesoBruto) && carga ? pesoBruto - carga.tara_kg : 0;
+  const pesoDigitado = pesoBrutoTexto.trim() !== "" && Number.isFinite(pesoBruto);
+  const pesoLiquidoKg = pesoDigitado && carga ? pesoBruto - carga.tara_kg : 0;
+  const pesoMenorQueTara = pesoDigitado && carga !== null && pesoLiquidoKg <= 0;
   const litrosEstimados =
     pesoLiquidoKg > 0 ? Math.round(pesoLiquidoKg / DENSIDADE_KG_POR_L) : 0;
 
-  const pesoOk = pesoLiquidoKg > 0;
-  const podeSalvar = !!carga && !!motoristaId && pesoOk && !salvando;
+  const podeSalvar =
+    !!carga && !!motoristaId && pesoDigitado && pesoLiquidoKg > 0 && !salvando;
 
   async function salvar() {
     if (!podeSalvar || !carga || !motoristaId) return;
-    if (!navigator.onLine) {
-      setErro("Precisa de sinal pra registrar descarga. Tenta quando pegar sinal.");
-      return;
+
+    // Antiburro 1: carga sem nenhuma coleta lançada
+    if (resumo.coletas === 0) {
+      const confirma = confirm(
+        "Essa carga não tem NENHUMA coleta lançada. Descarregar mesmo assim?"
+      );
+      if (!confirma) return;
     }
 
-    // Antiburro: peso ±30% do esperado (soma_litros × densidade)
-    if (litrosEsperados > 0) {
-      const pesoEsperado = litrosEsperados * DENSIDADE_KG_POR_L;
+    // Antiburro 2: peso ±30% do esperado pelas coletas declaradas
+    if (resumo.litros > 0) {
+      const pesoEsperado = resumo.litros * DENSIDADE_KG_POR_L;
       const diff = Math.abs(pesoLiquidoKg - pesoEsperado) / pesoEsperado;
       if (diff > 0.3) {
         const confirma = confirm(
-          `Peso líquido: ${pesoLiquidoKg} kg\n` +
-            `Esperado pelas coletas (${litrosEsperados}L × 0,9): ~${Math.round(pesoEsperado)} kg\n` +
+          `Peso líquido: ${pesoLiquidoKg.toLocaleString("pt-BR")} kg\n` +
+            `Esperado pelas coletas (${resumo.litros.toLocaleString("pt-BR")}L × 0,9): ~${Math.round(pesoEsperado).toLocaleString("pt-BR")} kg\n` +
             `Diferença: ${Math.round(diff * 100)}%\n\n` +
             `Confere o peso?`
         );
@@ -73,74 +97,68 @@ export default function DescarregarPage() {
       }
     }
 
-    setErro(null);
     setSalvando(true);
-    try {
-      const supabase = getSupabaseBrowser();
-      const gps = await captureGPS();
 
-      let foto_papel_path: string | null = null;
-      if (foto) {
-        const path = `${motoristaId}/descarga-${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage
-          .from("fotos-coletas")
-          .upload(path, foto, {
-            cacheControl: "31536000",
-            upsert: true,
-            contentType: "image/jpeg",
-          });
-        if (!upErr) foto_papel_path = path;
-      }
+    const client_id = uuid();
+    const gpsJa = gpsResultado;
+    const descarga: DescargaLocal = {
+      client_id,
+      motorista_id: motoristaId,
+      carga_id: carga.id,
+      peso_bruto_kg: Math.round(pesoBruto),
+      peso_tara_kg: carga.tara_kg,
+      litros_estimados: litrosEstimados,
+      latitude: gpsJa?.ok ? gpsJa.latitude : null,
+      longitude: gpsJa?.ok ? gpsJa.longitude : null,
+      gps_pendente: gpsJa === null,
+      criado_em: Date.now(),
+      foto_blob: foto,
+      foto_subida: false,
+      registro_subido: false,
+      carga_encerrada_servidor: false,
+      tentativas: 0,
+      ultimo_erro: null,
+    };
 
-      const { error: insErr } = await supabase.from("descargas").insert({
-        carga_id: carga.id,
-        peso_bruto_kg: Math.round(pesoBruto),
-        peso_tara_kg: carga.tara_kg,
-        litros_estimados: litrosEstimados,
-        foto_papel_path,
-        latitude: gps.ok ? gps.latitude : null,
-        longitude: gps.ok ? gps.longitude : null,
-      });
-      if (insErr) {
-        setErro("Não consegui salvar descarga: " + insErr.message);
-        return;
-      }
+    const db = getLocalDB();
+    await db.descargas_locais.add(descarga);
 
-      // Fecha a carga (atomic check pra não pisar em cancelada por outro caminho)
-      const { error: updErr } = await supabase
-        .from("cargas")
-        .update({ status: "encerrada", encerrada_em: new Date().toISOString() })
-        .eq("id", carga.id)
-        .eq("status", "ativa");
-      if (updErr) {
-        setErro("Descarga salva mas não fechei carga: " + updErr.message);
-        return;
-      }
+    await logEvent(motoristaId, "descarga_saved_local", {
+      client_id,
+      carga_id: carga.id,
+      peso_bruto_kg: descarga.peso_bruto_kg,
+      peso_tara_kg: descarga.peso_tara_kg,
+      peso_liquido_kg: pesoLiquidoKg,
+      litros_estimados: litrosEstimados,
+      litros_declarados: resumo.litros,
+      coletas_na_carga: resumo.coletas,
+      tem_foto: !!foto,
+      gps_ja_resolvido: gpsJa !== null,
+    });
+    await logEvent(motoristaId, "carga_encerrada", { carga_id: carga.id });
 
-      await logEvent(motoristaId, "descarga_saved_local", {
-        carga_id: carga.id,
-        peso_bruto_kg: Math.round(pesoBruto),
-        peso_tara_kg: carga.tara_kg,
-        peso_liquido_kg: pesoLiquidoKg,
-        litros_estimados: litrosEstimados,
-        litros_declarados: litrosEsperados,
-        tem_foto: !!foto,
-      });
+    // Carga encerrada LOCALMENTE — home volta pra "Iniciar nova carga".
+    clearCargaAtivaCached();
 
-      await logEvent(motoristaId, "carga_encerrada", {
-        carga_id: carga.id,
-      });
+    router.push(
+      `/motorista/carga-encerrada?peso_bruto=${descarga.peso_bruto_kg}` +
+        `&tara=${descarga.peso_tara_kg}&liquido=${pesoLiquidoKg}` +
+        `&litros=${litrosEstimados}&coletas=${resumo.coletas}` +
+        `&iniciada=${encodeURIComponent(carga.iniciada_em)}`
+    );
 
-      clearCargaAtivaCached();
-      router.push(
-        `/motorista/carga-encerrada?peso_bruto=${Math.round(pesoBruto)}` +
-          `&tara=${carga.tara_kg}&liquido=${pesoLiquidoKg}` +
-          `&litros=${litrosEstimados}&iniciada=${encodeURIComponent(carga.iniciada_em)}`
-      );
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro inesperado");
-    } finally {
-      setSalvando(false);
+    if (!gpsJa) {
+      (async () => {
+        const gps = await captureGPS();
+        await db.descargas_locais.update(client_id, {
+          latitude: gps.ok ? gps.latitude : null,
+          longitude: gps.ok ? gps.longitude : null,
+          gps_pendente: false,
+        });
+        triggerSyncAfterSave();
+      })();
+    } else {
+      triggerSyncAfterSave();
     }
   }
 
@@ -160,7 +178,9 @@ export default function DescarregarPage() {
 
       <div className="space-y-6">
         <div className="bg-slate-50 border border-cinza-borda rounded-2xl p-3 text-sm">
-          <div>🚚 {carga.caminhao_placa} {carga.caminhao_marca} {carga.caminhao_cor}</div>
+          <div>
+            🚚 {carga.caminhao_placa} {carga.caminhao_marca} {carga.caminhao_cor}
+          </div>
           <div className="text-cinza-suave">
             Tara: {carga.tara_kg.toLocaleString("pt-BR")} kg
           </div>
@@ -178,7 +198,13 @@ export default function DescarregarPage() {
             onChange={(e) => setPesoBrutoTexto(e.target.value)}
             autoFocus
           />
-          {pesoOk && (
+          {pesoMenorQueTara && (
+            <div className="mt-3 bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-base font-medium">
+              Peso bruto menor que a tara ({carga.tara_kg.toLocaleString("pt-BR")}{" "}
+              kg) — confira o número.
+            </div>
+          )}
+          {pesoLiquidoKg > 0 && (
             <div className="mt-3 bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Peso líquido:</span>
@@ -202,12 +228,6 @@ export default function DescarregarPage() {
               📷 Foto do papel da balança
             </label>
             <FotoPicker onChange={setFoto} motoristaId={motoristaId} />
-          </div>
-        )}
-
-        {erro && (
-          <div className="bg-alerta/10 border border-alerta text-alerta rounded-2xl p-4 text-center text-lg font-medium">
-            {erro}
           </div>
         )}
 

@@ -2,24 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { v4 as uuid } from "uuid";
+import { getLocalDB } from "@/lib/db/dexie";
 import { getCargaAtivaCached } from "@/lib/motorista/carga";
-import { captureGPS } from "@/lib/gps/capture";
+import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
+import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { parseValorInteiro } from "@/lib/format";
-import type { CargaAtivaCache } from "@/lib/types";
+import type { CargaAtivaCache, DespesaLocal } from "@/lib/types";
 
+/**
+ * Offline-first: salva no IndexedDB e sincroniza quando houver sinal.
+ * GPS captura silenciosa ao abrir a tela (não depende de internet).
+ */
 export default function DespesaPage() {
   const router = useRouter();
   const [motoristaId, setMotoristaId] = useState<string | null>(null);
   const [carga, setCarga] = useState<CargaAtivaCache | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
 
   const [valorTexto, setValorTexto] = useState("");
   const [descricao, setDescricao] = useState("");
   const [foto, setFoto] = useState<Blob | null>(null);
+  const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -28,13 +34,25 @@ export default function DespesaPage() {
       return;
     }
     setMotoristaId(id);
-    const c = getCargaAtivaCached();
+    const c = getCargaAtivaCached(id);
     if (!c) {
       router.push("/motorista");
       return;
     }
     setCarga(c);
   }, [router]);
+
+  // GPS silencioso em paralelo ao preenchimento
+  useEffect(() => {
+    if (!motoristaId) return;
+    let cancelado = false;
+    captureGPS().then((r) => {
+      if (!cancelado) setGpsResultado(r);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [motoristaId]);
 
   const valor = parseValorInteiro(valorTexto);
   const podeSalvar =
@@ -48,50 +66,53 @@ export default function DespesaPage() {
 
   async function salvar() {
     if (!podeSalvar || !motoristaId || !carga || valor === null || !foto) return;
-    if (!navigator.onLine) {
-      setErro("Precisa de sinal pra lançar despesa. Tenta quando pegar sinal.");
-      return;
-    }
-    setErro(null);
     setSalvando(true);
-    try {
-      const supabase = getSupabaseBrowser();
-      const gps = await captureGPS();
-      const path = `${motoristaId}/despesa-${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from("fotos-coletas")
-        .upload(path, foto, {
-          cacheControl: "31536000",
-          upsert: true,
-          contentType: "image/jpeg",
+
+    const client_id = uuid();
+    const gpsJa = gpsResultado;
+    const despesa: DespesaLocal = {
+      client_id,
+      motorista_id: motoristaId,
+      carga_id: carga.id,
+      valor,
+      descricao: descricao.trim(),
+      latitude: gpsJa?.ok ? gpsJa.latitude : null,
+      longitude: gpsJa?.ok ? gpsJa.longitude : null,
+      gps_pendente: gpsJa === null,
+      criado_em: Date.now(),
+      foto_blob: foto,
+      foto_subida: false,
+      registro_subido: false,
+      tentativas: 0,
+      ultimo_erro: null,
+    };
+
+    const db = getLocalDB();
+    await db.despesas_locais.add(despesa);
+
+    await logEvent(motoristaId, "despesa_saved_local", {
+      client_id,
+      carga_id: carga.id,
+      valor,
+      descricao: despesa.descricao,
+      gps_ja_resolvido: gpsJa !== null,
+    });
+
+    router.push("/motorista");
+
+    // Se GPS ainda não resolveu, resolve em background e libera o sync
+    if (!gpsJa) {
+      (async () => {
+        const gps = await captureGPS();
+        await db.despesas_locais.update(client_id, {
+          latitude: gps.ok ? gps.latitude : null,
+          longitude: gps.ok ? gps.longitude : null,
+          gps_pendente: false,
         });
-      if (upErr) {
-        setErro("Não consegui subir a foto: " + upErr.message);
-        return;
-      }
-      const { error: insErr } = await supabase.from("despesas").insert({
-        carga_id: carga.id,
-        motorista_id: motoristaId,
-        valor,
-        descricao: descricao.trim(),
-        foto_path: path,
-        latitude: gps.ok ? gps.latitude : null,
-        longitude: gps.ok ? gps.longitude : null,
-      });
-      if (insErr) {
-        setErro("Não consegui salvar: " + insErr.message);
-        return;
-      }
-      await logEvent(motoristaId, "despesa_saved_local", {
-        carga_id: carga.id,
-        valor,
-        descricao: descricao.trim(),
-      });
-      router.push("/motorista");
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro inesperado");
-    } finally {
-      setSalvando(false);
+        triggerSyncAfterSave();
+      })();
+    } else {
+      triggerSyncAfterSave();
     }
   }
 
@@ -148,12 +169,6 @@ export default function DespesaPage() {
               </span>
             </label>
             <FotoPicker onChange={setFoto} motoristaId={motoristaId} />
-          </div>
-        )}
-
-        {erro && (
-          <div className="bg-alerta/10 border border-alerta text-alerta rounded-2xl p-4 text-center text-lg font-medium">
-            {erro}
           </div>
         )}
 

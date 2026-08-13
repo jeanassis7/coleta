@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { setCargaAtivaCached } from "@/lib/motorista/carga";
+import {
+  setCargaAtivaCached,
+  temDescargaPendenteSync,
+} from "@/lib/motorista/carga";
+import { manualSync } from "@/lib/sync/trigger";
 import { logEvent } from "@/lib/events/log";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 
@@ -20,16 +24,79 @@ interface CaminhaoAtivo {
 const LAST_CAMINHAO_KEY = "coleta_ultimo_caminhao";
 const LAST_KM_KEY_PREFIX = "coleta_ultimo_km_";
 
+type Estado =
+  | "carregando"
+  | "descarga_pendente" // descarga anterior ainda não subiu — sync precisa rodar antes
+  | "offline"           // iniciar carga precisa de sinal (INSERT no servidor)
+  | "sem_caminhoes"
+  | "pronto";
+
+/**
+ * Iniciar carga PRECISA de sinal: o servidor é quem garante "só 1 carga
+ * ativa por motorista" e fornece a lista de caminhões. É uma operação de
+ * segundos no depósito/cidade — os lançamentos do dia-a-dia (coleta,
+ * despesa, abastecimento, descarga) esses sim são offline-first.
+ */
 export default function IniciarCargaPage() {
   const router = useRouter();
   const [motoristaId, setMotoristaId] = useState<string | null>(null);
+  const [estado, setEstado] = useState<Estado>("carregando");
   const [caminhoes, setCaminhoes] = useState<CaminhaoAtivo[]>([]);
-  const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [caminhaoId, setCaminhaoId] = useState<string>("");
   const [kmInicial, setKmInicial] = useState<string>("");
   const [fotoPainel, setFotoPainel] = useState<Blob | null>(null);
+
+  const preparar = useCallback(
+    async (id: string) => {
+      setEstado("carregando");
+
+      // 1. Descarga anterior ainda não sincronizada? O servidor ainda vê a
+      //    carga velha como ativa e rejeitaria a nova. Tenta subir agora.
+      if (await temDescargaPendenteSync(id)) {
+        if (navigator.onLine) {
+          await manualSync();
+        }
+        if (await temDescargaPendenteSync(id)) {
+          setEstado("descarga_pendente");
+          return;
+        }
+      }
+
+      // 2. Sem sinal não tem como abrir carga (INSERT no servidor)
+      if (!navigator.onLine) {
+        setEstado("offline");
+        return;
+      }
+
+      // 3. Lista de caminhões ativos
+      const supabase = getSupabaseBrowser();
+      const { data, error } = await supabase
+        .from("caminhoes")
+        .select("id, placa, marca, modelo, cor, capacidade_l, tara_kg")
+        .eq("ativo", true)
+        .order("placa");
+      if (error) {
+        // Rede caiu no meio — trata como offline, não como "sem caminhões"
+        setEstado("offline");
+        return;
+      }
+      const lista = (data || []) as CaminhaoAtivo[];
+      if (lista.length === 0) {
+        setEstado("sem_caminhoes");
+        return;
+      }
+      setCaminhoes(lista);
+      const last = localStorage.getItem(LAST_CAMINHAO_KEY);
+      const escolhido = lista.find((c) => c.id === last) || lista[0];
+      setCaminhaoId(escolhido.id);
+      const kmSug = localStorage.getItem(LAST_KM_KEY_PREFIX + escolhido.id);
+      if (kmSug) setKmInicial(kmSug);
+      setEstado("pronto");
+    },
+    []
+  );
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -38,32 +105,13 @@ export default function IniciarCargaPage() {
       return;
     }
     setMotoristaId(id);
+    preparar(id);
 
-    (async () => {
-      const supabase = getSupabaseBrowser();
-      const { data, error } = await supabase
-        .from("caminhoes")
-        .select("id, placa, marca, modelo, cor, capacidade_l, tara_kg")
-        .eq("ativo", true)
-        .order("placa");
-      if (error) {
-        setErro("Não consegui carregar os caminhões. Verifica o sinal.");
-        setCarregando(false);
-        return;
-      }
-      const lista = (data || []) as CaminhaoAtivo[];
-      setCaminhoes(lista);
-      if (lista.length > 0) {
-        const last = localStorage.getItem(LAST_CAMINHAO_KEY);
-        const escolhido = lista.find((c) => c.id === last) || lista[0];
-        setCaminhaoId(escolhido.id);
-        // Sugere último km conhecido daquele caminhão
-        const kmSug = localStorage.getItem(LAST_KM_KEY_PREFIX + escolhido.id);
-        if (kmSug) setKmInicial(kmSug);
-      }
-      setCarregando(false);
-    })();
-  }, [router]);
+    // Se o sinal voltar enquanto ele olha a tela de offline, tenta de novo
+    const onOnline = () => preparar(id);
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [router, preparar]);
 
   // Quando trocar caminhão, atualiza sugestão de km
   useEffect(() => {
@@ -85,7 +133,6 @@ export default function IniciarCargaPage() {
 
     const supabase = getSupabaseBrowser();
     try {
-      // Se tiver foto do painel, sobe pra storage
       let foto_painel_path: string | null = null;
       if (fotoPainel) {
         const path = `${motoristaId}/carga-painel-${Date.now()}.jpg`;
@@ -113,7 +160,7 @@ export default function IniciarCargaPage() {
       if (error || !data) {
         if (error?.code === "23505") {
           setErro(
-            "Você já tem uma carga ativa. Volta pra home e finaliza ela antes."
+            "Você já tem uma carga aberta. Volta pra home que ela vai aparecer."
           );
         } else {
           setErro(error?.message || "Não consegui iniciar a carga.");
@@ -129,6 +176,7 @@ export default function IniciarCargaPage() {
 
       setCargaAtivaCached({
         id: data.id,
+        motorista_id: motoristaId,
         caminhao_id: caminhao.id,
         caminhao_placa: caminhao.placa,
         caminhao_marca: caminhao.marca,
@@ -140,7 +188,10 @@ export default function IniciarCargaPage() {
       });
 
       localStorage.setItem(LAST_CAMINHAO_KEY, caminhao.id);
-      localStorage.setItem(LAST_KM_KEY_PREFIX + caminhao.id, String(Math.round(kmNum)));
+      localStorage.setItem(
+        LAST_KM_KEY_PREFIX + caminhao.id,
+        String(Math.round(kmNum))
+      );
 
       await logEvent(motoristaId, "carga_iniciada", {
         carga_id: data.id,
@@ -157,7 +208,7 @@ export default function IniciarCargaPage() {
     }
   }
 
-  if (carregando) {
+  if (estado === "carregando") {
     return (
       <main className="min-h-screen flex items-center justify-center">
         <p className="text-cinza-suave text-xl">Carregando...</p>
@@ -165,7 +216,50 @@ export default function IniciarCargaPage() {
     );
   }
 
-  if (caminhoes.length === 0) {
+  if (estado === "descarga_pendente") {
+    return (
+      <main className="min-h-screen p-4 max-w-md mx-auto flex flex-col justify-center">
+        <div className="bg-white rounded-3xl shadow p-8 text-center space-y-4">
+          <div className="text-5xl">📤</div>
+          <h1 className="text-xl font-bold">Descarga esperando sinal</h1>
+          <p className="text-cinza-suave">
+            Sua última descarga ainda não foi enviada. Assim que pegar um
+            pinguinho de sinal ela sobe sozinha e aí você consegue iniciar a
+            carga nova.
+          </p>
+          <button
+            onClick={() => motoristaId && preparar(motoristaId)}
+            className="btn-primario"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (estado === "offline") {
+    return (
+      <main className="min-h-screen p-4 max-w-md mx-auto flex flex-col justify-center">
+        <div className="bg-white rounded-3xl shadow p-8 text-center space-y-4">
+          <div className="text-5xl">📵</div>
+          <h1 className="text-xl font-bold">Sem sinal</h1>
+          <p className="text-cinza-suave">
+            Iniciar uma carga precisa de internet (é rapidinho, qualquer 3G
+            serve). Quando o sinal voltar essa tela destrava sozinha.
+          </p>
+          <button
+            onClick={() => motoristaId && preparar(motoristaId)}
+            className="btn-primario"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (estado === "sem_caminhoes") {
     return (
       <main className="min-h-screen p-4 max-w-md mx-auto">
         <h1 className="text-2xl font-bold mb-4">Nenhum caminhão disponível</h1>

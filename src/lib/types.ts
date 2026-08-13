@@ -116,6 +116,8 @@ export interface ColetaLocal {
 /** Info da carga ativa em cache local do motorista (pra funcionar offline). */
 export interface CargaAtivaCache {
   id: string;
+  /** Dono da carga — valida que o cache não vazou de outro login no mesmo celular. */
+  motorista_id: string;
   caminhao_id: string;
   caminhao_placa: string;
   caminhao_marca: string;
@@ -124,6 +126,67 @@ export interface CargaAtivaCache {
   tara_kg: number;
   km_inicial: number;
   iniciada_em: string;
+}
+
+/**
+ * Lançamentos offline-first do Módulo 1 (mesmo padrão de ColetaLocal):
+ * salvam no IndexedDB com GPS capturado na hora e sincronizam quando
+ * houver sinal. client_id garante idempotência no servidor.
+ */
+export interface DespesaLocal {
+  client_id: string;
+  motorista_id: string;
+  carga_id: string;
+  valor: number;
+  descricao: string;
+  latitude: number | null;
+  longitude: number | null;
+  gps_pendente: boolean;
+  criado_em: number;
+  foto_blob: Blob | null; // obrigatória na UI
+  foto_subida: boolean;
+  registro_subido: boolean;
+  tentativas: number;
+  ultimo_erro: string | null;
+}
+
+export interface AbastecimentoLocal {
+  client_id: string;
+  motorista_id: string;
+  carga_id: string;
+  posto_nome: string;
+  litros: number;
+  valor: number;
+  km_atual: number;
+  latitude: number | null;
+  longitude: number | null;
+  gps_pendente: boolean;
+  criado_em: number;
+  foto_blob: Blob | null; // obrigatória na UI
+  foto_subida: boolean;
+  registro_subido: boolean;
+  tentativas: number;
+  ultimo_erro: string | null;
+}
+
+export interface DescargaLocal {
+  client_id: string;
+  motorista_id: string;
+  carga_id: string;
+  peso_bruto_kg: number;
+  peso_tara_kg: number;
+  litros_estimados: number;
+  latitude: number | null;
+  longitude: number | null;
+  gps_pendente: boolean;
+  criado_em: number;
+  foto_blob: Blob | null; // opcional (papel da balança)
+  foto_subida: boolean;
+  registro_subido: boolean;
+  /** true depois que o sync marcou cargas.status='encerrada' no servidor */
+  carga_encerrada_servidor: boolean;
+  tentativas: number;
+  ultimo_erro: string | null;
 }
 
 export interface EventoLocal {

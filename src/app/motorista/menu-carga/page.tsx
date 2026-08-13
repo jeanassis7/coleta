@@ -23,7 +23,7 @@ export default function MenuCargaPage() {
     }
     setMotoristaId(id);
 
-    const c = getCargaAtivaCached();
+    const c = getCargaAtivaCached(id);
     if (!c) {
       router.push("/motorista");
       return;
@@ -48,14 +48,17 @@ export default function MenuCargaPage() {
             .select("id", { count: "exact", head: true })
             .eq("carga_id", c.id),
         ]);
-        // Também checa Dexie local
+        // Também checa as filas locais (lançamentos ainda não sincronizados)
         const { getLocalDB } = await import("@/lib/db/dexie");
         const db = getLocalDB();
-        const coletasLocais = await db.coletas_locais
-          .where("carga_id")
-          .equals(c.id)
-          .count();
-        const total = (nc ?? 0) + (nd ?? 0) + (na ?? 0) + coletasLocais;
+        const [coletasLocais, despesasLocais, abastLocais] = await Promise.all([
+          db.coletas_locais.where("carga_id").equals(c.id).count(),
+          db.despesas_locais.where("carga_id").equals(c.id).count(),
+          db.abastecimentos_locais.where("carga_id").equals(c.id).count(),
+        ]);
+        const total =
+          (nc ?? 0) + (nd ?? 0) + (na ?? 0) +
+          coletasLocais + despesasLocais + abastLocais;
         setPodeCancelar(total === 0);
       } catch {
         setPodeCancelar(false);

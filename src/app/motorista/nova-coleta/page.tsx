@@ -55,6 +55,23 @@ export default function NovaColetaPage() {
       router.push("/motorista");
       return;
     }
+
+    // Gate do fluxo de carga: se a feature tá ligada e NÃO há carga ativa,
+    // não pode coletar (coleta ficaria órfã de carga). A home resolve o
+    // estado e manda pro "Iniciar carga". Cobre acesso direto por URL.
+    try {
+      const featuresRaw = localStorage.getItem("coleta_perfil_features");
+      const features = featuresRaw
+        ? (JSON.parse(featuresRaw) as Record<string, unknown>)
+        : {};
+      if (features.carga && !getCargaAtivaCached(id)) {
+        router.push("/motorista");
+        return;
+      }
+    } catch {
+      // features ilegível — segue fluxo antigo
+    }
+
     setMotoristaId(id);
     setExigeFoto(ef === "true");
     logEvent(id, "nova_coleta_opened", {
@@ -88,7 +105,7 @@ export default function NovaColetaPage() {
     const gpsJaResolvido = gpsResultado;
     // Se motorista tem carga ativa (features.carga=true), vincula coleta a ela.
     // Se não tem features ligado, cargaAtiva volta null e carga_id fica null.
-    const cargaAtiva = getCargaAtivaCached();
+    const cargaAtiva = getCargaAtivaCached(motoristaId);
     const coleta: ColetaLocal = {
       client_id,
       motorista_id: motoristaId,
