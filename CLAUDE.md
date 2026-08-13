@@ -140,6 +140,10 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 
 **Antiburros são inline e só no clique do botão** — nunca enquanto digita. Padrão: primeiro toque mostra bloco amarelo explicando, segundo toque ("CONFIRMAR MESMO ASSIM") prossegue. Erro impossível (peso < tara, km < início da carga) **bloqueia** em vermelho.
 
+**Compra direta (`compras_diretas`):** óleo que o GESTOR negocia e paga do caixa da empresa — o motorista não coletou. Não desconta saldo de ninguém, não entra em custo/certificado por motorista nem em comissão. Entra no estoque (em kg) e no custo médio do óleo (KPIs de topo do dashboard). Quem pesou lança em **kg** (medido); quem não pesou lança em **litros** (estimado, converte por 0,9). A flag `entra_no_estoque=false` cobre o caso raro do óleo ter ido num caminhão que ainda vai pesar na descarga — aí conta só o custo, senão o mesmo óleo entraria duas vezes.
+
+> **Regra de processo pro tutorial do Jean** (não é código, é combinado): quem for pegar um caminhão que já tem óleo pra descarregar precisa avisar o motorista **encerrar a carga dele e mandar a foto do peso**. Buscar óleo de fora sempre com **caminhão vazio**.
+
 **Alertas do dashboard** (`src/lib/admin/alertas.ts`): calculados na hora, texto **didático** (o que aconteceu → hipóteses de causa → o que fazer). `alertas_vistos` guarda os dispensados; a chave é a **ocorrência** (id do registro), então condição repetida em outro registro = alerta novo. Alerta estatístico só liga com base suficiente (30+ coletas ou 60+ dias) — alerta ruidoso ensina a ignorar alerta.
 
 ## O que NÃO fazer

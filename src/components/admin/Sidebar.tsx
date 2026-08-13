@@ -43,6 +43,7 @@ export function Sidebar({
             { href: "/admin/cargas", label: "Cargas" },
             { href: "/admin/abastecimentos", label: "Abastecimentos" },
             { href: "/admin/despesas", label: "Despesas" },
+            { href: "/admin/compras", label: "Compra direta" },
             { href: "/admin/adiantamentos", label: "Adiantamentos" },
           ]
         : [],

@@ -526,6 +526,74 @@ export async function buscarDespesas(
 }
 
 // ============================================================================
+// COMPRAS DIRETAS (o gestor compra o óleo, não o motorista)
+// ============================================================================
+
+export interface CompraDireta {
+  id: string;
+  data: string;
+  fornecedor: string;
+  valor: number;
+  quantidade: number;
+  unidade: "kg" | "litros";
+  /** Sempre em kg — se lançou em litros, converteu por 0,9 */
+  peso_kg: number;
+  entra_no_estoque: boolean;
+  foto_path: string | null;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export async function buscarComprasDiretas(
+  opts: { periodo?: string; inicio?: string; fim?: string } = {}
+): Promise<CompraDireta[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("compras_diretas")
+    .select("*")
+    .order("data", { ascending: false })
+    .order("criado_em", { ascending: false })
+    .limit(1000);
+
+  const intervalo = resolveIntervaloOperacao(opts);
+  if (intervalo) {
+    // coluna `data` é DATE — compara em aaaa-mm-dd
+    q = q
+      .gte("data", intervalo.inicio.toISOString().slice(0, 10))
+      .lte("data", intervalo.fim.toISOString().slice(0, 10));
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return ((data as CompraDireta[]) || []).map((c) => ({
+    ...c,
+    valor: Number(c.valor),
+    quantidade: Number(c.quantidade),
+    peso_kg: Number(c.peso_kg),
+  }));
+}
+
+/**
+ * Totais de compra direta num intervalo — pro dashboard somar nos KPIs
+ * de custo/litros. Só conta o que entra no estoque? NÃO: o custo conta
+ * sempre (a empresa pagou), o estoque é que depende da flag.
+ */
+export async function resumoComprasDiretas(
+  inicio: Date,
+  fim: Date
+): Promise<{ valor: number; kg: number }> {
+  const supabase = await getSupabaseServer();
+  const { data } = await supabase
+    .from("compras_diretas")
+    .select("valor, peso_kg")
+    .gte("data", inicio.toISOString().slice(0, 10))
+    .lte("data", fim.toISOString().slice(0, 10));
+  const valor = (data || []).reduce((s, c) => s + Number(c.valor), 0);
+  const kg = (data || []).reduce((s, c) => s + Number(c.peso_kg), 0);
+  return { valor: Math.round(valor * 100) / 100, kg: Math.round(kg * 100) / 100 };
+}
+
+// ============================================================================
 // DRILL-DOWN de uma carga
 // ============================================================================
 

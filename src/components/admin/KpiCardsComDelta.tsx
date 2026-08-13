@@ -6,6 +6,13 @@ interface Props {
   kpisAtuais: Kpis;
   kpisAnterior: Kpis;
   periodo: FiltrosDashboard["periodo"];
+  /**
+   * Compras diretas do período (óleo que o gestor comprou, não o
+   * motorista). Já vêm somadas nos KPIs acima — esta linha só explica
+   * quanto do total veio daí, senão o R$/litro pareceria ter mudado
+   * sozinho.
+   */
+  compraDireta?: { valor: number; kg: number } | null;
 }
 
 const LABEL_ANTERIOR: Record<FiltrosDashboard["periodo"], string> = {
@@ -15,7 +22,12 @@ const LABEL_ANTERIOR: Record<FiltrosDashboard["periodo"], string> = {
   customizado: "vs período anterior",
 };
 
-export function KpiCardsComDelta({ kpisAtuais, kpisAnterior, periodo }: Props) {
+export function KpiCardsComDelta({
+  kpisAtuais,
+  kpisAnterior,
+  periodo,
+  compraDireta,
+}: Props) {
   const labelComparacao = LABEL_ANTERIOR[periodo];
   const pctGps =
     kpisAtuais.total_coletas > 0
@@ -64,8 +76,14 @@ export function KpiCardsComDelta({ kpisAtuais, kpisAnterior, periodo }: Props) {
     },
   ];
 
+  const rsPorKg =
+    compraDireta && compraDireta.kg > 0
+      ? compraDireta.valor / compraDireta.kg
+      : 0;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+    <>
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
       {cards.map((c) => (
         <div key={c.label} className="card">
           <p className="text-sm text-cinza-suave">{c.label}</p>
@@ -89,6 +107,16 @@ export function KpiCardsComDelta({ kpisAtuais, kpisAnterior, periodo }: Props) {
         </p>
       </div>
     </div>
+
+    {compraDireta && compraDireta.valor > 0 && (
+      <div className="mb-6 bg-slate-50 border border-cinza-borda rounded-xl px-3 py-2 text-sm">
+        📦 Inclui <strong>{formatBRL(compraDireta.valor)}</strong> de compra
+        direta — você pegou{" "}
+        <strong>{compraDireta.kg.toLocaleString("pt-BR")} kg</strong> a{" "}
+        <strong>R$ {rsPorKg.toFixed(2).replace(".", ",")}/kg</strong>
+      </div>
+    )}
+    </>
   );
 }
 

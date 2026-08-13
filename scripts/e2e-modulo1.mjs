@@ -51,6 +51,8 @@ const criados = {
   adiantamentoId: null,
   acertoId: null,
   motoristaId: null,
+  compraKgId: null,
+  compraLitrosId: null,
   fotos: [],
 };
 
@@ -390,6 +392,38 @@ async function main() {
   check("foto da despesa: admin gera link pra visualizar",
     !eS && !!signed?.signedUrl, eS?.message);
 
+  // ---- 23. compra direta: kg medido vs litros estimados ----
+  const { data: compraKg, error: eC1 } = await svc.from("compras_diretas").insert({
+    data: new Date().toISOString().slice(0, 10),
+    fornecedor: "Fornecedor E2E",
+    valor: 4000,
+    quantidade: 4500,
+    unidade: "kg",
+    registrado_por: dev.id,
+  }).select("id, peso_kg").maybeSingle();
+  check("compra direta em kg: peso_kg = quantidade (medido)",
+    !eC1 && Number(compraKg?.peso_kg) === 4500, eC1?.message || `peso=${compraKg?.peso_kg}`);
+  criados.compraKgId = compraKg?.id;
+
+  const { data: compraL, error: eC2 } = await svc.from("compras_diretas").insert({
+    data: new Date().toISOString().slice(0, 10),
+    fornecedor: "Fornecedor E2E litros",
+    valor: 1000,
+    quantidade: 1000,
+    unidade: "litros",
+    entra_no_estoque: false,
+    registrado_por: dev.id,
+  }).select("id, peso_kg, entra_no_estoque").maybeSingle();
+  check("compra direta em litros: converte por 0,9 (1000 L = 900 kg)",
+    !eC2 && Number(compraL?.peso_kg) === 900, eC2?.message || `peso=${compraL?.peso_kg}`);
+  check("compra que vai pesar na carga fica marcada pra nao entrar no estoque",
+    compraL?.entra_no_estoque === false);
+  criados.compraLitrosId = compraL?.id;
+
+  // ---- 24. motorista NAO ve nem mexe em compra direta (RLS) ----
+  const { data: comprasMot } = await mot.from("compras_diretas").select("id");
+  check("RLS: motorista nao ve compras diretas", (comprasMot || []).length === 0);
+
   await mot.auth.signOut();
 }
 
@@ -398,6 +432,8 @@ async function cleanup() {
   try {
     // SÓ ids que este run criou — nunca deletes amplos por motorista
     // (o Teste 1 do Evaner vive no mesmo banco).
+    if (criados.compraKgId) await svc.from("compras_diretas").delete().eq("id", criados.compraKgId);
+    if (criados.compraLitrosId) await svc.from("compras_diretas").delete().eq("id", criados.compraLitrosId);
     if (criados.acertoId) await svc.from("acertos").delete().eq("id", criados.acertoId);
     if (criados.adiantamentoId) await svc.from("adiantamentos").delete().eq("id", criados.adiantamentoId);
     await svc.from("descargas").delete().eq("client_id", criados.descargaClientId);

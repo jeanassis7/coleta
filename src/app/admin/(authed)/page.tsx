@@ -4,6 +4,8 @@ import {
   buscarMotoristas,
   buscarCargas,
   buscarMotoristasComSaldo,
+  resumoComprasDiretas,
+  resolvePeriodoAnterior,
   calcularKpis,
   calcularCustoPorMotorista,
   calcularCertificadoPorMotorista,
@@ -71,6 +73,35 @@ export default async function AdminDashboardPage({
   const motoristasMotoristas = motoristas.filter((m) => m.role === "motorista");
   const kpisAtuais = calcularKpis(coletas);
   const kpisAnterior = calcularKpis(coletasAnterior);
+
+  // Compra direta entra no custo/litros do topo (é óleo que a empresa
+  // pagou), mas NÃO nos gráficos por motorista — lá a comparação é entre
+  // pessoas, e compra direta não é pessoa.
+  const intervaloAtual = resolvePeriodo(filtros);
+  const intervaloAnterior = resolvePeriodoAnterior(filtros);
+  const [compraAtual, compraAnterior] = await Promise.all([
+    resumoComprasDiretas(intervaloAtual.inicio, intervaloAtual.fim),
+    resumoComprasDiretas(intervaloAnterior.inicio, intervaloAnterior.fim),
+  ]);
+
+  const somarCompras = (
+    kpis: typeof kpisAtuais,
+    compra: { valor: number; kg: number }
+  ) => {
+    if (compra.valor <= 0 && compra.kg <= 0) return kpis;
+    const litros = compra.kg / 0.9; // mesma densidade do resto do sistema
+    const total_litros = kpis.total_litros + litros;
+    const total_pago = kpis.total_pago + compra.valor;
+    return {
+      ...kpis,
+      total_litros,
+      total_pago,
+      custo_medio: total_litros > 0 ? total_pago / total_litros : 0,
+    };
+  };
+
+  const kpisAtuaisComCompras = somarCompras(kpisAtuais, compraAtual);
+  const kpisAnteriorComCompras = somarCompras(kpisAnterior, compraAnterior);
   const custoPorMotorista = calcularCustoPorMotorista(coletas);
   const certificadoPorMotorista = calcularCertificadoPorMotorista(coletas);
   const topLocais = calcularTopLocais(coletas, 15);
@@ -108,9 +139,10 @@ export default async function AdminDashboardPage({
 
       {/* Comparação atual vs anterior */}
       <KpiCardsComDelta
-        kpisAtuais={kpisAtuais}
-        kpisAnterior={kpisAnterior}
+        kpisAtuais={kpisAtuaisComCompras}
+        kpisAnterior={kpisAnteriorComCompras}
         periodo={filtros.periodo}
+        compraDireta={verModulo1 ? compraAtual : null}
       />
 
       {/* Volume por motorista */}
