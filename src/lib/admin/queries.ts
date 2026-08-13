@@ -251,6 +251,8 @@ export interface CargaDetalhada {
   total_valor_despesas: number;
   total_abastecimentos: number;
   total_valor_abastecimentos: number;
+  /** Litros de combustível abastecidos — junto com km, dá o consumo */
+  total_litros_combustivel: number;
   descarga: {
     id: string;
     peso_bruto_kg: number;
@@ -279,7 +281,7 @@ export async function buscarCargas(
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
        coletas(id, litros, valor_pago),
        despesas(id, valor),
-       abastecimentos(id, valor),
+       abastecimentos(id, valor, litros),
        descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
     )
     .order("iniciada_em", { ascending: false });
@@ -304,7 +306,7 @@ export async function buscarCargas(
     caminhoes: { placa: string; marca: string; cor: string; capacidade_l: number; tara_kg: number } | null;
     coletas: { id: string; litros: number; valor_pago: number }[] | null;
     despesas: { id: string; valor: number }[] | null;
-    abastecimentos: { id: string; valor: number }[] | null;
+    abastecimentos: { id: string; valor: number; litros: number }[] | null;
     descargas:
       | {
           id: string;
@@ -349,6 +351,7 @@ export async function buscarCargas(
       total_valor_despesas: despesas.reduce((s, d) => s + Number(d.valor), 0),
       total_abastecimentos: abast.length,
       total_valor_abastecimentos: abast.reduce((s, a) => s + Number(a.valor), 0),
+      total_litros_combustivel: abast.reduce((s, a) => s + Number(a.litros || 0), 0),
       descarga: desc[0] || null,
     };
   });
@@ -539,6 +542,8 @@ export interface CompraDireta {
   /** Sempre em kg — se lançou em litros, converteu por 0,9 */
   peso_kg: number;
   entra_no_estoque: boolean;
+  certificado_tipo: "integral" | "parcial" | "nao";
+  litros_certificado: number | null;
   foto_path: string | null;
   observacao: string | null;
   criado_em: string;
@@ -622,6 +627,8 @@ export interface CargaCompleta {
     latitude: number | null;
     longitude: number | null;
     observacao: string | null;
+    /** preenchido = digitada no painel, não capturada em campo */
+    lancado_por_admin: string | null;
     criado_em: string;
   }[];
   despesas: {
@@ -669,7 +676,7 @@ export async function buscarCargaCompleta(
        foto_painel_path,
        profiles!cargas_motorista_id_fkey(nome, is_teste),
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
-       coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, criado_em),
+       coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
        despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),
        abastecimentos(id, posto_nome, litros, valor, km_atual, foto_path, latitude, longitude, criado_em),
        descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, foto_papel_path, latitude, longitude, criado_em)`

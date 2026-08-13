@@ -14,10 +14,18 @@ interface Motorista {
   exige_foto: boolean;
   senha_visivel: string | null;
   is_teste?: boolean | null;
+  mostra_saldo_app?: boolean | null;
   criado_em: string;
 }
 
-export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
+export function TabelaMotoristas({
+  motoristas,
+  mostrarColunaSaldo = false,
+}: {
+  motoristas: Motorista[];
+  /** Coluna do saldo no app — parte do Módulo 1, gated como o resto */
+  mostrarColunaSaldo?: boolean;
+}) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [senhasVisiveis, setSenhasVisiveis] = useState<Set<string>>(new Set());
@@ -145,6 +153,14 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
             <th className="py-2 pr-3">Criado</th>
             <th className="py-2 pr-3">Ativo</th>
             <th className="py-2 pr-3">Exige foto</th>
+            {mostrarColunaSaldo && (
+              <th
+                className="py-2 pr-3"
+                title="Motorista vê quanto tem de dinheiro da empresa na mão e recebe a tela de aceite quando o gestor envia adiantamento"
+              >
+                Saldo no app
+              </th>
+            )}
             <th className="py-2 pr-3">Ações</th>
           </tr>
         </thead>
@@ -256,6 +272,19 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   className="w-5 h-5 cursor-pointer"
                 />
               </td>
+              {mostrarColunaSaldo && (
+                <td className="py-3 pr-3">
+                  <input
+                    type="checkbox"
+                    checked={!!m.mostra_saldo_app}
+                    disabled={loadingId === m.id || m.role !== "motorista"}
+                    onChange={(e) =>
+                      atualizar(m.id, { mostra_saldo_app: e.target.checked })
+                    }
+                    className="w-5 h-5 cursor-pointer"
+                  />
+                </td>
+              )}
               <td className="py-3 pr-3">
                 <div className="flex flex-col gap-1 text-sm">
                   <button

@@ -53,6 +53,8 @@ const criados = {
   motoristaId: null,
   compraKgId: null,
   compraLitrosId: null,
+  compraCertId: null,
+  coletaAdminClientId: null,
   fotos: [],
 };
 
@@ -424,6 +426,61 @@ async function main() {
   const { data: comprasMot } = await mot.from("compras_diretas").select("id");
   check("RLS: motorista nao ve compras diretas", (comprasMot || []).length === 0);
 
+  // ---- 25. certificado na compra direta ----
+  const { data: compraCert, error: eCert } = await svc.from("compras_diretas").insert({
+    data: new Date().toISOString().slice(0, 10),
+    fornecedor: "Fornecedor E2E cert",
+    valor: 500,
+    quantidade: 500,
+    unidade: "litros",
+    certificado_tipo: "parcial",
+    litros_certificado: 300,
+    registrado_por: dev.id,
+  }).select("id, certificado_tipo, litros_certificado").maybeSingle();
+  check("compra direta aceita certificado parcial",
+    !eCert && compraCert?.certificado_tipo === "parcial" &&
+    Number(compraCert?.litros_certificado) === 300, eCert?.message);
+  criados.compraCertId = compraCert?.id;
+
+  // ---- 26. coleta lançada pelo admin numa carga encerrada ----
+  // criado_em derivado do corte do acerto (que veio do relógio do
+  // servidor) em vez do relógio desta máquina — senão uma diferença de
+  // horário entre os dois faria a coleta cair no ciclo anterior e o
+  // teste falharia sem haver bug.
+  const clientIdAdmin = randomUUID();
+  const depoisDoCorte = new Date(
+    new Date(acerto.corte_em).getTime() + 1000
+  ).toISOString();
+  const { error: eAdm } = await svc.from("coletas").insert({
+    motorista_id: teste1.id,
+    carga_id: carga.id,          // essa carga JÁ foi encerrada no passo 9
+    litros: 100,
+    local_nome: "Cliente esquecido E2E",
+    valor_pago: 90,
+    certificado_tipo: "nao",
+    gps_capturado: false,
+    criado_em: depoisDoCorte,
+    client_id: clientIdAdmin,
+    lancado_por_admin: dev.id,
+  });
+  check("admin lanca coleta em carga ENCERRADA", !eAdm, eAdm?.message);
+  criados.coletaAdminClientId = clientIdAdmin;
+
+  const { data: colAdm } = await svc.from("coletas")
+    .select("lancado_por_admin, carga_id").eq("client_id", clientIdAdmin).maybeSingle();
+  check("coleta retroativa fica marcada como lancada no painel",
+    colAdm?.lancado_por_admin === dev.id && colAdm?.carga_id === carga.id);
+
+  // O saldo tem que cair 90 (o dinheiro saiu da mao do motorista).
+  // Como o acerto do passo 15 zerou o ciclo, o esperado e -90 (so o
+  // gasto novo, depois do corte) + o carry de 75 = -15.
+  const { data: saldosAposColeta } = await svc.rpc("saldos_motoristas");
+  const saldoAposColeta = Number(
+    (saldosAposColeta || []).find((s) => s.motorista_id === teste1.id)?.saldo
+  );
+  check("coleta retroativa desconta do saldo do motorista (75 carry - 90)",
+    saldoAposColeta === -15, `saldo=${saldoAposColeta}`);
+
   await mot.auth.signOut();
 }
 
@@ -432,6 +489,10 @@ async function cleanup() {
   try {
     // SÓ ids que este run criou — nunca deletes amplos por motorista
     // (o Teste 1 do Evaner vive no mesmo banco).
+    if (criados.coletaAdminClientId) {
+      await svc.from("coletas").delete().eq("client_id", criados.coletaAdminClientId);
+    }
+    if (criados.compraCertId) await svc.from("compras_diretas").delete().eq("id", criados.compraCertId);
     if (criados.compraKgId) await svc.from("compras_diretas").delete().eq("id", criados.compraKgId);
     if (criados.compraLitrosId) await svc.from("compras_diretas").delete().eq("id", criados.compraLitrosId);
     if (criados.acertoId) await svc.from("acertos").delete().eq("id", criados.acertoId);

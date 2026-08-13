@@ -73,6 +73,14 @@ function FormCompra({
   const [caminhaoVazio, setCaminhaoVazio] = useState(
     editando ? editando.entra_no_estoque : true
   );
+  const [certTipo, setCertTipo] = useState<"integral" | "parcial" | "nao">(
+    editando?.certificado_tipo || "nao"
+  );
+  const [litrosCert, setLitrosCert] = useState(
+    editando?.litros_certificado !== null && editando?.litros_certificado !== undefined
+      ? String(editando.litros_certificado).replace(".", ",")
+      : ""
+  );
   const [observacao, setObservacao] = useState(editando?.observacao || "");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [nomeFoto, setNomeFoto] = useState<string | null>(null);
@@ -96,6 +104,10 @@ function FormCompra({
     if (fornecedor.trim().length < 2) return setErro("Diga de quem comprou");
     if (valorCentavos === null || valorCentavos <= 0) return setErro("Valor inválido");
     if (!Number.isFinite(qtd) || qtd <= 0) return setErro("Quantidade inválida");
+    const litrosCertNum = Number(litrosCert.trim().replace(",", "."));
+    if (certTipo === "parcial" && (!Number.isFinite(litrosCertNum) || litrosCertNum <= 0)) {
+      return setErro("Quantos litros foram no certificado parcial?");
+    }
     setErro(null);
     setSalvando(true);
     try {
@@ -120,6 +132,8 @@ function FormCompra({
         quantidade: qtd,
         unidade,
         entra_no_estoque: caminhaoVazio,
+        certificado_tipo: certTipo,
+        litros_certificado: certTipo === "parcial" ? litrosCertNum : null,
         observacao: observacao.trim() || null,
         ...(foto_path ? { foto_path } : {}),
       };
@@ -275,6 +289,50 @@ function FormCompra({
         </label>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Emitiu certificado?
+          </label>
+          <div className="flex gap-2">
+            {(
+              [
+                ["nao", "Não"],
+                ["integral", "Total"],
+                ["parcial", "Parcial"],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => setCertTipo(valor)}
+                className={`px-4 py-2 rounded-xl border-2 text-sm ${
+                  certTipo === valor
+                    ? "bg-verde text-white border-verde"
+                    : "bg-white border-cinza-borda"
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+        </div>
+        {certTipo === "parcial" && (
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Quantos litros no certificado
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={litrosCert}
+              onChange={(e) => setLitrosCert(e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+
       <div>
         <label className="block text-sm font-medium mb-1">
           Observação <span className="text-cinza-suave">(opcional)</span>
@@ -356,6 +414,7 @@ function TabelaCompras({
             <th className="py-2 pr-3 text-right">Peso (kg)</th>
             <th className="py-2 pr-3 text-right">Valor</th>
             <th className="py-2 pr-3 text-right">R$/kg</th>
+            <th className="py-2 pr-3">Certificado</th>
             <th className="py-2 pr-3">Estoque</th>
             <th className="py-2 pr-3 text-center">Foto</th>
             <th className="py-2 pr-3">Ações</th>
@@ -382,6 +441,13 @@ function TabelaCompras({
                 {c.peso_kg > 0
                   ? `R$ ${(c.valor / c.peso_kg).toFixed(2).replace(".", ",")}`
                   : "—"}
+              </td>
+              <td className="py-2 pr-3 text-xs">
+                {c.certificado_tipo === "integral"
+                  ? "total"
+                  : c.certificado_tipo === "parcial"
+                    ? `parcial (${Number(c.litros_certificado || 0).toLocaleString("pt-BR")} L)`
+                    : "—"}
               </td>
               <td className="py-2 pr-3 text-xs">
                 {c.entra_no_estoque ? (

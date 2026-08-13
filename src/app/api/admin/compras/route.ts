@@ -19,6 +19,23 @@ export async function POST(req: NextRequest) {
   const entra_no_estoque = body.entra_no_estoque !== false;
   const foto_path = body.foto_path ? String(body.foto_path) : null;
   const observacao = body.observacao ? String(body.observacao).trim() : null;
+  const certificado_tipo = ["integral", "parcial", "nao"].includes(
+    body.certificado_tipo
+  )
+    ? body.certificado_tipo
+    : "nao";
+  // Integral = tudo que entrou; parcial = o que o gestor informar
+  let litros_certificado: number | null = null;
+  if (certificado_tipo === "parcial") {
+    const n = Number(body.litros_certificado);
+    if (!Number.isFinite(n) || n <= 0) {
+      return NextResponse.json(
+        { error: "certificado parcial precisa dos litros" },
+        { status: 400 }
+      );
+    }
+    litros_certificado = Math.round(n * 100) / 100;
+  }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
     return NextResponse.json({ error: "data inválida" }, { status: 400 });
@@ -46,6 +63,13 @@ export async function POST(req: NextRequest) {
       quantidade: Math.round(quantidade * 100) / 100,
       unidade,
       entra_no_estoque,
+      certificado_tipo,
+      litros_certificado:
+        certificado_tipo === "integral"
+          ? unidade === "litros"
+            ? Math.round(quantidade * 100) / 100
+            : Math.round((quantidade / 0.9) * 100) / 100
+          : litros_certificado,
       foto_path,
       observacao,
       registrado_por: admin.id,

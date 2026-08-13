@@ -31,8 +31,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const updates: Record<string, unknown> = {};
   if (typeof body.ativo === "boolean") updates.ativo = body.ativo;
   if (typeof body.exige_foto === "boolean") updates.exige_foto = body.exige_foto;
-  if (typeof body.mostra_saldo_app === "boolean")
+  // O saldo no app é UMA experiência só: a tela de aceite de adiantamento
+  // (gated por features.saldo) e o card "Seu dinheiro" (mostra_saldo_app).
+  // Ligar só metade deixaria o motorista com card sem tela de aceite —
+  // por isso o servidor move os dois juntos, venha de onde vier.
+  if (typeof body.mostra_saldo_app === "boolean") {
     updates.mostra_saldo_app = body.mostra_saldo_app;
+    const { data: atual } = await getSupabaseAdmin()
+      .from("profiles")
+      .select("features")
+      .eq("id", id)
+      .maybeSingle();
+    updates.features = {
+      ...((atual?.features as Record<string, unknown>) || {}),
+      saldo: body.mostra_saldo_app,
+    };
+  }
   if (typeof body.nome === "string" && body.nome.trim()) updates.nome = body.nome.trim();
 
   if (Object.keys(updates).length === 0) {

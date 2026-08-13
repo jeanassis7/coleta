@@ -5,8 +5,9 @@ import {
 } from "@/lib/admin/queries";
 import { TabelaDespesas } from "@/components/admin/TabelaDespesas";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
+import { ExportCsv } from "@/components/admin/ExportCsv";
 import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, formatDataHora } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,21 @@ export default async function DespesasPage({
   const total = despesas.reduce((s, d) => s + d.valor, 0);
   const resumo = `${despesas.length} ${despesas.length === 1 ? "lançamento" : "lançamentos"} · ${formatBRL(total)}`;
 
+  const linhasCsv = despesas.map((d) => ({
+    data: formatDataHora(d.criado_em),
+    motorista: d.motorista_nome,
+    caminhao: d.caminhao_placa,
+    descricao: d.descricao,
+    valor: d.valor.toFixed(2),
+    tem_foto: d.foto_path ? "sim" : "não",
+  }));
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Despesas</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <h1 className="text-2xl font-bold">Despesas</h1>
+        <ExportCsv linhas={linhasCsv} nomeArquivo="despesas" />
+      </div>
       <p className="text-sm text-cinza-suave mb-4">
         Tudo que o motorista gastou fora combustível (almoço, hotel, lavagem…),
         do mais recente pro mais antigo. Clique em 📷 pra ver o comprovante.

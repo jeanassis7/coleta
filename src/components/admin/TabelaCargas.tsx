@@ -100,6 +100,9 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
             {th("Motorista", "motorista")}
             <th className="py-2 pr-3 text-left">Fim</th>
             <th className="py-2 pr-3 text-right">Km rodado</th>
+            <th className="py-2 pr-3 text-right" title="Km rodado ÷ litros de combustível">
+              km/L
+            </th>
             {th("Coletas", "coletas", true)}
             {th("Litros decl.", "litros", true)}
             <th className="py-2 pr-3 text-right">Peso bruto</th>
@@ -155,6 +158,14 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                 </td>
                 <td className="py-2 pr-3 text-right font-mono">
                   {kmRodado !== null ? `${kmRodado} km` : "—"}
+                </td>
+                <td className="py-2 pr-3 text-right font-mono">
+                  {/* Só faz sentido com km fechado E combustível lançado */}
+                  {kmRodado !== null && c.total_litros_combustivel > 0
+                    ? (kmRodado / c.total_litros_combustivel)
+                        .toFixed(2)
+                        .replace(".", ",")
+                    : "—"}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono">
                   {c.total_coletas}

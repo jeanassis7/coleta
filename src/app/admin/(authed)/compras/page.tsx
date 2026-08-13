@@ -1,8 +1,9 @@
 import { buscarComprasDiretas } from "@/lib/admin/queries";
 import { CompraDiretaPainel } from "@/components/admin/CompraDiretaPainel";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
+import { ExportCsv } from "@/components/admin/ExportCsv";
 import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, formatData } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +29,27 @@ export default async function ComprasPage({
     `${totalKg.toLocaleString("pt-BR")} kg · ${formatBRL(totalValor)}` +
     (totalKg > 0 ? ` · R$ ${rsPorKg.toFixed(2).replace(".", ",")}/kg` : "");
 
+  const linhasCsv = compras.map((c) => ({
+    data: formatData(c.data),
+    fornecedor: c.fornecedor,
+    quantidade: c.quantidade.toFixed(2),
+    unidade: c.unidade,
+    peso_kg: c.peso_kg.toFixed(2),
+    medido_ou_estimado: c.unidade === "kg" ? "medido (balança)" : "estimado",
+    valor: c.valor.toFixed(2),
+    valor_por_kg: c.peso_kg > 0 ? (c.valor / c.peso_kg).toFixed(2) : "",
+    entra_no_estoque: c.entra_no_estoque ? "sim" : "não (conta na descarga)",
+    certificado: c.certificado_tipo,
+    litros_certificado: c.litros_certificado?.toFixed(2) ?? "",
+    observacao: c.observacao || "",
+  }));
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-2">Compra direta de óleo</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <h1 className="text-2xl font-bold">Compra direta de óleo</h1>
+        <ExportCsv linhas={linhasCsv} nomeArquivo="compras_diretas" />
+      </div>
       <p className="text-sm text-cinza-suave mb-4">
         Óleo que <strong>o gestor</strong> negociou e pagou do caixa da empresa —
         o motorista não coletou. Por isso não desconta do saldo de ninguém e não

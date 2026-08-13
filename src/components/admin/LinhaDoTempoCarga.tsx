@@ -114,7 +114,17 @@ function ConteudoEvento({ evento }: { evento: Evento }) {
     const rl = c.litros > 0 ? c.valor_pago / c.litros : 0;
     return (
       <>
-        <p className="font-medium">{c.local_nome}</p>
+        <p className="font-medium">
+          {c.local_nome}
+          {c.lancado_por_admin && (
+            <span
+              className="ml-2 text-xs font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300"
+              title="Digitada no painel pelo gestor — não veio do celular em campo"
+            >
+              lançada no painel
+            </span>
+          )}
+        </p>
         <p className="text-sm text-cinza-suave">
           {formatLitros(c.litros)} · {formatBRL(c.valor_pago)} ·{" "}
           {formatBRL(rl)}/L

@@ -6,6 +6,7 @@ import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { LinhaDoTempoCarga } from "@/components/admin/LinhaDoTempoCarga";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
+import { AdicionarColetaNaCarga } from "@/components/admin/AdicionarColetaNaCarga";
 import type { PontoCarga } from "@/components/admin/MapaCarga";
 
 const MapaCarga = nextDynamic(() => import("@/components/admin/MapaCarga"), {
@@ -30,6 +31,10 @@ export default async function CargaDetalhePage({
   const gastoColetas = carga.coletas.reduce((s, c) => s + Number(c.valor_pago), 0);
   const gastoDespesas = carga.despesas.reduce((s, d) => s + Number(d.valor), 0);
   const gastoAbast = carga.abastecimentos.reduce((s, a) => s + Number(a.valor), 0);
+  const litrosCombustivel = carga.abastecimentos.reduce(
+    (s, a) => s + Number(a.litros),
+    0
+  );
   const gastoTotal = gastoColetas + gastoDespesas + gastoAbast;
   const litrosDeclarados = carga.coletas.reduce((s, c) => s + Number(c.litros), 0);
   const pesoLiquido = carga.descarga?.peso_liquido_kg ?? null;
@@ -177,9 +182,19 @@ export default async function CargaDetalhePage({
           nota={custoPorKg === null ? "só após descarregar" : undefined}
         />
         <Kpi
-          rotulo="Lançamentos"
-          valor={`${carga.coletas.length + carga.despesas.length + carga.abastecimentos.length}`}
-          nota={`${carga.coletas.length} coletas`}
+          rotulo="Consumo"
+          valor={
+            kmRodado !== null && litrosCombustivel > 0
+              ? `${(kmRodado / litrosCombustivel).toFixed(2).replace(".", ",")} km/L`
+              : "—"
+          }
+          nota={
+            kmRodado === null
+              ? "falta o km final"
+              : litrosCombustivel === 0
+                ? "sem abastecimento lançado"
+                : `${litrosCombustivel.toLocaleString("pt-BR")} L de diesel`
+          }
         />
       </div>
 
@@ -196,7 +211,19 @@ export default async function CargaDetalhePage({
       )}
 
       {/* Linha do tempo */}
-      <h2 className="text-lg font-semibold mb-2">📋 Tudo que aconteceu</h2>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <h2 className="text-lg font-semibold">📋 Tudo que aconteceu</h2>
+        <AdicionarColetaNaCarga
+          cargaId={carga.id}
+          motoristaNome={carga.motorista_nome}
+          dataSugerida={new Date(
+            new Date(carga.encerrada_em || carga.iniciada_em).getTime() -
+              3 * 60 * 60 * 1000
+          )
+            .toISOString()
+            .slice(0, 16)}
+        />
+      </div>
       <p className="text-sm text-cinza-suave mb-3">
         Em ordem cronológica. Clique em 📷 pra ver a foto de cada lançamento.
       </p>
