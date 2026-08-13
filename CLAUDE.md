@@ -24,32 +24,59 @@ Guaíra, Toledo, Cascavel, Foz do Iguaçu (oeste do PR). Muita área rural sem s
 ## URLs, acessos e credenciais
 
 - **Produção:** https://coleta-inky.vercel.app
-- **Admin:** https://coleta-inky.vercel.app/admin/login → `jean@coleta.local` / `Progevaner123$`
+- **Admin (Jean):** https://coleta-inky.vercel.app/admin/login → `jean@coleta.local` / `Progevaner123$`
+- **Dev (Evaner):** mesmo login → `evaner@coleta.local` / `senharolha` (role `dev`)
 - **Repo:** https://github.com/jeanassis7/coleta (Evaner é colaborador com Write)
 - **Supabase project:** `jjhs-coleta` (URL `zwghaoubzrkluckrcxwi.supabase.co`)
+  - `DATABASE_URL` (session pooler) está no `.env.local` — permite rodar migrations daqui via `scripts/aplicar-migration.mjs`, sem abrir o SQL Editor
 - **Motoristas** (todos em `@coleta.local`): Luis/`volante`, Lucimar/`tanque`, Lucinei/`lanterna`
+- **Motorista de teste:** `teste1@coleta.local` / `teste123` (`is_teste=true` — invisível nos dashboards)
+
+## Roles (3 níveis)
+
+- **`motorista`** — PWA. Features novas chegam via flag individual em `profiles.features`.
+- **`admin`** (Jean) — painel operacional.
+- **`dev`** (Evaner) — herda tudo de admin + vê o que está em teste. `is_admin()` no Postgres cobre admin E dev, então RLS não precisa saber da diferença.
+
+Helpers em `src/lib/auth/roles.ts`: `isDev`, `isAdminPuro`, `podeAcessarAdmin`, `hasFeature`.
+
+⚠️ **Ao mexer em role/gate, checar 4 lugares** (bug real já aconteceu): `src/middleware.ts`, `/admin/(authed)/layout.tsx`, `/admin/login/page.tsx` e `/motorista/login/page.tsx`.
 
 ## Arquitetura — visão rápida
 
 ```
 /motorista/*                    → PWA leve, offline-first
   /login                        → primeiro acesso (precisa internet)
-  /                             → home (NOVA COLETA, lista do dia, botão sync manual)
+  /                             → home (NOVA COLETA + [se features.carga] barra do
+                                  caminhão, DESCARREGAR, ABASTECIMENTO, DESPESAS,
+                                  CANCELAR CARGA) + [se features.saldo] card de saldo
   /nova-coleta                  → form principal, GPS captura ao abrir
   /confirmacao                  → tela de sucesso
+  ── Módulo 1 (só com features.carga=true) ──
+  /iniciar-carga                → boas-vindas → form (caminhão + km + foto do painel)
+  /abastecimento                → posto, litros, valor, km, foto (antiburro de km)
+  /despesa                      → valor, descrição, foto obrigatória
+  /descarregar                  → peso bruto → líquido/litros, antiburros no confirmar
+  /carga-encerrada              → resumo (duração, coletas, pesos)
 
-/admin/*                        → painel web normal
+/admin/*                        → painel web (sidebar vertical com grupos)
   /login                        → fora do (authed)
   /(authed)/                    → rotas protegidas
-    /                           → dashboard com KPIs + análises + lista/mapa + export CSV
-    /mapa                       → tab dedicada, pins agregados por local curado
-    /observacoes                → todas coletas com observação livre
-    /curadoria                  → agrupa coletas → cria locais canônicos, separa clusters
-    /motoristas                 → CRUD + toggle exige_foto + senha visível + delete
-    /eventos                    → log estruturado (25+ tipos) pra debug remoto
+    /                           → dashboard: [Módulo 1] alertas + cargas ativas +
+                                  descargas recentes, depois KPIs + análises + lista/mapa
+    /mapa · /observacoes · /curadoria · /motoristas · /eventos   (como sempre)
+    ── Módulo 1 (dev-only até o flip) ──
+    /cargas                     → tabela densa (19 col) + umidade na coluna Umid.
+    /abastecimentos             → lista + edição (corrigir lançamento errado)
+    /adiantamentos              → saldo por motorista + enviar + acerto
+    /adiantamentos/[id]         → histórico de dinheiro do motorista
+    /caminhoes                  → CRUD da frota
+    /dev/features               → toggles de feature por motorista de teste (só dev)
 
 /api/admin/*                    → endpoints com service_role
-  /motoristas, /coletas/[id], /coletas/bulk-delete, /locais/[id], /locais
+  /motoristas[/id][/feature], /coletas/[id], /coletas/bulk-delete, /locais[/id],
+  /caminhoes[/id], /descargas/[id], /abastecimentos/[id], /adiantamentos[/id],
+  /acertos, /alertas/visto
 /api/locais/proximos            → busca por proximidade (client motorista)
 ```
 
@@ -81,11 +108,39 @@ Guaíra, Toledo, Cascavel, Foz do Iguaçu (oeste do PR). Muita área rural sem s
 
 ## Migrations já aplicadas (NÃO re-criar)
 
-Em `supabase/migrations/`:
+Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <arquivo>`:
 - `0001_initial.sql` — schema, RLS, storage bucket
 - `0002_admin_features.sql` — `profiles.senha_visivel`
 - `0003_locais.sql` — tabela `locais`, função `locais_proximos`, view `locais_com_stats`
 - `0004_storage_rls_fix.sql` — UPDATE/DELETE policies pra fotos (resolveu bug "RLS violation")
+- `0005_role_dev.sql` — role `dev` + `is_admin()` passa a cobrir admin E dev
+- `0006_foundations.sql` — `profiles.features` (jsonb), `is_teste`, `mostra_saldo_app`
+- `0007_cargas.sql` — `caminhoes`, `cargas` (índice único de 1 ativa), `coletas.carga_id`, `descargas` (peso_liquido generated), `despesas`, `abastecimentos` + RLS
+- `0008_adiantamentos.sql` — `adiantamentos` (pendente/aceito/cancelado), `acertos` (`corte_em timestamptz`)
+- `0009_client_ids_offline.sql` — `client_id` unique nas 3 tabelas (sync idempotente)
+- `0010_valores_com_centavos.sql` — despesa/abastecimento/adiantamento/acerto viram `numeric(10,2)`
+- `0011_acerto_saldo_negativo.sql` — remove CHECK >= 0 (empresa pode dever pro motorista)
+- `0012_alertas_vistos.sql` — tabela de alertas dispensados no "OK, VI"
+
+## MÓDULO 1 (Cargas/ERP) — regras que valem pra tudo daqui pra frente
+
+**Estágio atual: DEV-ONLY.** Jean não vê nada do módulo. A promoção pro admin é **um flip** de `MODULO1_LIBERADO_PARA_ADMIN` em `src/lib/auth/gate-modulo1.ts` — libera menu + páginas + endpoints de uma vez. Páginas usam `exigirAcessoModulo1OuRedirect()`, endpoints `exigirAcessoModulo1()`, telas compartilhadas (dashboard) `acessoModulo1Atual()`.
+
+**Ciclo de vida de feature:** dev-only → admin liga por motorista (`profiles.features`) → vira padrão. Feature nova nasce **OFF** pra todos.
+
+**Motorista de teste (`is_teste=true`):** invisível em dashboard, KPIs, curadoria, observações, exports. **Dev vê** (com badge 🧪); admin não. Ao criar query admin nova, decidir explicitamente.
+
+**Ciclo = CARGA** (não "viagem"): dura 3-10 dias, encerra na descarga (pesagem na balança). Só 1 ativa por motorista (índice único no banco).
+
+**Unidade:** motorista declara **LITROS**; da balança em diante é **KG** (densidade fixa **0,9 kg/L**). Estoque e venda em kg; litros só como referência.
+
+**Tara:** fonte única é o cadastro do caminhão. A descarga grava um **snapshot** — se Jean recalibrar depois, descarga antiga preserva a tara da época.
+
+**Offline-first vale pros 4 lançamentos** (coleta, despesa, abastecimento, descarga): GPS na hora + fila no IndexedDB + sync com `client_id` idempotente. *Iniciar carga* é a única ação que exige sinal (o servidor garante "1 carga ativa"). Descarga encerra a carga **localmente** na hora; o sync fecha no servidor.
+
+**Antiburros são inline e só no clique do botão** — nunca enquanto digita. Padrão: primeiro toque mostra bloco amarelo explicando, segundo toque ("CONFIRMAR MESMO ASSIM") prossegue. Erro impossível (peso < tara, km < início da carga) **bloqueia** em vermelho.
+
+**Alertas do dashboard** (`src/lib/admin/alertas.ts`): calculados na hora, texto **didático** (o que aconteceu → hipóteses de causa → o que fazer). `alertas_vistos` guarda os dispensados; a chave é a **ocorrência** (id do registro), então condição repetida em outro registro = alerta novo. Alerta estatístico só liga com base suficiente (30+ coletas ou 60+ dias) — alerta ruidoso ensina a ignorar alerta.
 
 ## O que NÃO fazer
 
@@ -97,15 +152,22 @@ Em `supabase/migrations/`:
 - **Não criar features sem direção do Evaner** — ele é opinionado e prefere recortar escopo a adicionar coisas que "talvez sejam úteis".
 - **Não adicionar tracking GPS contínuo** — limitação de PWA + LGPD + bateria. Discutido e descartado. Se virar prioridade, alternativa é rastreador veicular físico.
 - **Não suportar iOS como target primário** — Android é o principal, iOS funciona mas com atenção extra na instalação (manual via Safari > Compartilhar > Adicionar à Tela de Início).
+- **ZERO popup do navegador** — `alert()`, `confirm()` e `prompt()` são proibidos na UI. Admin usa `ModalConfirmar`/`ModalInputTexto` (`src/components/admin/Modais.tsx`); motorista usa confirmação em **duas etapas** na própria tela.
+- **Não mostrar GPS pro motorista** — captura é silenciosa em TODO evento. Nem ícone, nem "GPS capturado ✓". Ele pode suspeitar; a UI nunca conta.
+- **Não usar input de texto livre pra dinheiro** — sempre `InputDinheiro`. O parser antigo engolia vírgula e "520,12" virou R$ 52.012 em produção.
+- **Não criar submenu no motorista** — o "MENU CARGA" existiu e foi cortado: tudo fica na home, um toque. Se a home crescer demais, discutir com o Evaner antes de esconder algo.
+- **Não pedir confirmação enquanto o motorista digita** — validação só no clique do botão.
+- **Não deixar o E2E encostar no Teste 1** — `scripts/e2e-modulo1.mjs` cria e apaga o próprio motorista descartável. O Teste 1 é o ambiente de teste manual do Evaner e pode ter carga ativa a qualquer momento.
 
 ## Ciclo de vida dos dados
 
 | Dado | Servidor | Retenção local (IndexedDB do celular) |
 |---|---|---|
 | Coleta (registro) | Supabase Postgres, permanente | Apagada 24h após sync 100% |
-| Foto (blob) | Supabase Storage, permanente | Blob apagado junto com a coleta (24h) |
+| Despesa / Abastecimento / Descarga | Supabase Postgres, permanente | Apagados 24h após sync 100% |
+| Foto (blob) | Supabase Storage, permanente | Blob apagado junto com o lançamento (24h) |
 | Evento (log) | Supabase Postgres, permanente | Apagado 7 dias após sync |
-| Perfil | Supabase Auth + Postgres | Cache em localStorage pra login offline |
+| Perfil + carga ativa | Supabase Auth + Postgres | Cache em localStorage (limpo no logout) |
 
 Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fazer nada. Ver `limparColetasSincronizadasAntigas` e `limparGpsPendenteStale` em `src/lib/sync/queue.ts`.
 
@@ -157,6 +219,11 @@ git push
 ```
 
 Scripts auxiliares:
+- `node scripts/aplicar-migration.mjs <arquivo.sql>` — aplica migration direto no Postgres (usa `DATABASE_URL`, roda em transação)
+- `node scripts/e2e-modulo1.mjs` — **rodar após qualquer mexida no Módulo 1**: 35 checks contra produção (RLS, idempotência, updates atômicos, queries aninhadas do admin e dos alertas, cálculo de saldo, filtros `is_teste`). Cria e apaga o próprio motorista descartável.
+- `node scripts/limpar-lancamentos-teste.mjs [email]` — zera lançamentos de um motorista de teste pra recomeçar limpo (recusa perfil real)
+- `node scripts/criar-motorista-teste.mjs [nome] [email] [senha]` — cria motorista sandbox (também dá pra criar pelo painel, checkbox só visível pro dev)
+- `node scripts/criar-dev.mjs` — cria/atualiza o usuário dev do Evaner
 - `node scripts/gerar-icones.mjs` — regenera PNGs a partir de `icone-gota.jfif`
 - `node scripts/gerar-tutorial-pdf.mjs` — regenera o manual do Jean (`tutorial-coleta.pdf` fica na raiz, ignorado pelo .gitignore)
 

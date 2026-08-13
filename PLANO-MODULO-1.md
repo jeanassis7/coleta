@@ -5,6 +5,28 @@
 
 ---
 
+## STATUS — Módulo 1 implementado (agosto/2026)
+
+Blocos 0 a 8 do roadmap estão no ar, em **Estágio 1 (dev-only)**. Falta só o Bloco 9 (rollout gradual pros motoristas reais, quando o Evaner mandar).
+
+**O que MUDOU em relação ao desenho abaixo** — o teste de campo do Evaner mandou nessas decisões, e elas valem sobre o texto original:
+
+1. **Aba "Descarregamentos" não existe.** Foi fundida na tabela de Cargas: a umidade é lançada clicando na coluna "Umid.". Um menu só (seções 9.5 e parte de 9.1 estão desatualizadas).
+2. **"MENU CARGA" no motorista foi cortado.** Tudo na home: NOVA COLETA, DESCARREGAR, ABASTECIMENTO, DESPESAS, CANCELAR CARGA (seção 5.2.4 desatualizada).
+3. **Despesa, abastecimento e descarga são offline-first** como a coleta — o plano original os deixava online-only sem dizer. Fila no IndexedDB + `client_id` idempotente (migration 0009).
+4. **Dinheiro com centavos** em despesa/abastecimento/adiantamento/acerto (migration 0010) + máscara `InputDinheiro`. Coleta segue inteiro. Motivo: o parser antigo transformou "520,12" em R$ 52.012 em produção.
+5. **Acerto com saldo negativo** (migration 0011): quando o motorista gastou do próprio bolso, o modal vira "a empresa deve X pra ele" com pagar agora / somar no salário / levar pro próximo ciclo. O desenho original só previa saldo positivo.
+6. **Aba Abastecimentos** no admin (não estava no plano): lista + edição, pra corrigir lançamento errado.
+7. **Histórico de adiantamentos por motorista** virou página própria (`/admin/adiantamentos/[id]`) em vez de aba.
+8. **Antiburro de km no abastecimento** (não estava no plano): bloqueia km menor que o início da carga; avisa em km menor que o último registro e em salto acima de 1.500 km.
+9. **Regra nova, vale pro sistema inteiro:** zero `alert()`/`confirm()`/`prompt()` do navegador. Admin usa modais do app; motorista usa confirmação em duas etapas na tela.
+10. **Tela de boas-vindas** antes do form de iniciar carga.
+11. **Dev vê dados de motorista de teste** (com 🧪) nas telas do Módulo 1; admin nunca vê. O plano só dizia "invisível", o que escondia o dado do próprio dev.
+
+**Verificação:** `node scripts/e2e-modulo1.mjs` — 35 checks contra produção. Rodar após qualquer mexida no módulo.
+
+---
+
 ## 1. Contexto
 
 Fase 2 do projeto: transformar "app de coleta" em "controle operacional".
