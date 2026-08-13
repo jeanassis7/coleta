@@ -134,9 +134,12 @@ async function buscarColetasDoIntervalo(
   motoristaId?: string
 ): Promise<ColetaCompleta[]> {
   const supabase = await getSupabaseServer();
+  // !inner + filtro em profiles.is_teste EXCLUI coletas de motoristas de teste
+  // do dashboard/KPI. Ver /admin/eventos/motoristas pra visualização com testes.
   let q = supabase
     .from("coletas")
-    .select("*, profiles!coletas_motorista_id_fkey(nome)")
+    .select("*, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)")
+    .eq("profiles.is_teste", false)
     .gte("criado_em", inicio.toISOString())
     .lte("criado_em", fim.toISOString())
     .order("criado_em", { ascending: false });
@@ -160,11 +163,41 @@ export async function buscarColetasAnterior(filtros: FiltrosDashboard) {
   return buscarColetasDoIntervalo(inicio, fim, filtros.motorista);
 }
 
-export async function buscarMotoristas() {
+/**
+ * Lista motoristas cadastrados. Por padrão EXCLUI motoristas de teste
+ * (is_teste=true) pra não contaminar dashboards/dropdowns. Passar
+ * { incluirTeste: true } quando a tela precisa mostrar todos
+ * (ex: /admin/motoristas, /admin/dev/features).
+ */
+export async function buscarMotoristas(
+  opts: { incluirTeste?: boolean } = {}
+) {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("profiles")
+    .select(
+      "id, nome, role, ativo, exige_foto, senha_visivel, is_teste, features, mostra_saldo_app, criado_em"
+    )
+    .order("nome");
+  if (!opts.incluirTeste) {
+    q = q.eq("is_teste", false);
+  }
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Só motoristas de teste (is_teste=true, role=motorista).
+ * Usado no painel dev /admin/dev/features.
+ */
+export async function buscarMotoristasTeste() {
   const supabase = await getSupabaseServer();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, nome, role, ativo, exige_foto, senha_visivel, criado_em")
+    .select("id, nome, features, mostra_saldo_app, criado_em")
+    .eq("role", "motorista")
+    .eq("is_teste", true)
     .order("nome");
   if (error) throw error;
   return data || [];
@@ -175,8 +208,10 @@ export async function buscarMotoristas() {
  * Usa o cliente service_role pra listar os usuários do Auth e casar por id.
  * Só usar em telas de admin — faz uma chamada extra ao Auth.
  */
-export async function buscarMotoristasComEmail() {
-  const motoristas = await buscarMotoristas();
+export async function buscarMotoristasComEmail(
+  opts: { incluirTeste?: boolean } = {}
+) {
+  const motoristas = await buscarMotoristas(opts);
   const admin = getSupabaseAdmin();
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const emailPorId = new Map(

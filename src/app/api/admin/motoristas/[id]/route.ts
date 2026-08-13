@@ -13,7 +13,8 @@ async function exigirAdmin() {
     .select("role, ativo")
     .eq("id", user.id)
     .maybeSingle();
-  if (!profile || profile.role !== "admin" || !profile.ativo) return null;
+  if (!profile || !profile.ativo) return null;
+  if (profile.role !== "admin" && profile.role !== "dev") return null;
   return user;
 }
 
@@ -30,6 +31,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const updates: Record<string, unknown> = {};
   if (typeof body.ativo === "boolean") updates.ativo = body.ativo;
   if (typeof body.exige_foto === "boolean") updates.exige_foto = body.exige_foto;
+  if (typeof body.mostra_saldo_app === "boolean")
+    updates.mostra_saldo_app = body.mostra_saldo_app;
   if (typeof body.nome === "string" && body.nome.trim()) updates.nome = body.nome.trim();
 
   if (Object.keys(updates).length === 0) {

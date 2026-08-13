@@ -1,23 +1,22 @@
 /**
- * Cria o usuário DEV (Evaner) no Supabase Auth + profiles.
+ * Cria um motorista de TESTE (is_teste=true).
+ * Motoristas de teste NÃO aparecem no dashboard/KPIs/curadoria — servem
+ * pra Evaner validar features novas em produção com dados reais dele.
  *
  * Uso:
- *   1. Rodar migration 0005_role_dev.sql no Supabase SQL Editor primeiro
- *   2. node scripts/criar-dev.mjs
+ *   node scripts/criar-motorista-teste.mjs [nome] [email] [senha]
  *
- * Idempotente: se o user já existe, atualiza a senha e garante role='dev'.
- * Requer NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.local
+ * Sem argumentos: cria "Teste 1" com email teste1@coleta.local, senha teste123.
+ *
+ * Idempotente: se o user já existe, atualiza a senha e garante os campos.
  */
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ws from "ws";
-// Node 20 não tem WebSocket nativo — supabase-js precisa pro Realtime.
-// Mesmo sem usar Realtime, o client inicializa o RealtimeClient no construtor.
 if (!globalThis.WebSocket) globalThis.WebSocket = ws;
 
-// Carrega .env.local manualmente (sem depender de dotenv)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__dirname, "..", ".env.local");
 const envRaw = readFileSync(envPath, "utf8");
@@ -33,16 +32,15 @@ if (!URL || !KEY) {
   process.exit(1);
 }
 
-const EMAIL = "evaner@coleta.local";
-const SENHA = "senharolha";
-const NOME = "Evaner";
+const NOME = process.argv[2] || "Teste 1";
+const EMAIL = process.argv[3] || "teste1@coleta.local";
+const SENHA = process.argv[4] || "teste123";
 
 const supabase = createClient(URL, KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
 async function main() {
-  // 1) Vê se já existe
   const { data: lista, error: errList } = await supabase.auth.admin.listUsers({
     page: 1,
     perPage: 1000,
@@ -71,17 +69,24 @@ async function main() {
     userId = data.user.id;
   }
 
-  // 2) Upsert profile com role='dev'
   const { error: errProfile } = await supabase.from("profiles").upsert({
     id: userId,
     nome: NOME,
-    role: "dev",
+    role: "motorista",
     ativo: true,
     exige_foto: false,
+    is_teste: true,
+    features: {},
+    mostra_saldo_app: false,
+    senha_visivel: SENHA,
   });
   if (errProfile) throw errProfile;
 
-  console.log(`✅ Pronto. Login: ${EMAIL} / ${SENHA}  |  role: dev`);
+  console.log(`✅ Pronto.`);
+  console.log(`   Nome:   ${NOME}`);
+  console.log(`   Login:  ${EMAIL} / ${SENHA}`);
+  console.log(`   Role:   motorista`);
+  console.log(`   Teste:  sim (não aparece em dashboards)`);
 }
 
 main().catch((e) => {

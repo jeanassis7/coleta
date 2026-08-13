@@ -46,6 +46,15 @@ export default async function AdminLayout({
               <Link href="/admin/curadoria" className="hover:text-verde">Curadoria</Link>
               <Link href="/admin/motoristas" className="hover:text-verde">Motoristas</Link>
               <Link href="/admin/eventos" className="hover:text-verde">Eventos</Link>
+              {dev && (
+                <Link
+                  href="/admin/dev/features"
+                  className="hover:text-verde text-amber-700"
+                  title="Painel de features (só dev)"
+                >
+                  🧪 Features
+                </Link>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3">

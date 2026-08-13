@@ -12,6 +12,7 @@ interface Motorista {
   ativo: boolean;
   exige_foto: boolean;
   senha_visivel: string | null;
+  is_teste?: boolean | null;
   criado_em: string;
 }
 
@@ -183,6 +184,14 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                 ) : (
                   <div className="flex items-center gap-2">
                     <span>{m.nome}</span>
+                    {m.is_teste && (
+                      <span
+                        className="text-xs font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300"
+                        title="Motorista de teste — não aparece em dashboards"
+                      >
+                        🧪 TESTE
+                      </span>
+                    )}
                     <button
                       onClick={() => iniciarEdicao(m.id, m.nome)}
                       className="text-cinza-suave hover:text-verde"
