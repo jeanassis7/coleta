@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
   const observacao = body.observacao ? String(body.observacao).trim() : null;
 
   if (!motorista_id) return NextResponse.json({ error: "motorista_id obrigatório" }, { status: 400 });
-  if (valor_devolvido < 0 || valor_vale < 0 || valor_saldo < 0) {
-    return NextResponse.json({ error: "valores negativos não permitidos" }, { status: 400 });
-  }
+  // Negativos são VÁLIDOS desde a 0011: saldo negativo = empresa devendo
+  // pro motorista (pagou agora / soma no salário / leva pro próximo ciclo).
+  // A coerência (soma = saldo) é garantida pelo modal do acerto.
 
   const client = getSupabaseAdmin();
   const { data, error } = await client

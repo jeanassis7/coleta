@@ -338,13 +338,21 @@ function ModalAcerto({
   onClose: () => void;
 }) {
   const router = useRouter();
-  // Tudo em CENTAVOS — validação exata sem surpresa de arredondamento
+  // Tudo em CENTAVOS — validação exata sem surpresa de arredondamento.
+  // Saldo NEGATIVO = motorista gastou do próprio bolso (empresa deve pra
+  // ele). Os 3 campos viram o espelho (pagar agora / somar no salário /
+  // levar pro próximo ciclo) e são gravados com sinal negativo.
   const saldoCent = reaisParaCentavos(saldoAtual);
+  const negativo = saldoCent < 0;
+  const alvo = Math.abs(saldoCent);
   const [devolvido, setDevolvido] = useState<number | null>(
-    saldoCent > 0 ? saldoCent : null
+    !negativo && saldoCent > 0 ? saldoCent : null
   );
   const [vale, setVale] = useState<number | null>(null);
-  const [saldo, setSaldo] = useState<number | null>(null);
+  const [saldo, setSaldo] = useState<number | null>(
+    // No modo dívida, o caso mais comum é o próximo adiantamento cobrir
+    negativo && alvo > 0 ? alvo : null
+  );
   const [obs, setObs] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -353,26 +361,27 @@ function ModalAcerto({
   const v = vale ?? 0;
   const s = saldo ?? 0;
   const soma = d + v + s;
-  const bate = soma === saldoCent;
+  const bate = soma === alvo;
 
   async function confirmar() {
     if (!bate) {
       setErro(
-        `Soma (${formatBRL(soma / 100)}) não bate com saldo (${formatBRL(saldoAtual)}).`
+        `Soma (${formatBRL(soma / 100)}) não bate com ${negativo ? "a dívida" : "o saldo"} (${formatBRL(alvo / 100)}).`
       );
       return;
     }
     setErro(null);
     setSalvando(true);
     try {
+      const sinal = negativo ? -1 : 1;
       const res = await fetch(`/api/admin/acertos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           motorista_id: motoristaId,
-          valor_devolvido: centavosParaReais(d),
-          valor_vale: centavosParaReais(v),
-          valor_saldo: centavosParaReais(s),
+          valor_devolvido: centavosParaReais(sinal * d),
+          valor_vale: centavosParaReais(sinal * v),
+          valor_saldo: centavosParaReais(sinal * s),
           observacao: obs.trim() || null,
         }),
       });
@@ -392,36 +401,50 @@ function ModalAcerto({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
         <h2 className="text-xl font-bold">Acerto — {motoristaNome}</h2>
-        <div className="bg-slate-50 rounded-xl p-3 text-sm">
-          Saldo atual: <strong className="font-mono">{formatBRL(saldoAtual)}</strong>
-          <p className="text-cinza-suave text-xs mt-1">
-            Divide entre devolvido em cash, desconto salário (vale), ou saldo que fica pro
-            próximo ciclo. A soma tem que bater com o saldo.
-          </p>
-        </div>
+        {negativo ? (
+          <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-3 text-sm">
+            O motorista gastou{" "}
+            <strong className="font-mono">{formatBRL(alvo / 100)}</strong> do
+            próprio bolso — <strong>a empresa deve {formatBRL(alvo / 100)} pra ele</strong>.
+            <p className="text-cinza-suave text-xs mt-1">
+              Divide como resolver. A soma tem que bater com a dívida.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-slate-50 rounded-xl p-3 text-sm">
+            Saldo atual:{" "}
+            <strong className="font-mono">{formatBRL(saldoAtual)}</strong>
+            <p className="text-cinza-suave text-xs mt-1">
+              Divide entre devolvido em cash, desconto salário (vale), ou saldo
+              que fica pro próximo ciclo. A soma tem que bater com o saldo.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium mb-1">
-            Devolvido (em cash)
+            {negativo ? "Pagar agora em dinheiro" : "Devolvido (em cash)"}
           </label>
           <InputDinheiro centavos={devolvido} onChange={setDevolvido} grande={false} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
-            Vale (desconto salário)
+            {negativo ? "Somar no próximo salário" : "Vale (desconto salário)"}
           </label>
           <InputDinheiro centavos={vale} onChange={setVale} grande={false} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
-            Fica de saldo (próximo ciclo)
+            {negativo
+              ? "Levar pro próximo ciclo (o próximo adiantamento cobre)"
+              : "Fica de saldo (próximo ciclo)"}
           </label>
           <InputDinheiro centavos={saldo} onChange={setSaldo} grande={false} />
         </div>
 
         <div className={`text-sm ${bate ? "text-green-700" : "text-alerta"}`}>
           Total: {formatBRL(soma / 100)}{" "}
-          {bate ? "✓" : `(precisa ser ${formatBRL(saldoAtual)})`}
+          {bate ? "✓" : `(precisa ser ${formatBRL(alvo / 100)})`}
         </div>
 
         <div>

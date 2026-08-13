@@ -144,6 +144,18 @@ export default async function HistoricoAdiantamentosPage({
             </tbody>
           </table>
         )}
+        {acertos.some(
+          (a) =>
+            Number(a.valor_devolvido) < 0 ||
+            Number(a.valor_vale) < 0 ||
+            Number(a.valor_saldo) < 0
+        ) && (
+          <p className="text-xs text-cinza-suave mt-3">
+            Valores negativos = a empresa devia pro motorista (ele tinha gastado
+            do próprio bolso): pagou na hora, somou no salário ou levou pro
+            próximo ciclo.
+          </p>
+        )}
       </div>
     </div>
   );
