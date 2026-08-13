@@ -1,17 +1,32 @@
 import { buscarMotoristasComEmail } from "@/lib/admin/queries";
 import { TabelaMotoristas } from "@/components/admin/TabelaMotoristas";
 import { FormCriarMotorista } from "@/components/admin/FormCriarMotorista";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import { isDev } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
 export default async function MotoristasPage() {
   const motoristas = await buscarMotoristasComEmail({ incluirTeste: true });
 
+  // Só o dev vê o checkbox "motorista de teste" no form de criação
+  const supabase = await getSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: viewer } = user
+    ? await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle()
+    : { data: null };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-bold">Motoristas</h1>
-        <FormCriarMotorista />
+        <FormCriarMotorista ehDev={isDev(viewer)} />
       </div>
       <TabelaMotoristas motoristas={motoristas} />
     </div>
