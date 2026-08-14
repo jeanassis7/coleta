@@ -42,6 +42,12 @@ export async function PATCH(
     }
     updates.unidade = body.unidade;
   }
+  if (body.tipo_oleo !== undefined) {
+    if (!["fino", "grosso"].includes(body.tipo_oleo)) {
+      return NextResponse.json({ error: "tipo de óleo inválido" }, { status: 400 });
+    }
+    updates.tipo_oleo = body.tipo_oleo;
+  }
   if (typeof body.entra_no_estoque === "boolean") {
     updates.entra_no_estoque = body.entra_no_estoque;
   }

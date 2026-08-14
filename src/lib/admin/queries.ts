@@ -541,6 +541,8 @@ export interface CompraDireta {
   unidade: "kg" | "litros";
   /** Sempre em kg — se lançou em litros, converteu por 0,9 */
   peso_kg: number;
+  /** Grosso (óleo de navio e afins) só entra por aqui — motorista sempre traz fino */
+  tipo_oleo: "fino" | "grosso";
   entra_no_estoque: boolean;
   certificado_tipo: "integral" | "parcial" | "nao";
   litros_certificado: number | null;
@@ -1084,4 +1086,110 @@ export function calcularDelta(atual: number, anterior: number): Delta {
   const direcao =
     Math.abs(diff_abs) < 0.001 ? "igual" : diff_abs > 0 ? "subiu" : "caiu";
   return { valor_atual: atual, valor_anterior: anterior, diff_abs, diff_pct, direcao };
+}
+
+// ============================================================================
+// ESTOQUE (Módulo 2 — Bloco 1)
+// ============================================================================
+
+export type TipoOleo = "fino" | "grosso";
+
+export interface EstoqueTipo {
+  tipo_oleo: TipoOleo;
+  saldo_kg: number;
+  /** Ponderado móvel. 4 casas: R$/kg de óleo anda em centavos. */
+  custo_medio_kg: number;
+  valor_total: number;
+  /** Referência — a densidade é fixa em 0,9 no sistema inteiro */
+  litros_equivalente: number;
+}
+
+/**
+ * Saldo e custo médio de cada tipo. A conta inteira roda dentro do Postgres
+ * (`estoque_atual()`), num round trip só — o custo médio depende da ORDEM
+ * dos movimentos, então refazer isso no JS exigiria trazer tudo pra cá.
+ */
+export async function buscarEstoque(): Promise<EstoqueTipo[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase.rpc("estoque_atual");
+  if (error) throw error;
+
+  const linhas = (data as EstoqueTipo[]) || [];
+  const porTipo = new Map(linhas.map((l) => [l.tipo_oleo, l]));
+
+  return (["fino", "grosso"] as TipoOleo[]).map((tipo) => {
+    const l = porTipo.get(tipo);
+    const saldo_kg = Number(l?.saldo_kg ?? 0);
+    return {
+      tipo_oleo: tipo,
+      saldo_kg,
+      custo_medio_kg: Number(l?.custo_medio_kg ?? 0),
+      valor_total: Number(l?.valor_total ?? 0),
+      litros_equivalente: Math.round(saldo_kg / 0.9),
+    };
+  });
+}
+
+export interface MovimentoEstoque {
+  referencia_id: string;
+  origem: "descarga" | "compra_direta" | "venda" | "ajuste";
+  tipo_oleo: TipoOleo;
+  especie: "entrada" | "saida" | "ajuste";
+  kg: number;
+  custo: number;
+  momento: string;
+  dia: string;
+  descricao: string;
+}
+
+/** Extrato de movimentos, do mais recente pro mais antigo. */
+export async function buscarMovimentosEstoque(
+  limite = 200
+): Promise<MovimentoEstoque[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("movimentos_estoque")
+    .select("referencia_id, origem, tipo_oleo, especie, kg, custo, momento, dia, descricao")
+    .order("dia", { ascending: false })
+    .order("momento", { ascending: false })
+    .limit(limite);
+  if (error) throw error;
+  return ((data as MovimentoEstoque[]) || []).map((m) => ({
+    ...m,
+    kg: Number(m.kg),
+    custo: Number(m.custo),
+  }));
+}
+
+export interface AjusteEstoque {
+  id: string;
+  tipo_oleo: TipoOleo;
+  motivo_tipo: "abertura" | "inventario";
+  saldo_antes_kg: number;
+  saldo_novo_kg: number;
+  diferenca_kg: number;
+  custo_medio_kg: number;
+  perda_valor: number;
+  motivo: string;
+  data: string;
+  criado_em: string;
+}
+
+export async function buscarAjustesEstoque(): Promise<AjusteEstoque[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("ajustes_estoque")
+    .select("*")
+    .order("data", { ascending: false })
+    .order("criado_em", { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return ((data as AjusteEstoque[]) || []).map((a) => ({
+    ...a,
+    saldo_antes_kg: Number(a.saldo_antes_kg),
+    saldo_novo_kg: Number(a.saldo_novo_kg),
+    diferenca_kg: Number(a.diferenca_kg),
+    custo_medio_kg: Number(a.custo_medio_kg),
+    perda_valor: Number(a.perda_valor),
+  }));
 }

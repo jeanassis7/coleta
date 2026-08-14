@@ -34,6 +34,7 @@ export default async function ComprasPage({
     fornecedor: c.fornecedor,
     quantidade: c.quantidade.toFixed(2),
     unidade: c.unidade,
+    tipo_oleo: c.tipo_oleo,
     peso_kg: c.peso_kg.toFixed(2),
     medido_ou_estimado: c.unidade === "kg" ? "medido (balança)" : "estimado",
     valor: c.valor.toFixed(2),

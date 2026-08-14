@@ -70,6 +70,9 @@ function FormCompra({
   const [unidade, setUnidade] = useState<"kg" | "litros">(
     editando?.unidade || "kg"
   );
+  const [tipoOleo, setTipoOleo] = useState<"fino" | "grosso">(
+    editando?.tipo_oleo || "fino"
+  );
   const [caminhaoVazio, setCaminhaoVazio] = useState(
     editando ? editando.entra_no_estoque : true
   );
@@ -131,6 +134,7 @@ function FormCompra({
         valor: centavosParaReais(valorCentavos),
         quantidade: qtd,
         unidade,
+        tipo_oleo: tipoOleo,
         entra_no_estoque: caminhaoVazio,
         certificado_tipo: certTipo,
         litros_certificado: certTipo === "parcial" ? litrosCertNum : null,
@@ -229,7 +233,40 @@ function FormCompra({
           </p>
         </div>
 
-        <div className="md:col-span-2">
+        {/* Fino é 95% da operação e é tudo que vem de motorista. Grosso (óleo
+            de navio e afins) só entra por aqui, e vira estoque separado com
+            custo médio próprio. */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Tipo de óleo</label>
+          <div className="flex gap-2">
+            {(
+              [
+                ["fino", "Fino"],
+                ["grosso", "Grosso"],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => setTipoOleo(valor)}
+                className={`flex-1 px-4 py-2 rounded-xl border-2 text-sm ${
+                  tipoOleo === valor
+                    ? "bg-verde text-white border-verde"
+                    : "bg-white border-cinza-borda"
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-cinza-suave mt-1">
+            {tipoOleo === "fino"
+              ? "O de sempre — mesmo estoque do óleo dos motoristas"
+              : "Estoque separado, misturado na hora da venda"}
+          </p>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium mb-1">
             Comprovante <span className="text-cinza-suave">(opcional)</span>
           </label>
@@ -424,7 +461,15 @@ function TabelaCompras({
           {compras.map((c) => (
             <tr key={c.id} className="border-b border-cinza-borda hover:bg-slate-50">
               <td className="py-2 pr-3 whitespace-nowrap">{formatData(c.data)}</td>
-              <td className="py-2 pr-3">{c.fornecedor}</td>
+              <td className="py-2 pr-3">
+                {c.fornecedor}
+                {/* Fino é o padrão em 95% das compras — só marca o que foge */}
+                {c.tipo_oleo === "grosso" && (
+                  <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300">
+                    grosso
+                  </span>
+                )}
+              </td>
               <td className="py-2 pr-3 text-right font-mono">
                 {c.quantidade.toLocaleString("pt-BR")} {c.unidade}
                 {c.unidade === "litros" && (

@@ -40,6 +40,7 @@ export function Sidebar({
       icone: "🚚",
       itens: mostrarModulo1
         ? [
+            { href: "/admin/estoque", label: "Estoque" },
             { href: "/admin/cargas", label: "Cargas" },
             { href: "/admin/abastecimentos", label: "Abastecimentos" },
             { href: "/admin/despesas", label: "Despesas" },

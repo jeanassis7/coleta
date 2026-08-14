@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
   const valor = Number(body.valor);
   const quantidade = Number(body.quantidade);
   const unidade = String(body.unidade || "");
+  const tipo_oleo = body.tipo_oleo === "grosso" ? "grosso" : "fino";
   const entra_no_estoque = body.entra_no_estoque !== false;
   const foto_path = body.foto_path ? String(body.foto_path) : null;
   const observacao = body.observacao ? String(body.observacao).trim() : null;
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
       valor: Math.round(valor * 100) / 100,
       quantidade: Math.round(quantidade * 100) / 100,
       unidade,
+      tipo_oleo,
       entra_no_estoque,
       certificado_tipo,
       litros_certificado:
