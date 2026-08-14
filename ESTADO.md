@@ -25,9 +25,9 @@ O **Módulo 1 (Cargas/ERP) está inteiro no ar em produção, invisível pro Jea
 
 ### Só o Evaner pode fazer (não dá pra automatizar)
 
-1. **Teste do modo avião** — o offline-first dos 3 lançamentos novos (despesa, abastecimento, descarga) foi construído e passa nos testes de dados, mas **nunca foi validado num celular sem sinal**. É o único pedaço do sistema sem validação de campo, e é justamente o cenário rural que motivou o app.
-2. **Calibrar o zoom do mapa** do drill-down — é calculado pela distância entre os pontos; só olhando uma carga real dá pra saber se ficou bom.
-3. **O flip pro Jean** — `MODULO1_LIBERADO_PARA_ADMIN` em `src/lib/auth/gate-modulo1.ts`. **Não fazer sem ordem explícita dele.** Depois disso, ligar as features nos motoristas reais, um por vez.
+1. ~~**Teste do modo avião**~~ — **FEITO em 13/08/2026 e aprovado.** O fluxo inteiro (coleta, despesa, abastecimento e descarga sem sinal, fechar e reabrir o app, e o sync automático quando o sinal voltou) funcionou. Um bug real apareceu e foi corrigido: as telas de confirmação e de carga encerrada recebiam parâmetros na URL, o Service Worker nunca tinha aquela URL em cache e o navegador mostrava "não é possível acessar esse site" — o dado estava salvo, mas assustava. Agora essas telas recebem os dados por sessionStorage e a URL é fixa.
+2. **Calibrar o zoom do mapa** do drill-down — é calculado pela distância entre os pontos; só olhando uma carga real com pontos espalhados dá pra saber se ficou bom. Pendente.
+3. **O flip pro Jean** — `MODULO1_LIBERADO_PARA_ADMIN` em `src/lib/auth/gate-modulo1.ts`. **Não fazer sem ordem explícita dele, e não ficar perguntando quando é** — ele avisa. Depois disso, ligar as features nos motoristas reais, um por vez.
 
 ### Em aberto, sem decisão
 
