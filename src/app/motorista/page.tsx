@@ -234,17 +234,23 @@ export default function MotoristaHomePage() {
             </div>
           </Link>
 
+          {/* px-2 + text-sm + break-words: "ABASTECIMENTO" é palavra longa
+              e vazava do quadrado em tela estreita (visto em campo) */}
           <div className="grid grid-cols-2 gap-4 mb-4">
             <Link href="/motorista/abastecimento" className="block">
-              <div className="bg-slate-800 rounded-2xl p-5 text-center shadow active:bg-slate-900 transition-colors h-full">
+              <div className="bg-slate-800 rounded-2xl py-5 px-2 text-center shadow active:bg-slate-900 transition-colors h-full">
                 <div className="text-3xl mb-1">⛽</div>
-                <p className="text-white text-base font-bold">ABASTECIMENTO</p>
+                <p className="text-white text-sm font-bold break-words leading-tight">
+                  ABASTECIMENTO
+                </p>
               </div>
             </Link>
             <Link href="/motorista/despesa" className="block">
-              <div className="bg-slate-800 rounded-2xl p-5 text-center shadow active:bg-slate-900 transition-colors h-full">
+              <div className="bg-slate-800 rounded-2xl py-5 px-2 text-center shadow active:bg-slate-900 transition-colors h-full">
                 <div className="text-3xl mb-1">💵</div>
-                <p className="text-white text-base font-bold">DESPESAS</p>
+                <p className="text-white text-sm font-bold break-words leading-tight">
+                  DESPESAS
+                </p>
               </div>
             </Link>
           </div>

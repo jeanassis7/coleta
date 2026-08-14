@@ -176,8 +176,12 @@ export default function NovaColetaPage() {
       );
     }
 
-    // Navega já — GPS pendente e sync ficam em background
-    router.push(`/motorista/confirmacao?cid=${client_id}`);
+    // Navega já — GPS pendente e sync ficam em background.
+    // O código vai por sessionStorage e a URL fica fixa: com parâmetro na
+    // URL, o Service Worker não achava a página no cache e o motorista
+    // sem sinal via erro do navegador (bug real de campo).
+    sessionStorage.setItem("coleta_ultima_cid", client_id);
+    router.push("/motorista/confirmacao");
 
     // Se ainda não tinha GPS no momento do save, continua tentando
     if (!gpsJaResolvido) {

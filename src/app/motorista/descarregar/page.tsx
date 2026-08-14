@@ -210,13 +210,23 @@ export default function DescarregarPage() {
     // Carga encerrada LOCALMENTE — home volta pra "Iniciar nova carga".
     clearCargaAtivaCached();
 
-    router.push(
-      `/motorista/carga-encerrada?peso_bruto=${descarga.peso_bruto_kg}` +
-        `&tara=${descarga.peso_tara_kg}&liquido=${pesoLiquidoKg}` +
-        `&litros=${litrosEstimados}&coletas=${resumo.coletas}` +
-        `&km=${Math.max(0, Math.round(km) - carga.km_inicial)}` +
-        `&iniciada=${encodeURIComponent(carga.iniciada_em)}`
+    // Resumo vai por sessionStorage e a URL fica fixa. Com parâmetros na
+    // URL, o Service Worker não achava essa página no cache e o motorista
+    // sem sinal via erro do navegador (bug real de campo) — mesmo com a
+    // descarga já salva no celular.
+    sessionStorage.setItem(
+      "coleta_resumo_carga",
+      JSON.stringify({
+        peso_bruto: descarga.peso_bruto_kg,
+        tara: descarga.peso_tara_kg,
+        liquido: pesoLiquidoKg,
+        litros: litrosEstimados,
+        coletas: resumo.coletas,
+        km: Math.max(0, Math.round(km) - carga.km_inicial),
+        iniciada: carga.iniciada_em,
+      })
     );
+    router.push("/motorista/carga-encerrada");
 
     if (!gpsJa) {
       (async () => {

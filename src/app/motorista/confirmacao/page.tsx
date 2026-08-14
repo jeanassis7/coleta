@@ -6,11 +6,30 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { getLocalDB } from "@/lib/db/dexie";
 import { formatBRL, formatLitros } from "@/lib/format";
 
+/**
+ * O código da coleta chega por sessionStorage, NÃO pela URL.
+ *
+ * Motivo (bug real de campo): o Service Worker guarda a página pela URL
+ * inteira. Com `?cid=<código único>`, cada coleta gerava uma URL nova que
+ * nunca esteve no cache — e sem sinal o navegador mostrava
+ * "não é possível acessar esse site" mesmo com a coleta salva.
+ * URL fixa = uma entrada de cache só = abre offline sempre.
+ *
+ * O parâmetro ainda é lido como reserva (links antigos, F5 na tela).
+ */
+const CHAVE_ULTIMA_COLETA = "coleta_ultima_cid";
+
 function ConfirmacaoConteudo() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const cid = searchParams.get("cid");
+  const [cid, setCid] = useState<string | null>(null);
   const [contador, setContador] = useState(8);
+
+  useEffect(() => {
+    setCid(
+      sessionStorage.getItem(CHAVE_ULTIMA_COLETA) || searchParams.get("cid")
+    );
+  }, [searchParams]);
 
   const coleta = useLiveQuery(async () => {
     if (!cid) return null;
