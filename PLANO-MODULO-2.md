@@ -507,23 +507,56 @@ conferência dele pra virar real — que é exatamente o que ele pediu.
 ### Combustível por posto
 
 Os abastecimentos assinados são sempre nos mesmos postos e pagos no mês
-seguinte. Pra fechar com a fatura do posto, `posto_nome` (texto livre) vira
-**cadastro de postos** com `posto_id`, e a tela agrupa por posto e período:
-*"Posto Trevo, julho: 14 abastecimentos, R$ 5.180"* — dá pra conferir contra
-o que o posto cobrou.
+seguinte. Pra fechar com a fatura do posto, os lançamentos precisam agrupar
+— e texto livre não agrupa ("Trevo", "trevo" e "Posto Trevo" viram três).
 
-Texto livre não agruparia: "Trevo", "trevo" e "Posto Trevo" viram três
-postos. Mesma decisão que o Evaner já tomou nos tipos de documento — lista
-cadastrada, com **"Outro"** pra estrada, e esses simplesmente não agrupam
-(nem precisam: não é onde se assina nota).
+**Ideia do Evaner, e é melhor que cadastrar lista na mão: o posto vem por
+GPS, igual à coleta.** A tela de abastecimento **já captura GPS ao abrir**
+(mesmo padrão da Nova Coleta) e `abastecimentos` já tem lat/lng. Então dá
+pra reusar a máquina inteira que já existe e já foi debugada:
 
-**Sem conciliação automática.** Só o número do lado do outro, pra ele olhar.
-Cortado pelo Evaner por complexidade.
+| Peça | Já existe pra | Serve pra posto? |
+|---|---|---|
+| `locais` (canônico + apelidos + GPS) | coleta | sim, com `tipo` |
+| `locais_proximos()` (Haversine, 100m) | coleta | sim, com filtro de tipo |
+| Curadoria por cluster GPS 20m | coleta | sim, com filtro de tipo |
+| Sugestão "só o nome, sem metros" | coleta | idem |
+
+O que muda: `locais` ganha `tipo` (`coleta` | `posto`), `locais_proximos()`
+ganha o filtro, `abastecimentos` ganha `local_id` (nullable, igual
+`coletas`), e a curadoria ganha uma aba pra não misturar oficina com posto.
+
+O motorista abre Abastecimento e vê embaixo **"Você está no Posto Trevo?"**
+— um toque. Se for posto novo, digita, e da próxima vez ele aparece sozinho
+pra quem chegar ali. O sistema aprende em vez de alguém manter lista.
+
+Vale a mesma regra de sempre: **sem metros na tela do motorista**, só o nome.
+
+**Sem conciliação automática.** A tela mostra o total por posto e período do
+lado do que o posto cobrou, pra ele bater o olho. Cortado pelo Evaner por
+complexidade.
+
+### Pagar uma conta é UM componente só
+
+Toda conta se paga do mesmo jeito, então existe um modal único de pagamento
+usado em todo lugar (abastecimento do posto, manutenção, parcela de óleo,
+aluguel): **dinheiro · pix · depósito · boleto · cheque**.
+
+Escolhendo cheque, ele **busca na carteira** os que estão `em_carteira` e o
+escolhido vira `repassado`, com a conta registrada como destino. É o elo
+entre os dois módulos: o cheque que entrou numa venda sai pagando uma conta,
+e os dois lados ficam amarrados sem ninguém digitar duas vezes.
+
+**Compra direta parcelada** (confirmado pelo Evaner: acontece) gera N contas
+a pagar, uma por parcela. Cada uma se paga pelo mesmo modal — inclusive com
+cheque, que era o caso que ele levantou.
 
 ### Carro pessoal como custo operacional
 
 Jean e Valdecir abastecem carro próprio assinando a mesma nota, e isso é
-custo de operação legítimo — eles rodam a trabalho.
+custo de operação legítimo — eles rodam a trabalho. **Valdecir é braço da
+empresa no operacional e não tem caminhão**, então não precisa de perfil no
+sistema: o abastecimento dele é lançado no painel, preso ao carro.
 
 `caminhoes` ganha `tipo` (`caminhao` | `carro`). A lista do motorista ao
 iniciar carga filtra `tipo = 'caminhao'`, então nada muda pra ele. `tara_kg`
