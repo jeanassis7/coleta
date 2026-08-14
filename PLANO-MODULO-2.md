@@ -406,6 +406,154 @@ Ao fim de cada bloco: `node scripts/e2e-modulo1.mjs` continua tendo que passar, 
 
 ---
 
+## CONTAS A PAGAR (entra junto do Bloco 2 — decisão do Evaner)
+
+Nasceu de dois pedidos pequenos (forma de pagamento na manutenção, tique de
+"a pagar" no abastecimento) que, olhados juntos, são a mesma coisa.
+
+### O achado que muda dinheiro
+
+`saldos_motoristas()` **subtrai todo abastecimento do saldo do motorista**.
+No dia em que o "a pagar" existir isso vira erro de acerto: se o Luis
+assina a nota no posto e a empresa paga mês que vem, ele não gastou nada —
+mas o saldo dele levaria o desconto igual, e ele receberia a menos.
+
+**Um lançamento, dois efeitos opostos:** sai da conta do motorista, entra na
+conta da empresa. É uma linha na 0013, mas se passar batido ninguém percebe
+até alguém reclamar do acerto.
+
+Na tela do motorista não se escreve "a pagar" — é vocabulário de escritório.
+Dois botões grandes, no padrão do kg/litros, perguntando o ato físico:
+**"PAGUEI AGORA"** e **"ASSINEI A NOTA"**.
+
+### Tabela central, ao contrário do estoque
+
+No estoque não criei tabela: o saldo é uma leitura do que já existe. Aqui é
+o oposto, e a diferença é real — **estoque é um número derivado; conta a
+pagar é um fluxo com estado** (prevista → a pagar → paga). Espalhar essa
+máquina de estado por quatro tabelas é implementá-la quatro vezes e errar
+numa. E metade das contas (aluguel, imposto, contador) não tem lançamento de
+origem nenhum: precisam da tabela de qualquer jeito.
+
+```sql
+create table contas_a_pagar (
+  id uuid primary key default gen_random_uuid(),
+  descricao text not null,
+  fornecedor text,
+  categoria text not null,           -- combustivel, manutencao, imposto, fixa, folha...
+  valor numeric(10,2) not null check (valor > 0),
+  vencimento date not null,
+
+  -- PREVISTA é o coração da ideia do Evaner: valor e data são chute
+  -- (IPVA do ano que vem, energia do mês). Aparece no fluxo projetado,
+  -- NÃO conta como dívida real nem entra no DRE. Vira 'a_pagar' quando
+  -- o boleto chega e ele confirma o número.
+  status text not null default 'a_pagar'
+    check (status in ('prevista','a_pagar','paga','cancelada')),
+
+  forma_pagamento text
+    check (forma_pagamento in ('dinheiro','pix','deposito','cheque','boleto')),
+  pago_em date,
+  cheque_id uuid references cheques(id),   -- pagou repassando cheque recebido
+
+  origem_tipo text,   -- 'abastecimento' | 'manutencao' | 'compra_direta' | 'documento'
+  origem_id uuid,     -- null = conta avulsa (aluguel, imposto, contador)
+  recorrente_id uuid references despesas_recorrentes(id),
+
+  observacao text,
+  registrado_por uuid not null references profiles(id),
+  criado_em timestamptz not null default now()
+);
+```
+
+### Previsto × real — a resposta do IPVA
+
+O Evaner perguntou se vale lançar o IPVA do ano que vem, já que valor e data
+mudam. **Vale, mas como previsão, nunca como dívida.**
+
+Documento com vencimento **não vira conta a pagar automaticamente** — ele já
+tem o alerta de "vence em 30 dias", que é o que resolve o problema de
+esquecer. Virar dívida de valor chutado polui o "quanto eu devo" com ficção,
+e é justamente esse número que precisa ser confiável.
+
+Então: o IPVA vive como **previsão recorrente** (aproximada, some do "devo
+hoje", aparece no fluxo projetado) e vira conta real no dia em que o boleto
+sai e ele confirma valor e data. Um mecanismo, dois usos — igual ao
+inventário do estoque, que serve de abertura e de rotina.
+
+### Despesas recorrentes
+
+```sql
+create table despesas_recorrentes (
+  id uuid primary key default gen_random_uuid(),
+  descricao text not null,          -- Aluguel, Energia, Contador, IPVA do Iveco
+  categoria text not null,
+  fornecedor text,
+  valor numeric(10,2) not null,     -- editável quando reajustar
+  dia_vencimento integer check (dia_vencimento between 1 and 31),
+  periodicidade text not null default 'mensal'
+    check (periodicidade in ('mensal','anual')),
+  aproximada boolean not null default false,  -- true = gera como 'prevista'
+  ativa boolean not null default true,
+  criado_em timestamptz not null default now()
+);
+```
+
+Botão **"Gerar contas do mês"**, idempotente (único por recorrente +
+competência). Sem mágica de fundo: ele clica, vê o que nasceu, edita o que
+mudou. Recorrente marcada como aproximada nasce `prevista` e precisa da
+conferência dele pra virar real — que é exatamente o que ele pediu.
+
+### Combustível por posto
+
+Os abastecimentos assinados são sempre nos mesmos postos e pagos no mês
+seguinte. Pra fechar com a fatura do posto, `posto_nome` (texto livre) vira
+**cadastro de postos** com `posto_id`, e a tela agrupa por posto e período:
+*"Posto Trevo, julho: 14 abastecimentos, R$ 5.180"* — dá pra conferir contra
+o que o posto cobrou.
+
+Texto livre não agruparia: "Trevo", "trevo" e "Posto Trevo" viram três
+postos. Mesma decisão que o Evaner já tomou nos tipos de documento — lista
+cadastrada, com **"Outro"** pra estrada, e esses simplesmente não agrupam
+(nem precisam: não é onde se assina nota).
+
+**Sem conciliação automática.** Só o número do lado do outro, pra ele olhar.
+Cortado pelo Evaner por complexidade.
+
+### Carro pessoal como custo operacional
+
+Jean e Valdecir abastecem carro próprio assinando a mesma nota, e isso é
+custo de operação legítimo — eles rodam a trabalho.
+
+`caminhoes` ganha `tipo` (`caminhao` | `carro`). A lista do motorista ao
+iniciar carga filtra `tipo = 'caminhao'`, então nada muda pra ele. `tara_kg`
+e `capacidade_l` viram opcionais **com CHECK**: obrigatórias quando
+`tipo = 'caminhao'`, porque a descarga depende da tara.
+
+De brinde, o km/L e a ficha do veículo passam a valer pros carros também.
+
+### Onde contas a pagar encosta (levantamento completo)
+
+| Origem | Vira conta a pagar? |
+|---|---|
+| Abastecimento assinado | **Sim** — e sai do saldo do motorista |
+| Manutenção | **Sim** — forma de pagamento no lançamento |
+| Compra direta de óleo | **Sim** quando a prazo ou em cheque |
+| Cheque repassado | **É o pagamento em si** — liga os dois módulos |
+| Documento (IPVA, seguro, CIPP) | **Não direto.** Vira previsão recorrente |
+| Salário / holerite | Módulo 3 |
+| Fixas (aluguel, energia, água, internet, contador) | **Sim** — recorrentes |
+| Imposto (DAS) | **Sim** — recorrente, geralmente aproximada |
+| Despesa do motorista (almoço, pedágio) | Não. À vista por natureza |
+| Coleta | Não. Ele paga o dono do óleo na hora |
+| Adiantamento / acerto | Não. Dinheiro interno, já modelado |
+
+**O retorno:** caixa consolidado = recebido − pago. Com contas a pagar de pé,
+o caixa e boa parte do DRE saem quase de graça em vez de virarem dois
+módulos.
+
+---
+
 ## Módulo 3 (já rondando): Salários
 
 Não faz parte deste plano, mas o Evaner já sinalizou a direção e vale registrar pra não desenhar nada que atrapalhe:
@@ -414,12 +562,14 @@ Não faz parte deste plano, mas o Evaner já sinalizou a direção e vale regist
 
 O que este módulo já deixa pronto pra isso: a separação entre **coleta do motorista** e **compra direta da empresa** (feita no Módulo 1 pensando exatamente em comissão), a ficha do motorista, e a conta corrente dele.
 
-**A comissão hoje é a cada 200 L coletados.** O Evaner avisou que isso vai mudar — comissão por média, bônus por média, e o que aparecer.
-
-Isso não é detalhe, é a decisão estrutural daquele módulo: **a regra de comissão precisa de vigência e a comissão já paga precisa ficar congelada.** Se a regra virar um número no código e mudar em 2027, todo cálculo de 2026 se reescreve sozinho na próxima vez que alguém abrir a tela — e comissão de motorista recalculada pra trás não é bug de sistema, é problema trabalhista. Então: regra com data de início, e o valor pago gravado com a regra que o gerou.
+**A comissão hoje é a cada 200 L coletados**, e vai mudar (por média, bônus por média, o que aparecer). Decisão do Evaner: **a regra tem versão**. A vigente se aplica; quando mudar, as comissões já pagas continuam na V1 e as novas nascem na V2. Nada é recalculado pra trás — comissão refeita retroativamente não é bug de sistema, é problema trabalhista.
 
 Fica em aberto pra quando chegar a hora: **200 L é bloco fechado ou proporcional?** (350 L pagam 1 comissão ou 1,75?)
 
-**O holerite nasce no contador e é lançado no sistema** — decisão do Evaner, e ela simplifica muito. O sistema **não calcula folha**: recebe o que o contador fechou, guarda, mostra pro motorista e coleta a assinatura. Sem risco de divergir do eSocial, porque não existe segunda fonte de verdade.
+**O módulo é de CADASTRO, não de cálculo de folha** — decisão do Evaner, e ela simplifica muito:
 
-**"Validade jurídica" tem três níveis** com custos diferentes: assinatura simples com trilha de auditoria (grátis, defensável), provedor certificado tipo Clicksign/D4Sign (centavos por documento, prova forte), ou imprimir e assinar (zero risco, zero custo). Escolha do Evaner quando chegar a hora.
+> Vem do contador → ele lança → o sistema calcula quanto foi de vale → anexa a foto do recibo assinado → baixa do saldo → guarda o histórico do quanto cada um vem recebendo.
+
+Mais os pagamentos por fora do holerite (comissão extra e afins), no mesmo lugar.
+
+Como o sistema não calcula folha, **não existe segunda fonte de verdade e não tem como divergir do eSocial** — a preocupação com passivo trabalhista que eu tinha levantado some nesse desenho. E a assinatura digital vira opcional, já que o recibo assinado no papel é fotografado do mesmo jeito.
