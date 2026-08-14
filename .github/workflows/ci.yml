@@ -1,0 +1,98 @@
+name: CI
+
+# Roda a cada push e em cada PR. O objetivo é simples: tirar do "o Claude
+# lembrou de rodar" e colocar no "o repositório garante".
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # permite rodar na mão pelo site do GitHub
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Sempre roda. Não precisa de segredo nenhum.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Typecheck e build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # Sem passo de lint: o ESLint nunca foi configurado neste projeto e
+      # `next lint` abre um assistente interativo, que travaria o CI.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # As chaves NEXT_PUBLIC_* são públicas por definição (a anon key vai no
+      # bundle do navegador). Se estiverem cadastradas em Secrets, usa; senão
+      # usa valores de enfeite — o cliente Supabase só é construído em runtime,
+      # então o build não precisa que elas sejam reais.
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://exemplo.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'chave-de-enfeite-pro-build' }}
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Só roda se os segredos existirem. Sem eles, o job é PULADO — não falha.
+  # Isso deixa o CI útil desde o primeiro push, antes de cadastrar nada.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E contra o banco
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # Os scripts leem .env.local na mão (não usam dotenv). Recria o arquivo
+      # a partir dos Secrets em vez de mudar os scripts — assim eles seguem
+      # idênticos rodando aqui e na máquina do Evaner.
+      - name: Montar .env.local a partir dos Secrets
+        id: env
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::DATABASE_URL não cadastrada — E2E pulado."
+            echo "rodar=nao" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+          } > .env.local
+          echo "rodar=sim" >> "$GITHUB_OUTPUT"
+
+      # Módulo 1 cria e apaga o próprio motorista descartável ("E2E Bot").
+      # Nunca encosta no Teste 1, que é o ambiente manual do Evaner.
+      - name: E2E Módulo 1
+        if: steps.env.outputs.rodar == 'sim'
+        run: node scripts/e2e-modulo1.mjs
+
+      # Módulo 2 é read-only: simula dentro de transação e dá ROLLBACK.
+      - name: E2E Módulo 2
+        if: steps.env.outputs.rodar == 'sim'
+        run: node scripts/e2e-modulo2.mjs
+
+      - name: Limpar credenciais
+        if: always()
+        run: rm -f .env.local
