@@ -1193,3 +1193,207 @@ export async function buscarAjustesEstoque(): Promise<AjusteEstoque[]> {
     perda_valor: Number(a.perda_valor),
   }));
 }
+
+// ============================================================================
+// VENDAS, COMPRADORES, RECEBIMENTOS E CHEQUES (Módulo 2 — Bloco 2)
+// ============================================================================
+
+export interface Comprador {
+  id: string;
+  nome: string;
+  cidade: string | null;
+  contato: string | null;
+  observacao: string | null;
+  ativo: boolean;
+  criado_em: string;
+}
+
+export interface CompradorComSaldo extends Comprador {
+  vendido: number;
+  recebido: number;
+  /** Quanto da dívida atual é cheque que voltou — pro saldo se explicar */
+  devolvido: number;
+  saldo: number;
+}
+
+/**
+ * Compradores + conta corrente em 2 round trips (a conta inteira vem da
+ * função `saldo_compradores()`). Mesmo motivo da `saldos_motoristas()`: o
+ * N+1 do saldo do motorista deixou o painel em 3-4s e custou uma migration.
+ */
+export async function buscarCompradores(): Promise<CompradorComSaldo[]> {
+  const supabase = await getSupabaseServer();
+  const [{ data: comps, error }, { data: saldos }] = await Promise.all([
+    supabase.from("compradores").select("*").order("nome"),
+    supabase.rpc("saldo_compradores"),
+  ]);
+  if (error) throw error;
+
+  const porId = new Map(
+    ((saldos as Array<{ comprador_id: string }>) || []).map((s) => [
+      s.comprador_id,
+      s as unknown as Record<string, number>,
+    ])
+  );
+
+  return ((comps as Comprador[]) || []).map((c) => {
+    const s = porId.get(c.id);
+    return {
+      ...c,
+      vendido: Number(s?.vendido ?? 0),
+      recebido: Number(s?.recebido ?? 0),
+      devolvido: Number(s?.devolvido ?? 0),
+      saldo: Number(s?.saldo ?? 0),
+    };
+  });
+}
+
+export interface Venda {
+  id: string;
+  comprador_id: string;
+  comprador_nome: string;
+  data: string;
+  peso_total_kg: number;
+  kg_fino: number;
+  kg_grosso: number;
+  preco_kg: number;
+  valor_total: number;
+  caminhao_id: string | null;
+  caminhao_placa: string | null;
+  nota_numero: string | null;
+  foto_ticket_path: string | null;
+  observacao: string | null;
+  criado_em: string;
+}
+
+const SELECT_VENDA = `id, comprador_id, data, peso_total_kg, kg_fino, kg_grosso,
+  preco_kg, valor_total, caminhao_id, nota_numero, foto_ticket_path, observacao,
+  criado_em, compradores(nome), caminhoes(placa)`;
+
+function mapVenda(r: Record<string, unknown>): Venda {
+  const comp = r.compradores as { nome: string } | null;
+  const cam = r.caminhoes as { placa: string } | null;
+  return {
+    id: r.id as string,
+    comprador_id: r.comprador_id as string,
+    comprador_nome: comp?.nome || "—",
+    data: r.data as string,
+    peso_total_kg: Number(r.peso_total_kg),
+    kg_fino: Number(r.kg_fino),
+    kg_grosso: Number(r.kg_grosso),
+    preco_kg: Number(r.preco_kg),
+    valor_total: Number(r.valor_total),
+    caminhao_id: (r.caminhao_id as string) ?? null,
+    caminhao_placa: cam?.placa ?? null,
+    nota_numero: (r.nota_numero as string) ?? null,
+    foto_ticket_path: (r.foto_ticket_path as string) ?? null,
+    observacao: (r.observacao as string) ?? null,
+    criado_em: r.criado_em as string,
+  };
+}
+
+export async function buscarVendas(
+  opts: { compradorId?: string; limite?: number } = {}
+): Promise<Venda[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("vendas")
+    .select(SELECT_VENDA)
+    .order("data", { ascending: false })
+    .order("criado_em", { ascending: false })
+    .limit(opts.limite ?? 300);
+  if (opts.compradorId) q = q.eq("comprador_id", opts.compradorId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return ((data as unknown as Record<string, unknown>[]) || []).map(mapVenda);
+}
+
+export type StatusCheque =
+  | "em_carteira"
+  | "depositado"
+  | "compensado"
+  | "devolvido"
+  | "repassado";
+
+export interface Cheque {
+  id: string;
+  recebimento_id: string;
+  comprador_id: string;
+  comprador_nome: string;
+  banco: string;
+  emitente: string;
+  numero: string | null;
+  valor: number;
+  bom_para: string;
+  status: StatusCheque;
+  repassado_para: string | null;
+  repassado_em: string | null;
+  depositado_em: string | null;
+  compensado_em: string | null;
+  devolvido_em: string | null;
+  foto_path: string | null;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export async function buscarCheques(
+  opts: { compradorId?: string; status?: StatusCheque[] } = {}
+): Promise<Cheque[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("cheques")
+    .select("*, compradores(nome)")
+    .order("bom_para", { ascending: true })
+    .limit(500);
+  if (opts.compradorId) q = q.eq("comprador_id", opts.compradorId);
+  if (opts.status?.length) q = q.in("status", opts.status);
+  const { data, error } = await q;
+  if (error) throw error;
+  return ((data as unknown as Record<string, unknown>[]) || []).map((r) => ({
+    ...(r as unknown as Cheque),
+    comprador_nome: (r.compradores as { nome: string } | null)?.nome || "—",
+    valor: Number(r.valor),
+  }));
+}
+
+export interface Recebimento {
+  id: string;
+  comprador_id: string;
+  venda_id: string | null;
+  forma: "pix" | "dinheiro" | "transferencia" | "cheque";
+  valor: number;
+  data: string;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export async function buscarRecebimentos(
+  compradorId: string
+): Promise<Recebimento[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("recebimentos")
+    .select("*")
+    .eq("comprador_id", compradorId)
+    .order("data", { ascending: false })
+    .limit(300);
+  if (error) throw error;
+  return ((data as Recebimento[]) || []).map((r) => ({
+    ...r,
+    valor: Number(r.valor),
+  }));
+}
+
+/** Veículos ativos — `carro` só aparece pro admin, nunca pro motorista. */
+export async function buscarVeiculos(): Promise<
+  Array<{ id: string; placa: string; marca: string; cor: string; tipo: string }>
+> {
+  const supabase = await getSupabaseServer();
+  const { data } = await supabase
+    .from("caminhoes")
+    .select("id, placa, marca, cor, tipo")
+    .eq("ativo", true)
+    .order("tipo")
+    .order("placa");
+  return (data as Array<{ id: string; placa: string; marca: string; cor: string; tipo: string }>) || [];
+}

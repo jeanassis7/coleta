@@ -229,6 +229,16 @@ function ModalInventario({
           </p>
         </div>
 
+        {/* O número de partida fica visível ANTES de digitar: a contagem
+            acontece a cada 2-3 meses e a diferença esperada é sutil, então
+            o que importa é ele comparar com o que o sistema diz. */}
+        {!ehAbertura && (
+          <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 flex items-baseline justify-between">
+            <span className="text-cinza-suave">Estoque atual no sistema</span>
+            <span className="text-2xl font-bold font-mono">{kg(e.saldo_kg)}</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Data</label>
@@ -238,11 +248,6 @@ function ModalInventario({
               value={data}
               onChange={(ev) => setData(ev.target.value)}
             />
-            {/* Regra de ordenação, dita em português: se entrou uma descarga
-                nesse mesmo dia, ela já está dentro do que ele contou. */}
-            <p className="text-xs text-cinza-suave mt-1">
-              Vale pro fim desse dia
-            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">

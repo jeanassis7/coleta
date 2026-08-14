@@ -41,6 +41,7 @@ export function Sidebar({
       itens: mostrarModulo1
         ? [
             { href: "/admin/estoque", label: "Estoque" },
+            { href: "/admin/vendas", label: "Vendas" },
             { href: "/admin/cargas", label: "Cargas" },
             { href: "/admin/abastecimentos", label: "Abastecimentos" },
             { href: "/admin/despesas", label: "Despesas" },
@@ -64,7 +65,10 @@ export function Sidebar({
         { href: "/admin/motoristas", label: "Motoristas" },
         { href: "/admin/curadoria", label: "Locais (curadoria)" },
         ...(mostrarModulo1
-          ? [{ href: "/admin/caminhoes", label: "Caminhões" }]
+          ? [
+              { href: "/admin/caminhoes", label: "Caminhões" },
+              { href: "/admin/compradores", label: "Compradores" },
+            ]
           : []),
       ],
     },

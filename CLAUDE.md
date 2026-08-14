@@ -154,6 +154,8 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 
 > **Regra de processo pro tutorial do Jean** (não é código, é combinado): quem for pegar um caminhão que já tem óleo pra descarregar precisa avisar o motorista **encerrar a carga dele e mandar a foto do peso**. Buscar óleo de fora sempre com **caminhão vazio**.
 
+> **Regra de processo pro tutorial — inventário de estoque:** o inventário vale pro **fim do dia escolhido**. Se entrou óleo naquele mesmo dia, o sistema entende que a contagem já inclui ele. Como a contagem acontece a cada **2-3 meses** e a diferença esperada é sutil (uns 10.000 kg em 85.000), a ambiguidade cabe na margem de erro — decisão consciente do Evaner de não pedir a hora da contagem. Se um dia a contagem virar rotina semanal, aí sim vale perguntar "contou antes ou depois da descarga de hoje?".
+
 **Coleta retroativa (`coletas.lancado_por_admin`):** o motorista coletou, esqueceu de lançar e avisou depois. Botão "+ Adicionar coleta" no detalhe da carga (`/admin/cargas/[id]`), funciona **mesmo com a carga encerrada**. Pertence ao motorista da carga e **desconta do saldo dele** (o dinheiro saiu da mão dele). Sem GPS e sem foto — não foi capturada em campo, e a linha do tempo marca "lançada no painel". Se a data for anterior ao último acerto, cai no ciclo fechado e não mexe no saldo atual (a tela avisa).
 
 **Alertas do dashboard** (`src/lib/admin/alertas.ts`): calculados na hora, texto **didático** (o que aconteceu → hipóteses de causa → o que fazer). `alertas_vistos` guarda os dispensados; a chave é a **ocorrência** (id do registro), então condição repetida em outro registro = alerta novo. Alerta estatístico só liga com base suficiente (30+ coletas ou 60+ dias) — alerta ruidoso ensina a ignorar alerta.
