@@ -2,6 +2,8 @@
 
 App PWA para coleta de óleo lubrificante usado (OLUC). Construído pelo **Evaner** pra empresa do irmão **Jean**.
 
+> **Começando uma sessão?** Leia `ESTADO.md` — diz onde paramos, o que está pendente e qual o próximo módulo. Este arquivo aqui é o contexto permanente (convenções, decisões, armadilhas).
+
 ## Quem usa
 
 - **3 motoristas em campo** (Luis, Lucimar, Lucinei) — Android + 1 possivelmente iPhone. PWA instalado.
@@ -105,6 +107,11 @@ Helpers em `src/lib/auth/roles.ts`: `isDev`, `isAdminPuro`, `podeAcessarAdmin`, 
 - **Cleanup local — 24h:** coletas 100% sincronizadas apagadas do IndexedDB após 24h
 - **Cleanup eventos — 7 dias:** eventos sincronizados apagados após 7 dias
 - **Recovery GPS pendente — 30s:** libera flag se GPS travou
+- **Antiburro de peso na descarga — ±30%:** compara o peso da balança com `soma_litros × 0,9`
+- **Antiburro de km — salto de 1.500km:** limite aprovado pelo Evaner entre dois registros do mesmo caminhão
+- **Alerta estatístico — 30 coletas OU 60 dias:** base mínima pro alerta de preço fora da curva (alerta ruidoso ensina a ignorar alerta)
+- **Carga parada — 15 dias:** vira alerta de "esqueceu de finalizar"
+- **Aceite de adiantamento pulado — 10×:** vira alerta pro gestor
 
 ## Migrations já aplicadas (NÃO re-criar)
 
@@ -121,6 +128,9 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0010_valores_com_centavos.sql` — despesa/abastecimento/adiantamento/acerto viram `numeric(10,2)`
 - `0011_acerto_saldo_negativo.sql` — remove CHECK >= 0 (empresa pode dever pro motorista)
 - `0012_alertas_vistos.sql` — tabela de alertas dispensados no "OK, VI"
+- `0013_saldos_motoristas.sql` — função `saldos_motoristas()` (a conta de saldo inteira no Postgres; matou o N+1 que deixava o painel em 3-4s)
+- `0014_compras_diretas.sql` — `compras_diretas` com `peso_kg` generated (kg medido ou litros×0,9)
+- `0015_certificado_compra_e_coleta_admin.sql` — certificado na compra direta + `coletas.lancado_por_admin`
 
 ## MÓDULO 1 (Cargas/ERP) — regras que valem pra tudo daqui pra frente
 
@@ -143,6 +153,8 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 **Compra direta (`compras_diretas`):** óleo que o GESTOR negocia e paga do caixa da empresa — o motorista não coletou. Não desconta saldo de ninguém, não entra em custo/certificado por motorista nem em comissão. Entra no estoque (em kg) e no custo médio do óleo (KPIs de topo do dashboard). Quem pesou lança em **kg** (medido); quem não pesou lança em **litros** (estimado, converte por 0,9). A flag `entra_no_estoque=false` cobre o caso raro do óleo ter ido num caminhão que ainda vai pesar na descarga — aí conta só o custo, senão o mesmo óleo entraria duas vezes.
 
 > **Regra de processo pro tutorial do Jean** (não é código, é combinado): quem for pegar um caminhão que já tem óleo pra descarregar precisa avisar o motorista **encerrar a carga dele e mandar a foto do peso**. Buscar óleo de fora sempre com **caminhão vazio**.
+
+**Coleta retroativa (`coletas.lancado_por_admin`):** o motorista coletou, esqueceu de lançar e avisou depois. Botão "+ Adicionar coleta" no detalhe da carga (`/admin/cargas/[id]`), funciona **mesmo com a carga encerrada**. Pertence ao motorista da carga e **desconta do saldo dele** (o dinheiro saiu da mão dele). Sem GPS e sem foto — não foi capturada em campo, e a linha do tempo marca "lançada no painel". Se a data for anterior ao último acerto, cai no ciclo fechado e não mexe no saldo atual (a tela avisa).
 
 **Alertas do dashboard** (`src/lib/admin/alertas.ts`): calculados na hora, texto **didático** (o que aconteceu → hipóteses de causa → o que fazer). `alertas_vistos` guarda os dispensados; a chave é a **ocorrência** (id do registro), então condição repetida em outro registro = alerta novo. Alerta estatístico só liga com base suficiente (30+ coletas ou 60+ dias) — alerta ruidoso ensina a ignorar alerta.
 
@@ -210,6 +222,11 @@ Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fa
 - **Service Worker cacheOnNavigation** no Serwist tem comportamento implícito — checar antes de adicionar runtime caching custom
 - **Supabase FREE TIER PAUSA APÓS 7 DIAS SEM ATIVIDADE** — em produção com motoristas usando diariamente nunca pausa, mas em desenvolvimento longo (~30 dias) pausa. Solução: dashboard Supabase → botão "Restore project" (2-5 min, sem perda de dados).
 - **Foto RLS "new row violates policy"** — era falta de UPDATE policy + estava amarrando path a string comparison. Migration 0004 relaxou pra "authenticated pode upload".
+- **N+1 mata a percepção de velocidade** — o cálculo de saldo fazia ~7 consultas POR MOTORISTA em fila (~42 idas ao banco) e o dashboard chamava isso 2×. Virou a função `saldos_motoristas()` (1 ida). Se o painel voltar a ficar lento, procurar `await` dentro de `for` antes de qualquer outra coisa.
+- **Server Component sem `loading.tsx` parece travado** — o clique não muda nada na tela até o servidor responder. O esqueleto em `/admin/(authed)/loading.tsx` resolve a percepção mesmo sem mudar o tempo real.
+- **Relógio local ≠ relógio do banco** — teste que compara `new Date()` do Node com `now()` do Postgres falha sozinho. Em teste, derivar a data do próprio banco.
+- **Supabase JS quebra no Node 20** ("Node.js 20 detected without native WebSocket") — scripts precisam de `import ws` + `globalThis.WebSocket = ws`.
+- **`pg` + session pooler** — parsear a connection string na mão (`new URL`) e passar host/user/password separados, com `ssl: { rejectUnauthorized: false }`.
 - **iOS Safari NÃO tem `beforeinstallprompt`** — motorista iPhone precisa instalar manual via Compartilhar > Adicionar à Tela de Início. Fluxo pós-instalação é idêntico.
 
 ## Workflow de deploy
