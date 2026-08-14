@@ -1397,3 +1397,104 @@ export async function buscarVeiculos(): Promise<
     .order("placa");
   return (data as Array<{ id: string; placa: string; marca: string; cor: string; tipo: string }>) || [];
 }
+
+// ============================================================================
+// CONTAS A PAGAR (Módulo 2 — Bloco 2)
+// ============================================================================
+
+export type StatusConta = "prevista" | "a_pagar" | "paga" | "cancelada";
+export type FormaPagamento =
+  | "dinheiro"
+  | "pix"
+  | "deposito"
+  | "boleto"
+  | "cheque";
+
+export interface ContaAPagar {
+  id: string;
+  descricao: string;
+  fornecedor: string | null;
+  categoria: string;
+  valor: number;
+  vencimento: string;
+  status: StatusConta;
+  forma_pagamento: FormaPagamento | null;
+  pago_em: string | null;
+  cheque_id: string | null;
+  origem_tipo: string | null;
+  origem_id: string | null;
+  recorrente_id: string | null;
+  competencia: string | null;
+  parcela: number | null;
+  parcelas_total: number | null;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export interface ResumoContas {
+  a_pagar_total: number;
+  vencidas_total: number;
+  vencidas_qtd: number;
+  semana_total: number;
+  semana_qtd: number;
+  previsto_total: number;
+}
+
+export async function buscarContasAPagar(): Promise<ContaAPagar[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("contas_a_pagar")
+    .select("*")
+    .order("vencimento", { ascending: true })
+    .limit(500);
+  if (error) throw error;
+  return ((data as ContaAPagar[]) || []).map((c) => ({
+    ...c,
+    valor: Number(c.valor),
+  }));
+}
+
+export async function resumoContasAPagar(): Promise<ResumoContas> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase.rpc("resumo_contas_a_pagar");
+  if (error) throw error;
+  const r = ((data as ResumoContas[]) || [])[0];
+  return {
+    a_pagar_total: Number(r?.a_pagar_total ?? 0),
+    vencidas_total: Number(r?.vencidas_total ?? 0),
+    vencidas_qtd: Number(r?.vencidas_qtd ?? 0),
+    semana_total: Number(r?.semana_total ?? 0),
+    semana_qtd: Number(r?.semana_qtd ?? 0),
+    previsto_total: Number(r?.previsto_total ?? 0),
+  };
+}
+
+export interface DespesaRecorrente {
+  id: string;
+  descricao: string;
+  categoria: string;
+  fornecedor: string | null;
+  valor: number;
+  dia_vencimento: number;
+  periodicidade: "mensal" | "anual";
+  mes_vencimento: number | null;
+  /** true = valor é chute; gera a conta como 'prevista' e precisa conferência */
+  aproximada: boolean;
+  ativa: boolean;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export async function buscarDespesasRecorrentes(): Promise<DespesaRecorrente[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("despesas_recorrentes")
+    .select("*")
+    .order("ativa", { ascending: false })
+    .order("descricao");
+  if (error) throw error;
+  return ((data as DespesaRecorrente[]) || []).map((d) => ({
+    ...d,
+    valor: Number(d.valor),
+  }));
+}

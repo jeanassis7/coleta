@@ -338,6 +338,89 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ───────────────────────────────────────────── 3c. contas a pagar
+console.log("\n🔬 CONTAS A PAGAR (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role in ('dev','admin') limit 1"
+  );
+
+  const conta = (descricao, valor, status, venc) =>
+    client.query(
+      `insert into public.contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, registrado_por)
+       values ($1,'outra',$2,$3,$4,$5) returning id`,
+      [descricao, valor, venc, status, perfil.id]
+    );
+
+  await conta("Vencida E2E", 300, "a_pagar", "2020-01-01");
+  await client.query(
+    `insert into public.contas_a_pagar
+       (descricao, categoria, valor, vencimento, status, registrado_por)
+     values ('Semana E2E','outra',500, current_date + 3,'a_pagar',$1)`,
+    [perfil.id]
+  );
+  await conta("Chute E2E", 9999, "prevista", "2030-01-01");
+
+  const { rows: [res] } = await client.query("select * from public.resumo_contas_a_pagar()");
+  // 300 (vencida) + 500 (semana) — a prevista de 9999 fica FORA do que se deve.
+  checar("total a pagar ignora previsão", res.a_pagar_total, 800);
+  checar("vencidas", res.vencidas_total, 300);
+  checar("vence em 7 dias", res.semana_total, 500);
+  checar("previsto fica separado", res.previsto_total, 9999);
+
+  // Gerar contas do mês duas vezes não pode duplicar o aluguel
+  const { rows: [rec] } = await client.query(
+    `insert into public.despesas_recorrentes
+       (descricao, categoria, valor, dia_vencimento)
+     values ('Aluguel E2E','fixa',3000,10) returning id`
+  );
+  const gerar = () =>
+    client.query(
+      `insert into public.contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, recorrente_id, competencia, registrado_por)
+       values ('Aluguel E2E','fixa',3000,'2026-09-10','a_pagar',$1,'2026-09',$2)
+       on conflict (recorrente_id, competencia) do nothing`,
+      [rec.id, perfil.id]
+    );
+  await gerar();
+  await gerar();
+  const { rows: [{ n }] } = await client.query(
+    "select count(*)::int as n from public.contas_a_pagar where recorrente_id = $1",
+    [rec.id]
+  );
+  afirmar(`gerar o mês duas vezes não duplica (achou ${n})`, n === 1);
+
+  // Pagar com cheque: o papel sai da carteira e vira repassado
+  const { rows: [comp] } = await client.query(
+    "insert into public.compradores (nome) values ('Fundição Cheque E2E') returning id"
+  );
+  const { rows: [recCh] } = await client.query(
+    `insert into public.recebimentos (comprador_id, forma, valor, data, registrado_por)
+     values ($1,'cheque',3000,current_date,$2) returning id`,
+    [comp.id, perfil.id]
+  );
+  const { rows: [ch] } = await client.query(
+    `insert into public.cheques (recebimento_id, comprador_id, banco, emitente, valor, bom_para)
+     values ($1,$2,'Itau','Fundição', 3000, current_date + 20) returning id`,
+    [recCh.id, comp.id]
+  );
+  const up1 = await client.query(
+    `update public.cheques set status='repassado', repassado_para='Oficina E2E',
+       repassado_em=current_date where id=$1 and status='em_carteira' returning id`,
+    [ch.id]
+  );
+  afirmar("cheque em carteira pode ser repassado", up1.rowCount === 1);
+  const up2 = await client.query(
+    `update public.cheques set status='repassado' where id=$1 and status='em_carteira' returning id`,
+    [ch.id]
+  );
+  afirmar("repassar de novo devolve 0 linhas (vira 409 na tela)", up2.rowCount === 0);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"

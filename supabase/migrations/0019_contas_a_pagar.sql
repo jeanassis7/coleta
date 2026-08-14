@@ -83,9 +83,15 @@ create table if not exists public.contas_a_pagar (
   constraint paga_precisa_de_data check (status <> 'paga' or pago_em is not null)
 );
 
+-- NÃO pode ser índice parcial: `on conflict (recorrente_id, competencia)` só
+-- casa com índice parcial se a cláusula WHERE for repetida na consulta, e o
+-- PostgREST não expõe isso — "Gerar contas do mês" quebraria com um 42P10
+-- incompreensível. Índice cheio funciona igual aqui porque o Postgres trata
+-- NULLs como distintos: contas avulsas (recorrente_id nulo) não colidem
+-- entre si.
+drop index if exists public.idx_contas_recorrente_competencia;
 create unique index if not exists idx_contas_recorrente_competencia
-  on public.contas_a_pagar(recorrente_id, competencia)
-  where recorrente_id is not null;
+  on public.contas_a_pagar(recorrente_id, competencia);
 
 create index if not exists idx_contas_status_vencimento
   on public.contas_a_pagar(status, vencimento);

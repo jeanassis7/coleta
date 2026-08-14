@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatBRL } from "@/lib/format";
 import { ModalConfirmar } from "@/components/admin/Modais";
@@ -226,7 +227,12 @@ function Tabela({
           {compradores.map((c) => (
             <tr key={c.id} className="border-b border-cinza-borda hover:bg-slate-50">
               <td className="py-2 pr-3 font-medium">
-                {c.nome}
+                <Link
+                  href={`/admin/compradores/${c.id}`}
+                  className="text-verde hover:underline"
+                >
+                  {c.nome}
+                </Link>
                 {!c.ativo && (
                   <span className="ml-2 text-xs text-cinza-suave">(inativo)</span>
                 )}
