@@ -161,6 +161,37 @@ async function main() {
   });
   check("abastecimento insere", !e7, e7?.message);
 
+  // ---- 7b. trigger preenche caminhao_id sozinho (0018) ----
+  // O cliente NÃO manda caminhao_id — o PWA fica cacheado no celular do
+  // motorista e a versão antiga continua rodando por vários usos. Se o
+  // banco exigisse a coluna, todo lançamento de quem está na versão velha
+  // falharia no sync, sem sinal nenhum pra ele.
+  const { data: cargaDb } = await svc.from("cargas")
+    .select("caminhao_id").eq("id", carga.id).maybeSingle();
+  const { data: abastSalvo } = await svc.from("abastecimentos")
+    .select("caminhao_id, pago_na_hora").eq("client_id", criados.abastClientId).maybeSingle();
+  check("trigger preencheu caminhao_id a partir da carga",
+    !!cargaDb?.caminhao_id && abastSalvo?.caminhao_id === cargaDb.caminhao_id,
+    `gravado=${abastSalvo?.caminhao_id} esperado=${cargaDb?.caminhao_id}`);
+  check("abastecimento nasce como PAGUEI AGORA (pago_na_hora = true)",
+    abastSalvo?.pago_na_hora === true, `pago_na_hora=${abastSalvo?.pago_na_hora}`);
+
+  // ---- 7c. "ASSINEI A NOTA": empresa paga depois, motorista não gastou ----
+  criados.abastAssinadoClientId = randomUUID();
+  const { error: e7c } = await mot.from("abastecimentos").insert({
+    client_id: criados.abastAssinadoClientId,
+    carga_id: carga.id,
+    motorista_id: teste1.id,
+    posto_nome: "Posto E2E (nota assinada)",
+    litros: 90,
+    valor: 500,
+    km_atual: 100300,
+    foto_path: fotoAbast,
+    pago_na_hora: false,
+    criado_em: new Date().toISOString(),
+  });
+  check("abastecimento com nota assinada insere", !e7c, e7c?.message);
+
   // ---- 8. descarga + generated column + idempotência ----
   const { data: desc, error: e8 } = await mot.from("descargas").insert({
     client_id: criados.descargaClientId,
@@ -213,9 +244,9 @@ async function main() {
     !e10 && !(cargasSemTeste || []).some((c) => c.id === carga.id));
   const { data: cargasTodas, error: e10b } = await svc.from("cargas").select(SELECT_CARGAS);
   const minha = (cargasTodas || []).find((c) => c.id === carga.id);
-  check("agregados da carga corretos (1 coleta, 1 despesa, 1 abast, 1 descarga)",
+  check("agregados da carga corretos (1 coleta, 1 despesa, 2 abast, 1 descarga)",
     !e10b && minha && minha.coletas?.length === 1 && minha.despesas?.length === 1 &&
-    minha.abastecimentos?.length === 1 && minha.descargas?.length === 1,
+    minha.abastecimentos?.length === 2 && minha.descargas?.length === 1,
     e10b?.message || (minha ? `c=${minha.coletas?.length} d=${minha.despesas?.length} a=${minha.abastecimentos?.length} desc=${minha.descargas?.length}` : "carga não veio"));
 
   // ---- 11. query aninhada do /admin/descarregamentos (3 níveis — risco D7) ----
@@ -272,8 +303,14 @@ async function main() {
   const { data: ads } = await svc.from("adiantamentos").select("valor")
     .eq("motorista_id", teste1.id).eq("status", "aceito").gt("aceito_em", corte0);
   const somaAd = (ads || []).reduce((s, a) => s + Number(a.valor), 0);
+  // Só o abastecimento que ele PAGOU sai do bolso dele. O de nota assinada
+  // (R$ 500) é dívida da empresa com o posto, não gasto do motorista.
+  const { data: abastPagos } = await svc.from("abastecimentos")
+    .select("valor").eq("motorista_id", teste1.id)
+    .eq("pago_na_hora", true).gt("criado_em", corte0);
+  const somaAbastPagos = (abastPagos || []).reduce((s, a) => s + Number(a.valor), 0);
   const saldo = somaAd - (await soma("coletas", "valor_pago")) -
-    (await soma("despesas", "valor")) - (await soma("abastecimentos", "valor"));
+    (await soma("despesas", "valor")) - somaAbastPagos;
   check("saldo calculado = 3875", saldo === 3875, `saldo=${saldo}`);
 
   // ---- 14b. a função saldos_motoristas() dá o MESMO número (perf fix) ----
@@ -282,6 +319,17 @@ async function main() {
   const saldoRpcBot = (saldosRpc || []).find((s) => s.motorista_id === teste1.id);
   check("rpc bate com o cálculo manual (3875)",
     Number(saldoRpcBot?.saldo) === 3875, `rpc=${saldoRpcBot?.saldo}`);
+
+  // ---- 14c. o abastecimento assinado NÃO pode ter mexido no saldo ----
+  // Se um dia alguém tirar o `and ab.pago_na_hora` da saldos_motoristas(),
+  // o motorista recebe R$ 500 a menos no acerto e ninguém descobre pela tela.
+  const { data: todosAbast } = await svc.from("abastecimentos")
+    .select("valor").eq("motorista_id", teste1.id).gt("criado_em", corte0);
+  const somaAbastTodos = (todosAbast || []).reduce((s, a) => s + Number(a.valor), 0);
+  check("nota assinada fica FORA do saldo do motorista (1180 lançados, 680 descontados)",
+    somaAbastTodos === 1180 && somaAbastPagos === 680 &&
+      Number(saldoRpcBot?.saldo) === 3875,
+    `lancado=${somaAbastTodos} descontado=${somaAbastPagos} saldo=${saldoRpcBot?.saldo}`);
 
   // ---- 15. acerto com corte: saldo pós-acerto = valor_saldo carry ----
   const { data: acerto, error: e15 } = await svc.from("acertos").insert({
@@ -383,9 +431,9 @@ async function main() {
      descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, foto_papel_path, latitude, longitude, criado_em)`
   ).eq("id", carga.id).maybeSingle();
   check("drill-down: query da carga completa roda", !eD, eD?.message);
-  check("drill-down: traz coleta, despesa, abastecimento e descarga",
+  check("drill-down: traz coleta, despesa, abastecimentos e descarga",
     !!completa && completa.coletas?.length === 1 && completa.despesas?.length === 1 &&
-    completa.abastecimentos?.length === 1 && completa.descargas?.length === 1,
+    completa.abastecimentos?.length === 2 && completa.descargas?.length === 1,
     completa ? `c=${completa.coletas?.length} d=${completa.despesas?.length} a=${completa.abastecimentos?.length} desc=${completa.descargas?.length}` : "carga nao veio");
 
   // ---- 22. foto: admin consegue gerar link temporario (auditoria) ----
@@ -486,33 +534,57 @@ async function main() {
 
 async function cleanup() {
   console.log("\n🧹 Limpando dados do E2E...");
+
+  // Cada delete tem que RECLAMAR quando falha. A versão anterior ignorava o
+  // erro e imprimia "Limpo" do mesmo jeito — um abastecimento esquecido
+  // segurava a carga por FK, que segurava o caminhão, que segurava o bot, e
+  // o run seguinte quebrava em "duplicate key placa" sem ninguém entender
+  // por quê. Limpeza que mente é pior que limpeza que falha.
+  const sobrou = [];
+  const del = async (tabela, coluna, valor) => {
+    if (!valor) return;
+    const { error } = await svc.from(tabela).delete().eq(coluna, valor);
+    if (error) sobrou.push(`${tabela}.${coluna}=${valor}: ${error.message}`);
+  };
+
   try {
     // SÓ ids que este run criou — nunca deletes amplos por motorista
     // (o Teste 1 do Evaner vive no mesmo banco).
-    if (criados.coletaAdminClientId) {
-      await svc.from("coletas").delete().eq("client_id", criados.coletaAdminClientId);
-    }
-    if (criados.compraCertId) await svc.from("compras_diretas").delete().eq("id", criados.compraCertId);
-    if (criados.compraKgId) await svc.from("compras_diretas").delete().eq("id", criados.compraKgId);
-    if (criados.compraLitrosId) await svc.from("compras_diretas").delete().eq("id", criados.compraLitrosId);
-    if (criados.acertoId) await svc.from("acertos").delete().eq("id", criados.acertoId);
-    if (criados.adiantamentoId) await svc.from("adiantamentos").delete().eq("id", criados.adiantamentoId);
-    await svc.from("descargas").delete().eq("client_id", criados.descargaClientId);
-    await svc.from("despesas").delete().eq("client_id", criados.despesaClientId);
-    await svc.from("abastecimentos").delete().eq("client_id", criados.abastClientId);
-    await svc.from("coletas").delete().eq("client_id", criados.coletaClientId);
-    if (criados.cargaId) await svc.from("cargas").delete().eq("id", criados.cargaId);
-    if (criados.caminhaoId) await svc.from("caminhoes").delete().eq("id", criados.caminhaoId);
+    await del("coletas", "client_id", criados.coletaAdminClientId);
+    await del("compras_diretas", "id", criados.compraCertId);
+    await del("compras_diretas", "id", criados.compraKgId);
+    await del("compras_diretas", "id", criados.compraLitrosId);
+    await del("acertos", "id", criados.acertoId);
+    await del("adiantamentos", "id", criados.adiantamentoId);
+    await del("descargas", "client_id", criados.descargaClientId);
+    await del("despesas", "client_id", criados.despesaClientId);
+    await del("abastecimentos", "client_id", criados.abastClientId);
+    await del("abastecimentos", "client_id", criados.abastAssinadoClientId);
+    await del("coletas", "client_id", criados.coletaClientId);
+    await del("cargas", "id", criados.cargaId);
+    await del("caminhoes", "id", criados.caminhaoId);
     if (criados.fotos.length) await svc.storage.from("fotos-coletas").remove(criados.fotos);
     // Por fim, o próprio bot
     if (criados.motoristaId) {
-      await svc.from("app_events").delete().eq("motorista_id", criados.motoristaId);
-      await svc.from("profiles").delete().eq("id", criados.motoristaId);
-      await svc.auth.admin.deleteUser(criados.motoristaId);
+      await del("app_events", "motorista_id", criados.motoristaId);
+      await del("profiles", "id", criados.motoristaId);
+      const { error } = await svc.auth.admin.deleteUser(criados.motoristaId);
+      if (error) sobrou.push(`auth.users ${criados.motoristaId}: ${error.message}`);
     }
-    console.log("🧹 Limpo (incluindo o bot).");
   } catch (e) {
-    console.error("⚠️ cleanup parcial:", e.message);
+    sobrou.push(`exceção: ${e.message}`);
+  }
+
+  if (sobrou.length === 0) {
+    console.log("🧹 Limpo (incluindo o bot).");
+  } else {
+    console.error("⚠️ LIMPEZA INCOMPLETA — sobrou lixo no banco:");
+    for (const s of sobrou) console.error(`   • ${s}`);
+    resultados.push({
+      nome: "limpeza do E2E",
+      ok: false,
+      detalhe: `${sobrou.length} item(ns) não apagados`,
+    });
   }
 }
 

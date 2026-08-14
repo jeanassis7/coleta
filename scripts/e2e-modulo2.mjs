@@ -193,6 +193,151 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ───────────────────────────────────────────── 3b. venda → estoque → cheque
+console.log("\n🔬 VENDA, CONTA CORRENTE E CHEQUE DEVOLVIDO (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role in ('dev','admin') limit 1"
+  );
+  if (!perfil) throw new Error("nenhum perfil admin/dev pra usar como registrado_por");
+
+  // Abertura ONTEM de propósito: inventário vale pro FIM do dia, então
+  // abrir e vender no mesmo dia faz a abertura sobrescrever a venda — o que
+  // está correto (se ele contou 10.000 no fim do dia, já é depois da venda),
+  // mas não é o cenário que este teste quer medir. O caso mesmo-dia tem
+  // teste próprio mais abaixo.
+  const abrir = (tipo, kg, custo) =>
+    client.query(
+      `insert into public.ajustes_estoque
+         (tipo_oleo, motivo_tipo, saldo_antes_kg, saldo_novo_kg, custo_medio_kg,
+          motivo, data, registrado_por)
+       values ($1,'abertura',0,$2,$3,'E2E',current_date - 1,$4)`,
+      [tipo, kg, custo, perfil.id]
+    );
+  await abrir("fino", 10000, 2.0);
+  await abrir("grosso", 2000, 3.0);
+
+  const { rows: [comp] } = await client.query(
+    "insert into public.compradores (nome, cidade) values ('Fundição E2E','Cascavel') returning id"
+  );
+
+  // Vende 5.000 kg: 4.000 de fino + 1.000 de grosso, a R$ 3,50 = R$ 17.500
+  const { rows: [venda] } = await client.query(
+    `insert into public.vendas
+       (comprador_id, data, peso_total_kg, kg_fino, kg_grosso, preco_kg,
+        valor_total, registrado_por)
+     values ($1, current_date, 5000, 4000, 1000, 3.50, 17500, $2) returning id`,
+    [comp.id, perfil.id]
+  );
+
+  const est = await client.query("select * from public.estoque_atual()");
+  const fino = est.rows.find((r) => r.tipo_oleo === "fino");
+  const grosso = est.rows.find((r) => r.tipo_oleo === "grosso");
+  console.log("   Abre 10.000 fino@2,00 e 2.000 grosso@3,00 → vende 4.000+1.000\n");
+  checar("fino baixou", fino.saldo_kg, 6000);
+  checar("grosso baixou", grosso.saldo_kg, 1000);
+  checar("custo do fino não mudou com a saída", fino.custo_medio_kg, 2.0, 0.0002);
+  checar("custo do grosso não mudou com a saída", grosso.custo_medio_kg, 3.0, 0.0002);
+
+  const saldoDe = async () => {
+    const { rows } = await client.query(
+      "select * from public.saldo_compradores() where comprador_id = $1",
+      [comp.id]
+    );
+    return rows[0];
+  };
+
+  console.log("\n   Conta corrente:");
+  checar("deve o total da venda", (await saldoDe()).saldo, 17500);
+
+  await client.query(
+    `insert into public.recebimentos (comprador_id, venda_id, forma, valor, data, registrado_por)
+     values ($1,$2,'pix',10000,current_date,$3)`,
+    [comp.id, venda.id, perfil.id]
+  );
+  checar("após pix de 10.000", (await saldoDe()).saldo, 7500);
+
+  const { rows: [recCh] } = await client.query(
+    `insert into public.recebimentos (comprador_id, venda_id, forma, valor, data, registrado_por)
+     values ($1,$2,'cheque',7500,current_date,$3) returning id`,
+    [comp.id, venda.id, perfil.id]
+  );
+  const { rows: [cheque] } = await client.query(
+    `insert into public.cheques
+       (recebimento_id, comprador_id, banco, emitente, valor, bom_para)
+     values ($1,$2,'Bradesco','Fundição E2E',7500, current_date + 30) returning id`,
+    [recCh.id, comp.id]
+  );
+  checar("após cheque de 7.500 (papel na mão quita a dívida)", (await saldoDe()).saldo, 0);
+
+  // O teste que importa: cheque volta e a dívida renasce SOZINHA.
+  await client.query(
+    "update public.cheques set status='devolvido', devolvido_em=current_date where id=$1",
+    [cheque.id]
+  );
+  const dep = await saldoDe();
+  checar("cheque devolvido → dívida renasce", dep.saldo, 7500);
+  checar("e a ficha sabe nomear quanto disso é cheque voltado", dep.devolvido, 7500);
+
+  // 1 cheque : 1 recebimento — devolver o cheque não pode levar o pix junto.
+  afirmar(
+    `o pix de 10.000 continua valendo (recebido = ${dep.recebido})`,
+    Math.abs(Number(dep.recebido) - 10000) < 0.02
+  );
+
+  // Inserts que DEVEM falhar precisam de savepoint: no Postgres, um erro
+  // aborta a transação inteira e todo statement seguinte devolve 25P02 —
+  // sem isso, o primeiro teste negativo faz os próximos mentirem.
+  const deveFalhar = async (rotulo, sql, params, codigoEsperado) => {
+    await client.query("SAVEPOINT sp");
+    const codigo = await client
+      .query(sql, params)
+      .then(() => "nenhum erro")
+      .catch((e) => e.code);
+    await client.query("ROLLBACK TO SAVEPOINT sp");
+    if (codigo !== codigoEsperado) falhas++;
+    console.log(
+      `   ${codigo === codigoEsperado ? "✅" : "❌"} ${rotulo} (${codigo})`
+    );
+  };
+
+  console.log("");
+  await deveFalhar(
+    "segundo cheque no mesmo recebimento é barrado",
+    `insert into public.cheques (recebimento_id, comprador_id, banco, emitente, valor, bom_para)
+     values ($1,$2,'Itau','Outro',100, current_date + 10)`,
+    [recCh.id, comp.id],
+    "23505"
+  );
+  await deveFalhar(
+    "mistura que não fecha com o peso da balança é barrada",
+    `insert into public.vendas
+       (comprador_id, data, peso_total_kg, kg_fino, kg_grosso, preco_kg, valor_total, registrado_por)
+     values ($1, current_date, 1000, 400, 300, 3.0, 3000, $2)`,
+    [comp.id, perfil.id],
+    "23514"
+  );
+
+  // Documenta o mesmo-dia: inventário HOJE sobrescreve a venda de HOJE.
+  // Está certo (a contagem do fim do dia já é pós-venda) e a tela avisa
+  // "vale pro fim desse dia" — o teste existe pra ninguém "consertar" isso
+  // depois sem perceber que está invertendo a regra.
+  await client.query(
+    `insert into public.ajustes_estoque
+       (tipo_oleo, motivo_tipo, saldo_antes_kg, saldo_novo_kg, custo_medio_kg,
+        motivo, data, registrado_por)
+     values ('fino','inventario',6000,5800,2.0,'contagem E2E',current_date,$1)`,
+    [perfil.id]
+  );
+  const { rows: pos } = await client.query(
+    "select * from public.estoque_atual() where tipo_oleo = 'fino'"
+  );
+  checar("inventário de hoje manda no saldo do dia", pos[0].saldo_kg, 5800);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"
