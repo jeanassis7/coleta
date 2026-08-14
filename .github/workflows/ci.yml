@@ -58,41 +58,32 @@ jobs:
 
       - run: npm ci
 
-      # Os scripts leem .env.local na mão (não usam dotenv). Recria o arquivo
-      # a partir dos Secrets em vez de mudar os scripts — assim eles seguem
-      # idênticos rodando aqui e na máquina do Evaner.
-      - name: Montar .env.local a partir dos Secrets
+      # Os scripts usam scripts/carregar-env.mjs, que lê o .env.local quando
+      # existe e cai pro ambiente quando não existe. Aqui não existe — as
+      # credenciais chegam direto pelo env, sem nunca virar arquivo em disco.
+      - name: Tem credencial cadastrada?
         id: env
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::notice::DATABASE_URL não cadastrada — E2E pulado."
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "::notice::DATABASE_URL não cadastrada em Secrets — E2E pulado."
             echo "rodar=nao" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "rodar=sim" >> "$GITHUB_OUTPUT"
           fi
-          {
-            echo "DATABASE_URL=$DATABASE_URL"
-            echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL"
-            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
-          } > .env.local
-          echo "rodar=sim" >> "$GITHUB_OUTPUT"
 
       # Módulo 1 cria e apaga o próprio motorista descartável ("E2E Bot").
       # Nunca encosta no Teste 1, que é o ambiente manual do Evaner.
       - name: E2E Módulo 1
         if: steps.env.outputs.rodar == 'sim'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/e2e-modulo1.mjs
 
       # Módulo 2 é read-only: simula dentro de transação e dá ROLLBACK.
       - name: E2E Módulo 2
         if: steps.env.outputs.rodar == 'sim'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/e2e-modulo2.mjs
-
-      - name: Limpar credenciais
-        if: always()
-        run: rm -f .env.local

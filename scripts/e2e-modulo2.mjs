@@ -14,17 +14,10 @@
  * derruba o custo médio se o ajuste não congelar a base, e é o tipo de erro
  * que não aparece na tela — só na margem, meses depois.
  */
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { carregarEnv } from "./carregar-env.mjs";
 import pg from "pg";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const envRaw = readFileSync(join(__dirname, "..", ".env.local"), "utf8");
-for (const linha of envRaw.split("\n")) {
-  const m = linha.match(/^([A-Z_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+carregarEnv(["DATABASE_URL"]);
 
 const url = new URL(process.env.DATABASE_URL);
 const client = new pg.Client({

@@ -15,15 +15,15 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { carregarEnv } from "./carregar-env.mjs";
 import ws from "ws";
 if (!globalThis.WebSocket) globalThis.WebSocket = ws;
 
-const envRaw = readFileSync("C:/Users/Evaner/Desktop/JJHS/.env.local", "utf8");
-for (const linha of envRaw.split("\n")) {
-  const m = linha.match(/^([A-Z_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+carregarEnv([
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+]);
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
