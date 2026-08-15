@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { getLocalDB } from "@/lib/db/dexie";
 import { reabastecerHistoricoLocal } from "@/lib/motorista/historico";
@@ -22,16 +22,36 @@ import { formatBRL, formatLitros } from "@/lib/format";
  * reabastecimento traz do banco o que faltar — celular novo, app
  * reinstalado, coleta apagada no painel.
  */
-function formatDataCurta(ms: number): string {
+const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+/**
+ * "Hoje 15/08 · 14:32" / "Ontem 14/08 · 09:10" / "Ter 12/08 · 16:05"
+ *
+ * A DATA aparece sempre — é ela que bate com a nota e com o caderno dele.
+ * O nome ao lado é só o atalho de leitura.
+ *
+ * Escolhi DIA DA SEMANA em vez de "3 dias atrás" (ideia do Evaner) por dois
+ * motivos: motorista lembra a rota por dia da semana ("segunda eu fui pra
+ * Toledo"), e "3 dias atrás" obriga a fazer conta de cabeça pra chegar na
+ * data quando ele precisa conferir com papel. Trocar é uma linha, se na
+ * prática ele preferir o contrário.
+ */
+function formatDataCurta(ms: number, agora: number): string {
   const d = new Date(ms);
-  const hoje = new Date();
-  const mesmoDia =
-    d.getDate() === hoje.getDate() &&
-    d.getMonth() === hoje.getMonth() &&
-    d.getFullYear() === hoje.getFullYear();
   const hora = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  if (mesmoDia) return `Hoje ${hora}`;
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${hora}`;
+  const data = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+  // Diferença em DIAS DE CALENDÁRIO, não em horas: 23h atrás pode ser
+  // ontem e 25h atrás pode ser hoje, dependendo da hora da coleta.
+  const meiaNoite = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dias = Math.round(
+    (meiaNoite(new Date(agora)) - meiaNoite(d)) / 86400000
+  );
+
+  if (dias === 0) return `Hoje ${data} · ${hora}`;
+  if (dias === 1) return `Ontem ${data} · ${hora}`;
+  return `${DIAS_SEMANA[d.getDay()]} ${data} · ${hora}`;
 }
 
 export function ListaColetasCarga({
@@ -56,6 +76,20 @@ export function ListaColetasCarga({
   useEffect(() => {
     reabastecerHistoricoLocal(motoristaId, cargaId).catch(() => {});
   }, [motoristaId, cargaId]);
+
+  // O app fica aberto no celular dele por horas. Sem isso, uma coleta feita
+  // 23h50 continuaria escrita "Hoje" na manhã seguinte — e "Hoje" errado
+  // parece bug, não parece detalhe.
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const atualizar = () => setAgora(Date.now());
+    document.addEventListener("visibilitychange", atualizar);
+    window.addEventListener("focus", atualizar);
+    return () => {
+      document.removeEventListener("visibilitychange", atualizar);
+      window.removeEventListener("focus", atualizar);
+    };
+  }, []);
 
   if (!coletas || coletas.length === 0) {
     return (
@@ -87,20 +121,24 @@ export function ListaColetasCarga({
       {coletas.map((c) => {
         const enviada = c.registro_subido && c.foto_subida;
         return (
+          // Números em cima (é o que ele confere), data e local embaixo em
+          // texto menor — junto na mesma linha grande estouraria a largura
+          // do celular e quebraria feio.
           <div key={c.client_id} className="card">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2">
               <span className="text-xl">{enviada ? "☁️" : "📱"}</span>
-              <span className="text-lg font-semibold">
-                {formatDataCurta(c.criado_em)}
-              </span>
-              <span className="text-lg">·</span>
               <span className="text-lg font-semibold">
                 {formatLitros(c.litros)}
               </span>
+              <span className="text-lg text-cinza-suave">·</span>
+              <span className="text-lg font-semibold text-verde">
+                {formatBRL(c.valor_pago)}
+              </span>
             </div>
-            <p className="text-base text-cinza-suave truncate">
-              {c.local_nome} · {formatBRL(c.valor_pago)}
+            <p className="text-sm text-cinza-suave mt-1">
+              {formatDataCurta(c.criado_em, agora)}
             </p>
+            <p className="text-base truncate">{c.local_nome}</p>
           </div>
         );
       })}
