@@ -634,27 +634,61 @@ export async function limparGpsPendenteStale(): Promise<number> {
 }
 
 /**
- * Cleanup pós-sync: coleta 100% sincronizada há mais de 24h é apagada
- * do IndexedDB local. O celular do motorista fica limpo e não acumula
- * blob de foto (~100KB cada) indefinidamente.
+ * Cleanup pós-sync.
  *
- * A tela "Minhas coletas hoje" só mostra do dia atual (00:00-23:59),
- * então apagar coletas de 24h+ não afeta a UI dele.
- * Os dados originais continuam intactos no Supabase.
+ * MUDOU (pedido de campo do Evaner): antes a coleta inteira era apagada 24h
+ * depois de subir. O motorista abria o app no dia seguinte, via a lista
+ * zerada, e voltava a anotar no papel — o controle da empresa virava
+ * decoração. Agora:
+ *
+ *   • a FOTO (blob, ~100KB) some 24h depois de subir — é ela que ocupa
+ *     espaço, e o original está no Storage;
+ *   • o REGISTRO (~200 bytes) fica enquanto pertence à carga atual, pra
+ *     lista "Coletas dessa carga" ter o que mostrar;
+ *   • o registro só é apagado quando pertence a uma carga ANTERIOR — ou
+ *     seja, depois que ele descarregou e começou outra.
+ *
+ * Sem carga ativa (situação de hoje, antes de features.carga ser ligada),
+ * nada é apagado: não existe fronteira, e o volume real é irrelevante
+ * (~9 coletas/dia × 200 bytes).
  */
 const RETENCAO_APOS_SYNC_MS = 24 * 60 * 60 * 1000;
 
-export async function limparColetasSincronizadasAntigas(): Promise<number> {
+export async function limparColetasSincronizadasAntigas(
+  cargaAtivaId?: string | null
+): Promise<number> {
   const db = getLocalDB();
   const cutoff = Date.now() - RETENCAO_APOS_SYNC_MS;
   let total = 0;
 
-  const antigas = await db.coletas_locais
+  // 1. Libera o blob da foto, mantendo o registro.
+  const comFoto = await db.coletas_locais
     .filter(
-      (c) => c.registro_subido === true && c.foto_subida === true && c.criado_em < cutoff
+      (c) =>
+        c.registro_subido === true &&
+        c.foto_subida === true &&
+        c.foto_blob !== null &&
+        c.criado_em < cutoff
     )
     .toArray();
-  for (const c of antigas) {
+  for (const c of comFoto) {
+    await db.coletas_locais.update(c.client_id, { foto_blob: null });
+    total++;
+  }
+
+  // 2. Apaga registro de carga JÁ ENCERRADA (nunca o da carga atual, nunca
+  //    o de quem ainda não usa carga).
+  const deCargaAntiga = await db.coletas_locais
+    .filter(
+      (c) =>
+        c.registro_subido === true &&
+        c.foto_subida === true &&
+        !!c.carga_id &&
+        c.carga_id !== cargaAtivaId &&
+        c.criado_em < cutoff
+    )
+    .toArray();
+  for (const c of deCargaAntiga) {
     await db.coletas_locais.delete(c.client_id);
     total++;
   }

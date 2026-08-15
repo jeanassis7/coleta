@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { getCargaAtivaCached } from "@/lib/motorista/carga";
 import {
   runSync,
   countPendentes,
@@ -18,8 +19,15 @@ export const EVENTO_SYNC_FINALIZADO = "coleta-sync-finalizado";
 async function umaRodada(): Promise<SyncResult> {
   await limparGpsPendenteStale();
   const result = await runSync();
-  // Depois do sync, limpa lançamentos antigos que já subiram (>24h)
-  await limparColetasSincronizadasAntigas();
+  // Depois do sync: libera o blob da foto e apaga só o que é de carga
+  // ANTERIOR. O registro da carga atual fica — é o que a lista "Coletas
+  // dessa carga" mostra, e foi apagá-lo que fez o motorista voltar pro papel.
+  const motoristaId =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("coleta_motorista_id")
+      : null;
+  const cargaAtiva = motoristaId ? getCargaAtivaCached(motoristaId) : null;
+  await limparColetasSincronizadasAntigas(cargaAtiva?.id ?? null);
   return result;
 }
 

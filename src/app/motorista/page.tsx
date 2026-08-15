@@ -7,7 +7,7 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useSyncTriggers } from "@/lib/sync/trigger";
 import { InstallPrompt } from "@/components/motorista/InstallPrompt";
 import { BotaoSyncManual } from "@/components/motorista/BotaoSyncManual";
-import { ListaColetasDia } from "@/components/motorista/ListaColetasDia";
+import { ListaColetasCarga } from "@/components/motorista/ListaColetasCarga";
 import { MenuLogout } from "@/components/motorista/MenuLogout";
 import { EventLogger } from "@/components/motorista/EventLogger";
 import { BarraCaminhao } from "@/components/motorista/BarraCaminhao";
@@ -274,12 +274,14 @@ export default function MotoristaHomePage() {
 
       <div className="mt-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-semibold">Minhas coletas hoje</h2>
+          <h2 className="text-xl font-semibold">Coletas dessa carga</h2>
           {!online && (
             <span className="text-base text-cinza-suave">📵 sem sinal</span>
           )}
         </div>
-        <ListaColetasDia motoristaId={perfil.id} />
+        {/* Sem features.carga, cargaId é null e a lista mostra tudo. Quando
+            a carga existir, ela zera sozinha na descarga. */}
+        <ListaColetasCarga motoristaId={perfil.id} cargaId={carga?.id ?? null} />
       </div>
     </main>
   );
