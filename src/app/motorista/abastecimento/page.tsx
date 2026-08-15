@@ -9,6 +9,7 @@ import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
 import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
+import { SugestaoLocal } from "@/components/motorista/SugestaoLocal";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
 import { parseLitros } from "@/lib/format";
 import type { CargaAtivaCache, AbastecimentoLocal } from "@/lib/types";
@@ -25,6 +26,11 @@ export default function AbastecimentoPage() {
   const [salvando, setSalvando] = useState(false);
 
   const [postoNome, setPostoNome] = useState("");
+  const [postoLocalId, setPostoLocalId] = useState<string | null>(null);
+  // "PAGUEI AGORA" x "ASSINEI A NOTA" — pergunta física, não contábil.
+  // Assinar a nota NÃO tira do bolso dele: vira dívida da empresa com o
+  // posto e some do saldo (0018). Nasce em true porque é o caso comum.
+  const [pagoNaHora, setPagoNaHora] = useState(true);
   const [litrosTexto, setLitrosTexto] = useState("");
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [kmTexto, setKmTexto] = useState("");
@@ -143,6 +149,8 @@ export default function AbastecimentoPage() {
       motorista_id: motoristaId,
       carga_id: carga.id,
       posto_nome: postoNome.trim(),
+      local_id: postoLocalId,
+      pago_na_hora: pagoNaHora,
       litros,
       valor,
       km_atual: Math.round(km),
@@ -171,6 +179,7 @@ export default function AbastecimentoPage() {
       litros,
       valor,
       km_atual: abastecimento.km_atual,
+      pago_na_hora: pagoNaHora,
       gps_ja_resolvido: gpsJa !== null,
     });
 
@@ -210,14 +219,56 @@ export default function AbastecimentoPage() {
           <label className="block text-xl font-semibold mb-3">
             ⛽ Nome do posto
           </label>
-          <input
-            type="text"
-            className="input-grande"
-            value={postoNome}
-            onChange={(e) => setPostoNome(e.target.value)}
-            placeholder="ex: Ipiranga Cascavel"
-            autoFocus
+          {/* Mesma máquina da coleta: o GPS já foi capturado ao abrir a tela,
+              então o posto onde ele já abasteceu antes aparece sozinho. Um
+              toque em vez de digitar. Sem metros na tela — só o nome. */}
+          <SugestaoLocal
+            tipo="posto"
+            rotulo="⛽ Você está no posto:"
+            rotuloOutro="➕ Outro posto"
+            nomeAtual={postoNome}
+            setNomeAtual={setPostoNome}
+            onSelecionar={({ local_id, nome }) => {
+              setPostoLocalId(local_id);
+              setPostoNome(nome);
+            }}
           />
+        </div>
+
+        {/* A pergunta é sobre o ATO FÍSICO, não sobre contabilidade:
+            "a pagar" é vocabulário de escritório e ele não usaria. */}
+        <div>
+          <label className="block text-xl font-semibold mb-3">
+            💵 Como pagou?
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(true)}
+              className={`rounded-2xl py-6 px-2 border-2 text-center transition-colors ${
+                pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <span className="block text-lg font-bold leading-tight">
+                PAGUEI AGORA
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(false)}
+              className={`rounded-2xl py-6 px-2 border-2 text-center transition-colors ${
+                !pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <span className="block text-lg font-bold leading-tight">
+                ASSINEI A NOTA
+              </span>
+            </button>
+          </div>
         </div>
 
         <div>

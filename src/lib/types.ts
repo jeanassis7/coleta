@@ -155,6 +155,13 @@ export interface AbastecimentoLocal {
   motorista_id: string;
   carga_id: string;
   posto_nome: string;
+  /** Local canônico do posto, quando escolheu a sugestão por GPS */
+  local_id?: string | null;
+  /**
+   * false = "ASSINEI A NOTA": a empresa paga o posto depois. Não sai do
+   * saldo dele (ver saldos_motoristas na 0018) e vira conta a pagar.
+   */
+  pago_na_hora?: boolean;
   litros: number;
   valor: number;
   km_atual: number;

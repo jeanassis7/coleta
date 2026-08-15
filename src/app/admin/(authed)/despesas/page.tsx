@@ -6,6 +6,7 @@ import {
 import { TabelaDespesas } from "@/components/admin/TabelaDespesas";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
 import { ExportCsv } from "@/components/admin/ExportCsv";
+import { BotaoLancamentoAvulso } from "@/components/admin/BotaoLancamentoAvulso";
 import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 
@@ -48,7 +49,13 @@ export default async function DespesasPage({
     <div>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
         <h1 className="text-2xl font-bold">Despesas</h1>
-        <ExportCsv linhas={linhasCsv} nomeArquivo="despesas" />
+        <div className="flex gap-2">
+          <BotaoLancamentoAvulso
+            veiculos={caminhoes.filter((c) => c.ativo)}
+            tipoInicial="despesa"
+          />
+          <ExportCsv linhas={linhasCsv} nomeArquivo="despesas" />
+        </div>
       </div>
       <p className="text-sm text-cinza-suave mb-4">
         Tudo que o motorista gastou fora combustível (almoço, hotel, lavagem…),

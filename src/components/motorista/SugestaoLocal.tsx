@@ -12,6 +12,12 @@ interface Props {
   onSelecionar: (escolha: { local_id: string | null; nome: string }) => void;
   nomeAtual: string;
   setNomeAtual: (s: string) => void;
+  /** 'coleta' (padrão) ou 'posto' — nunca se misturam na sugestão */
+  tipo?: "coleta" | "posto";
+  /** Texto acima das sugestões */
+  rotulo?: string;
+  /** Texto do botão de escapar pra digitar na mão */
+  rotuloOutro?: string;
 }
 
 type Estado =
@@ -21,7 +27,14 @@ type Estado =
 
 const RAIO_BUSCA_M = 100;
 
-export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) {
+export function SugestaoLocal({
+  onSelecionar,
+  nomeAtual,
+  setNomeAtual,
+  tipo = "coleta",
+  rotulo = "📍 Você está perto de:",
+  rotuloOutro = "➕ Outro local",
+}: Props) {
   const [estado, setEstado] = useState<Estado>({ kind: "carregando" });
 
   useEffect(() => {
@@ -37,7 +50,7 @@ export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) 
 
       try {
         const res = await fetch(
-          `/api/locais/proximos?lat=${gps.latitude}&lng=${gps.longitude}&raio=${RAIO_BUSCA_M}`
+          `/api/locais/proximos?lat=${gps.latitude}&lng=${gps.longitude}&raio=${RAIO_BUSCA_M}&tipo=${tipo}`
         );
         if (!res.ok) {
           setEstado({ kind: "vazio" });
@@ -63,7 +76,7 @@ export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) 
     return () => {
       cancelado = true;
     };
-  }, []);
+  }, [tipo]);
 
   function escolherLocal(local: LocalProximo) {
     setEstado({
@@ -136,7 +149,7 @@ export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) 
 
   return (
     <div className="space-y-2">
-      <p className="text-base text-cinza-suave">📍 Você está perto de:</p>
+      <p className="text-base text-cinza-suave">{rotulo}</p>
       {estado.locais.map((l) => {
         const escolhido = estado.idEscolhido === l.id;
         return (
@@ -159,7 +172,7 @@ export function SugestaoLocal({ onSelecionar, nomeAtual, setNomeAtual }: Props) 
         onClick={escolherOutro}
         className="w-full text-left p-4 rounded-2xl border-2 border-cinza-borda bg-white active:bg-cinza-fundo"
       >
-        <span className="text-lg font-semibold">➕ Outro local</span>
+        <span className="text-lg font-semibold">{rotuloOutro}</span>
       </button>
     </div>
   );

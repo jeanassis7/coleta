@@ -209,8 +209,12 @@ export interface Caminhao {
   marca: string;
   modelo: string | null;
   cor: string;
-  capacidade_l: number;
-  tara_kg: number;
+  /** 'caminhao' | 'carro' — carro nunca aparece pro motorista (RLS + query) */
+  tipo: string;
+  de_quem: string | null;
+  /** null pra carro: tara e capacidade só existem em caminhão (CHECK na 0018) */
+  capacidade_l: number | null;
+  tara_kg: number | null;
   ativo: boolean;
   motivo_inativo: string | null;
   criado_em: string;

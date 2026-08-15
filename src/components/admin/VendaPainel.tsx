@@ -12,6 +12,7 @@ import {
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import { ModalConfirmar } from "@/components/admin/Modais";
 import { compressPhoto } from "@/lib/image/compress";
+import { LancamentoAvulso } from "@/components/admin/LancamentoAvulso";
 import type { Venda, Comprador, EstoqueTipo } from "@/lib/admin/queries";
 
 function hojeBr(): string {
@@ -70,7 +71,7 @@ export function VendaPainel({
         />
       )}
 
-      <TabelaVendas vendas={vendas} />
+      <TabelaVendas vendas={vendas} veiculos={veiculos} />
     </>
   );
 }
@@ -625,9 +626,19 @@ function FormVenda({
   );
 }
 
-function TabelaVendas({ vendas }: { vendas: Venda[] }) {
+function TabelaVendas({
+  vendas,
+  veiculos,
+}: {
+  vendas: Venda[];
+  veiculos: Array<{ id: string; placa: string; marca: string; tipo: string }>;
+}) {
   const router = useRouter();
   const [apagando, setApagando] = useState<Venda | null>(null);
+  // A entrega é um ciclo: depois de lançar a venda, os gastos da viagem
+  // (diesel, pedágio, almoço) entram aqui presos ao mesmo caminhão e à
+  // venda — é o que permite o custo total da viagem por kg.
+  const [gastoDe, setGastoDe] = useState<Venda | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function apagar(v: Venda) {
@@ -696,17 +707,37 @@ function TabelaVendas({ vendas }: { vendas: Venda[] }) {
                 />
               </td>
               <td className="py-2 pr-3">
-                <button
-                  onClick={() => setApagando(v)}
-                  className="text-alerta hover:underline text-sm"
-                >
-                  Apagar
-                </button>
+                <div className="flex gap-2 text-sm">
+                  {v.caminhao_id && (
+                    <button
+                      onClick={() => setGastoDe(v)}
+                      className="text-verde hover:underline"
+                    >
+                      + gasto
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setApagando(v)}
+                    className="text-alerta hover:underline"
+                  >
+                    Apagar
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {gastoDe && (
+        <LancamentoAvulso
+          veiculos={veiculos}
+          caminhaoFixo={gastoDe.caminhao_id}
+          vendaId={gastoDe.id}
+          titulo={`Gasto da entrega — ${gastoDe.comprador_nome}`}
+          onFechar={() => setGastoDe(null)}
+        />
+      )}
 
       {apagando && (
         <ModalConfirmar

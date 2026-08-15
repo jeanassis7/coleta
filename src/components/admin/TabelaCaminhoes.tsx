@@ -106,11 +106,17 @@ export function TabelaCaminhoes({ caminhoes }: { caminhoes: Caminhao[] }) {
                   {c.modelo ? ` ${c.modelo}` : ""}
                 </td>
                 <td className="py-3 pr-3">{c.cor}</td>
+                {/* Carro não tem tara nem capacidade — o CHECK da 0018 só
+                    exige essas duas de veículo do tipo caminhão. */}
                 <td className="py-3 pr-3 text-right font-mono">
-                  {c.capacidade_l.toLocaleString("pt-BR")} L
+                  {c.capacidade_l !== null
+                    ? `${c.capacidade_l.toLocaleString("pt-BR")} L`
+                    : "—"}
                 </td>
                 <td className="py-3 pr-3 text-right font-mono">
-                  {c.tara_kg.toLocaleString("pt-BR")} kg
+                  {c.tara_kg !== null
+                    ? `${c.tara_kg.toLocaleString("pt-BR")} kg`
+                    : "—"}
                 </td>
                 <td className="py-3 pr-3">
                   <label className="inline-flex items-center gap-2">

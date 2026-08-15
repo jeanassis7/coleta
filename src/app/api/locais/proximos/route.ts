@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 /**
- * GET /api/locais/proximos?lat=X&lng=Y&raio=200
+ * GET /api/locais/proximos?lat=X&lng=Y&raio=200&tipo=coleta|posto
  * Retorna locais ativos dentro do raio (em metros), ordenados por distância.
  * Qualquer usuário autenticado pode chamar (motorista usa pra sugestão).
  */
@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
   const lat = parseFloat(searchParams.get("lat") || "");
   const lng = parseFloat(searchParams.get("lng") || "");
   const raio = parseInt(searchParams.get("raio") || "200", 10);
+  // Posto e oficina moram na mesma tabela mas nunca se misturam na
+  // sugestão: um Ipiranga e a borracharia da esquina cairiam no mesmo
+  // raio de 100m, e o motorista escolheria o errado sem perceber.
+  const tipo = searchParams.get("tipo") === "posto" ? "posto" : "coleta";
 
   if (isNaN(lat) || isNaN(lng)) {
     return NextResponse.json(
@@ -36,6 +40,7 @@ export async function GET(req: NextRequest) {
     p_lat: lat,
     p_lng: lng,
     p_raio_m: raio,
+    p_tipo: tipo,
   });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

@@ -325,6 +325,11 @@ async function sincronizarAbastecimentos(
       carga_id: a.carga_id,
       motorista_id: a.motorista_id,
       posto_nome: a.posto_nome,
+      local_id: a.local_id ?? null,
+      // Versões antigas do app (PWA cacheado no celular) não mandam esse
+      // campo. O default do banco é true, mas mandar explícito evita que um
+      // undefined vire null e quebre o NOT NULL.
+      pago_na_hora: a.pago_na_hora !== false,
       litros: a.litros,
       valor: a.valor,
       km_atual: a.km_atual,

@@ -6,6 +6,7 @@ import {
 import { TabelaAbastecimentos } from "@/components/admin/TabelaAbastecimentos";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
 import { ExportCsv } from "@/components/admin/ExportCsv";
+import { BotaoLancamentoAvulso } from "@/components/admin/BotaoLancamentoAvulso";
 import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 
@@ -56,7 +57,13 @@ export default async function AbastecimentosPage({
     <div>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
         <h1 className="text-2xl font-bold">Abastecimentos</h1>
-        <ExportCsv linhas={linhasCsv} nomeArquivo="abastecimentos" />
+        <div className="flex gap-2">
+          <BotaoLancamentoAvulso
+            veiculos={caminhoes.filter((c) => c.ativo)}
+            tipoInicial="abastecimento"
+          />
+          <ExportCsv linhas={linhasCsv} nomeArquivo="abastecimentos" />
+        </div>
       </div>
       <p className="text-sm text-cinza-suave mb-4">
         Todos os abastecimentos, do mais recente pro mais antigo. Clique em 📷 pra
