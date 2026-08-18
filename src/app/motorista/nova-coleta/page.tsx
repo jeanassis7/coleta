@@ -82,6 +82,21 @@ export default function NovaColetaPage() {
   const litros = parseLitros(litrosTexto);
   const valor = parseValorInteiro(valorTexto);
 
+  // ANTIBURROS DE LANÇAMENTO (bug real de campo: 1,80 L por R$ 2.880 —
+  // o motorista digitou o PREÇO no campo dos litros).
+  //
+  // A tela devolve o que ele digitou e NÃO explica a regra: dizer "mínimo
+  // 20 litros" ensina o número, e um dia alguém digita 20 só pra passar.
+  // Ver o próprio "1,80 L" grande na tela é o que dispara o reconhecimento.
+  const [erroLancamento, setErroLancamento] = useState<string | null>(null);
+  const [avisoPreco, setAvisoPreco] = useState(false);
+
+  function trocarLitros(v: string) {
+    setLitrosTexto(v);
+    setErroLancamento(null);
+    setAvisoPreco(false);
+  }
+
   const podeSalvar =
     !!motoristaId &&
     litros !== null &&
@@ -92,10 +107,38 @@ export default function NovaColetaPage() {
     (!exigeFoto || foto !== null) &&
     !salvando;
 
+  // Fato físico, não estatística: abaixo disso não existe coleta de
+  // verdade. Por ser fato, BLOQUEIA — mesmo critério de peso menor que a
+  // tara e km menor que o início da carga.
+  const LITROS_MINIMO = 20;
+  // Preço é estatística e envelhece, então aqui só AVISA: se o óleo subir
+  // um dia, um bloqueio antigo travaria a operação no meio da estrada.
+  const RS_POR_LITRO_MAXIMO = 5;
+
   async function salvar() {
     if (!podeSalvar || !motoristaId || litros === null || valor === null || !cert.tipo) {
       return;
     }
+
+    if (litros < LITROS_MINIMO) {
+      setErroLancamento(
+        `Você digitou ${litrosTexto.trim()} L de óleo.`
+      );
+      return;
+    }
+    if (cert.litrosCert !== null && cert.litrosCert > litros) {
+      setErroLancamento(
+        `Você digitou ${cert.litrosCert.toLocaleString("pt-BR")} L no certificado e ${litros.toLocaleString("pt-BR")} L de óleo.`
+      );
+      return;
+    }
+    setErroLancamento(null);
+
+    if (valor / litros > RS_POR_LITRO_MAXIMO && !avisoPreco) {
+      setAvisoPreco(true);
+      return;
+    }
+
     setSalvando(true);
 
     const client_id = uuid();
@@ -267,7 +310,7 @@ export default function NovaColetaPage() {
             className="input-grande text-2xl"
             placeholder=""
             value={litrosTexto}
-            onChange={(e) => setLitrosTexto(e.target.value)}
+            onChange={(e) => trocarLitros(e.target.value)}
             autoFocus
           />
         </div>
@@ -352,13 +395,39 @@ export default function NovaColetaPage() {
           />
         </div>
 
+        {erroLancamento && (
+          <div className="bg-alerta/10 border-2 border-alerta rounded-2xl p-4">
+            <p className="text-xl font-bold text-alerta mb-1">
+              ⚠️ Confere o lançamento
+            </p>
+            <p className="text-lg">{erroLancamento}</p>
+          </div>
+        )}
+
+        {avisoPreco && !erroLancamento && (
+          <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4">
+            <p className="text-xl font-bold mb-1">⚠️ Confere o lançamento</p>
+            <p className="text-lg">
+              Você digitou {litrosTexto.trim()} L por {formatBRL(valor ?? 0)}.
+            </p>
+          </div>
+        )}
+
         {/* SALVAR */}
         <button
           onClick={salvar}
           disabled={!podeSalvar}
-          className="btn-primario text-2xl"
+          className={
+            avisoPreco && !erroLancamento
+              ? "btn-primario text-2xl bg-amber-500 active:bg-amber-600"
+              : "btn-primario text-2xl"
+          }
         >
-          {salvando ? "Salvando..." : "✅ SALVAR COLETA"}
+          {salvando
+            ? "Salvando..."
+            : avisoPreco && !erroLancamento
+              ? "SALVAR ASSIM MESMO"
+              : "✅ SALVAR COLETA"}
         </button>
       </div>
     </main>

@@ -422,6 +422,76 @@ export async function buscarAlertas(
   }
 
   // ---------------------------------------------------------------------
+  // Coleta com lançamento fora da curva (rede de segurança do antiburro)
+  // ---------------------------------------------------------------------
+  // O app do motorista bloqueia abaixo de 20 L e avisa em preço absurdo —
+  // mas o aviso passa no segundo toque, e quem confirma no automático
+  // continua gerando dado ruim. Este alerta é pra isso: o gestor vê mesmo
+  // que o motorista tenha confirmado.
+  //
+  // Caso real que originou: 1,80 L por R$ 2.880 (R$ 1.600/L). O motorista
+  // digitou o PREÇO no campo dos litros — a coleta era de 1.600 L.
+  //
+  // A chave é o id da coleta, então "OK, VI" dispensa aquela ocorrência e
+  // uma nova coleta torta vira alerta novo.
+  try {
+    const desde = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    let q = supabase
+      .from("coletas")
+      .select(
+        "id, litros, valor_pago, local_nome, criado_em, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)"
+      )
+      .gte("criado_em", desde)
+      .order("criado_em", { ascending: false })
+      .limit(500);
+    if (!incluirTeste) q = q.eq("profiles.is_teste", false);
+    const { data } = await q;
+
+    type Row = {
+      id: string;
+      litros: number;
+      valor_pago: number;
+      local_nome: string;
+      criado_em: string;
+      profiles: { nome: string } | null;
+    };
+
+    for (const c of (data as unknown as Row[]) || []) {
+      const litros = Number(c.litros);
+      const valor = Number(c.valor_pago);
+      if (!(litros > 0)) continue;
+      const rsPorLitro = valor / litros;
+      const poucoOleo = litros < 20;
+      const precoAbsurdo = rsPorLitro > 5;
+      if (!poucoOleo && !precoAbsurdo) continue;
+
+      const nome = c.profiles?.nome || "Um motorista";
+      const litrosFmt = litros.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+      const provavel = rsPorLitro > 5 ? Math.round(valor / 1.8) : null;
+
+      alertas.push({
+        chave: `coleta_fora_da_curva:${c.id}`,
+        icone: "🧮",
+        severidade: "alta",
+        titulo: "Coleta com número estranho",
+        texto:
+          `${nome} lançou ${litrosFmt} L em "${c.local_nome}" por ${formatBRL(valor)} — ` +
+          `dá ${formatBRL(Math.round(rsPorLitro * 100) / 100)} por litro, quando o normal de vocês é ` +
+          `perto de R$ 1,80. ` +
+          (provavel
+            ? `Se o preço foi o de sempre, a coleta era de umas ${provavel.toLocaleString("pt-BR")} L e ` +
+              `alguém digitou o PREÇO no campo dos litros. `
+            : "") +
+          `Confirme com ele antes de corrigir: o valor pago desconta do saldo dele, e o óleo entra no estoque.`,
+        link: { href: "/admin?aba=lista", label: "Ver coletas" },
+        data: c.criado_em,
+      });
+    }
+  } catch {
+    // segue
+  }
+
+  // ---------------------------------------------------------------------
   // Remove os já dispensados no "OK, VI"
   // ---------------------------------------------------------------------
   try {
