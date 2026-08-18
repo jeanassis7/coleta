@@ -21,6 +21,7 @@ interface Coleta {
   certificado_tipo: string;
   litros_certificado: number | null;
   observacao: string | null;
+  pago_pela_sede?: boolean;
   latitude: number | null;
   longitude: number | null;
   gps_accuracy: number | null;
@@ -57,6 +58,13 @@ export function DrawerDetalhe({
   );
   const [observacao, setObservacao] = useState(coleta.observacao || "");
   const [salvando, setSalvando] = useState(false);
+  // alert() é proibido nesse projeto (regra do Evaner: todo aviso é do
+  // próprio app). Este componente ainda usava — trocado por bloco inline.
+  const [erro, setErro] = useState<string | null>(null);
+  // Óleo que o escritório paga direto no fornecedor. O valor conta no custo
+  // do óleo mas NÃO desconta do saldo do motorista, porque ele não pagou.
+  const [pagoPelaSede, setPagoPelaSede] = useState(!!coleta.pago_pela_sede);
+  const [vencimento, setVencimento] = useState("");
 
   useEffect(() => {
     if (!coleta.foto_path) return;
@@ -79,7 +87,7 @@ export function DrawerDetalhe({
     }
     const { error } = await supabase.from("coletas").delete().eq("id", coleta.id);
     if (error) {
-      alert("Falha ao excluir: " + error.message);
+      setErro("Falha ao excluir: " + error.message);
       setExcluindo(false);
       return;
     }
@@ -92,19 +100,19 @@ export function DrawerDetalhe({
     const valor = parseValorInteiro(valorTexto);
 
     if (!litros || litros <= 0) {
-      alert("Litros inválido");
+      setErro("Litros inválido");
       return;
     }
     if (!localNome.trim()) {
-      alert("Nome do local não pode ficar vazio");
+      setErro("Nome do local não pode ficar vazio");
       return;
     }
     if (!valor || valor <= 0) {
-      alert("Valor inválido");
+      setErro("Valor inválido");
       return;
     }
     if (!["integral", "parcial", "nao"].includes(certTipo)) {
-      alert("Certificado inválido");
+      setErro("Certificado inválido");
       return;
     }
 
@@ -114,12 +122,13 @@ export function DrawerDetalhe({
     } else if (certTipo === "parcial") {
       const lc = parseLitros(litrosCertTexto);
       if (!lc || lc <= 0) {
-        alert("Quantos litros foram no certificado parcial?");
+        setErro("Quantos litros foram no certificado parcial?");
         return;
       }
       litros_certificado = lc;
     }
 
+    setErro(null);
     setSalvando(true);
     const res = await fetch(`/api/admin/coletas/${coleta.id}`, {
       method: "PATCH",
@@ -131,13 +140,15 @@ export function DrawerDetalhe({
         certificado_tipo: certTipo,
         litros_certificado,
         observacao: observacao.trim() || null,
+        pago_pela_sede: pagoPelaSede,
+        ...(pagoPelaSede && vencimento ? { vencimento } : {}),
       }),
     });
     const data = await res.json();
     setSalvando(false);
 
     if (!res.ok) {
-      alert("Erro ao salvar: " + data.error);
+      setErro("Erro ao salvar: " + data.error);
       return;
     }
 
@@ -280,6 +291,49 @@ export function DrawerDetalhe({
                   rows={3}
                 />
               </div>
+
+              {/* Separa "quanto o óleo custou" de "de quem saiu o dinheiro".
+                  Sem isso não havia como pôr o valor certo numa coleta paga
+                  pelo escritório sem furar o saldo do motorista. */}
+              <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={pagoPelaSede}
+                    onChange={(e) => setPagoPelaSede(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span className="text-sm">
+                    <strong>Pagamento pela sede</strong>
+                    <span className="block text-xs text-cinza-suave">
+                      O escritório paga o fornecedor direto. Entra no custo do
+                      óleo, mas não desconta do saldo do motorista.
+                    </span>
+                  </span>
+                </label>
+                {pagoPelaSede && !coleta.pago_pela_sede && (
+                  <div>
+                    <label className="block text-xs text-cinza-suave mb-1">
+                      Quando vence (em branco = dia 1 do mês que vem)
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                      value={vencimento}
+                      onChange={(e) => setVencimento(e.target.value)}
+                    />
+                    <p className="text-xs text-cinza-suave mt-1">
+                      Ao salvar, nasce a conta a pagar do fornecedor.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {erro && (
+                <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                  {erro}
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <button

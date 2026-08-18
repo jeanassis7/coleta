@@ -111,9 +111,14 @@ export default function NovaColetaPage() {
   // verdade. Por ser fato, BLOQUEIA — mesmo critério de peso menor que a
   // tara e km menor que o início da carga.
   const LITROS_MINIMO = 20;
-  // Preço é estatística e envelhece, então aqui só AVISA: se o óleo subir
-  // um dia, um bloqueio antigo travaria a operação no meio da estrada.
-  const RS_POR_LITRO_MAXIMO = 5;
+  // Faixa de preço praticada (definida pelo Evaner). Nos 108 lançamentos
+  // reais, quase tudo cai entre R$ 1,25 e R$ 1,85 por litro — fora dessa
+  // faixa, ou os litros ou o valor está errado.
+  //
+  // Aqui só AVISA, nunca bloqueia: preço é estatística e envelhece. Se o
+  // óleo subir um dia, um bloqueio antigo travaria o motorista na estrada.
+  const RS_POR_LITRO_MINIMO = 0.5;
+  const RS_POR_LITRO_MAXIMO = 4;
 
   async function salvar() {
     if (!podeSalvar || !motoristaId || litros === null || valor === null || !cert.tipo) {
@@ -134,7 +139,10 @@ export default function NovaColetaPage() {
     }
     setErroLancamento(null);
 
-    if (valor / litros > RS_POR_LITRO_MAXIMO && !avisoPreco) {
+    const rsPorLitro = valor / litros;
+    const foraDaFaixa =
+      rsPorLitro < RS_POR_LITRO_MINIMO || rsPorLitro > RS_POR_LITRO_MAXIMO;
+    if (foraDaFaixa && !avisoPreco) {
       setAvisoPreco(true);
       return;
     }
@@ -408,7 +416,8 @@ export default function NovaColetaPage() {
           <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4">
             <p className="text-xl font-bold mb-1">⚠️ Confere o lançamento</p>
             <p className="text-lg">
-              Você digitou {litrosTexto.trim()} L por {formatBRL(valor ?? 0)}.
+              Tem certeza que foi {litrosTexto.trim()} L e você pagou{" "}
+              {formatBRL(valor ?? 0)} nessa coleta?
             </p>
           </div>
         )}

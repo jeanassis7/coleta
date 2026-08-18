@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { podeAcessarAdmin } from "@/lib/auth/roles";
 
 async function exigirAdmin() {
   const supabase = await getSupabaseServer();
@@ -13,7 +14,9 @@ async function exigirAdmin() {
     .select("role, ativo")
     .eq("id", user.id)
     .maybeSingle();
-  if (!profile || profile.role !== "admin" || !profile.ativo) return null;
+  // podeAcessarAdmin cobre admin E dev. Estava comparando com "admin"
+  // exato, então o dev não conseguia corrigir coleta nenhuma.
+  if (!profile || !podeAcessarAdmin(profile)) return null;
   return user;
 }
 
@@ -28,6 +31,7 @@ const CAMPOS_EDITAVEIS = [
   "certificado_tipo",
   "litros_certificado",
   "observacao",
+  "pago_pela_sede",
 ] as const;
 
 type CampoEditavel = (typeof CAMPOS_EDITAVEIS)[number];
@@ -37,7 +41,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
 
-  const body = (await req.json()) as Partial<Record<CampoEditavel, unknown>>;
+  // `vencimento` não é campo da coleta — só acompanha a marcação de
+  // "pagamento pela sede" pra datar a conta a pagar que nasce dela.
+  const body = (await req.json()) as Partial<Record<CampoEditavel, unknown>> & {
+    vencimento?: string;
+  };
 
   // Valida e monta updates
   const updates: Record<string, unknown> = {};
@@ -72,16 +80,66 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     updates.observacao = trimmed || null;
   }
 
+  if (typeof body.pago_pela_sede === "boolean") {
+    updates.pago_pela_sede = body.pago_pela_sede;
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
 
   const adminClient = getSupabaseAdmin();
+
+  // Estado ANTES, pra saber se está marcando agora ou se já estava marcada
+  // (evita criar a mesma dívida duas vezes ao salvar de novo).
+  const { data: antes } = await adminClient
+    .from("coletas")
+    .select("pago_pela_sede, valor_pago, local_nome, criado_em")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await adminClient
     .from("coletas")
     .update(updates)
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  const marcandoAgora =
+    updates.pago_pela_sede === true && antes?.pago_pela_sede !== true;
+
+  if (marcandoAgora) {
+    const valor = Number(updates.valor_pago ?? antes?.valor_pago ?? 0);
+    const fornecedor = String(updates.local_nome ?? antes?.local_nome ?? "").trim();
+    // Sem vencimento informado, cai no dia 1 do mês que vem — que é como
+    // o combinado costuma ser ("pago início mês que vem").
+    let vencimento = String(body.vencimento || "");
+    if (!/^d{4}-d{2}-d{2}$/.test(vencimento)) {
+      const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const prox = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 1));
+      vencimento = prox.toISOString().slice(0, 10);
+    }
+
+    if (valor > 0) {
+      const { error: eConta } = await adminClient.from("contas_a_pagar").insert({
+        descricao: `Óleo — ${fornecedor || "fornecedor"}`,
+        fornecedor: fornecedor || null,
+        categoria: "oleo",
+        valor,
+        vencimento,
+        status: "a_pagar",
+        origem_tipo: "coleta",
+        origem_id: id,
+        registrado_por: admin.id,
+      });
+      if (eConta) {
+        return NextResponse.json({
+          ok: true,
+          aviso: `coleta salva, mas a conta a pagar não nasceu: ${eConta.message}`,
+        });
+      }
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

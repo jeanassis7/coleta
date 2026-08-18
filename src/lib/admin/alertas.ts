@@ -461,13 +461,23 @@ export async function buscarAlertas(
       const valor = Number(c.valor_pago);
       if (!(litros > 0)) continue;
       const rsPorLitro = valor / litros;
+      // Mesma faixa do app do motorista (R$ 0,50 a R$ 4,00 por litro).
       const poucoOleo = litros < 20;
-      const precoAbsurdo = rsPorLitro > 5;
+      const precoAbsurdo = rsPorLitro < 0.5 || rsPorLitro > 4;
       if (!poucoOleo && !precoAbsurdo) continue;
 
       const nome = c.profiles?.nome || "Um motorista";
       const litrosFmt = litros.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
-      const provavel = rsPorLitro > 5 ? Math.round(valor / 1.8) : null;
+      // A leitura provável depende de PRA QUE LADO o preço saiu da faixa:
+      //   caro demais  → os litros é que estão baixos (digitou o preço ali)
+      //   barato demais → o valor é que está errado
+      // Sugerir o mesmo conserto nos dois casos daria bobagem (R$ 2 por
+      // 2.000 L viraria "a coleta era de 1 litro").
+      const PRECO_TIPICO = 1.8;
+      const litrosProvaveis =
+        rsPorLitro > 4 ? Math.round(valor / PRECO_TIPICO) : null;
+      const valorProvavel =
+        rsPorLitro < 0.5 ? Math.round(litros * PRECO_TIPICO) : null;
 
       alertas.push({
         chave: `coleta_fora_da_curva:${c.id}`,
@@ -478,9 +488,13 @@ export async function buscarAlertas(
           `${nome} lançou ${litrosFmt} L em "${c.local_nome}" por ${formatBRL(valor)} — ` +
           `dá ${formatBRL(Math.round(rsPorLitro * 100) / 100)} por litro, quando o normal de vocês é ` +
           `perto de R$ 1,80. ` +
-          (provavel
-            ? `Se o preço foi o de sempre, a coleta era de umas ${provavel.toLocaleString("pt-BR")} L e ` +
+          (litrosProvaveis
+            ? `Se o preço foi o de sempre, a coleta era de umas ${litrosProvaveis.toLocaleString("pt-BR")} L e ` +
               `alguém digitou o PREÇO no campo dos litros. `
+            : "") +
+          (valorProvavel
+            ? `Se o preço foi o de sempre, o pago era perto de ${formatBRL(valorProvavel)} — ` +
+              `provavelmente faltou dígito no valor. `
             : "") +
           `Confirme com ele antes de corrigir: o valor pago desconta do saldo dele, e o óleo entra no estoque.`,
         link: { href: "/admin?aba=lista", label: "Ver coletas" },

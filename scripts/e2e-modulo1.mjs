@@ -331,6 +331,36 @@ async function main() {
       Number(saldoRpcBot?.saldo) === 3875,
     `lancado=${somaAbastTodos} descontado=${somaAbastPagos} saldo=${saldoRpcBot?.saldo}`);
 
+  // ---- 14d. coleta paga pela SEDE não desconta do motorista ----
+  // Caso real: óleo negociado com pagamento pelo escritório. O valor conta
+  // no custo do óleo mas não sai da mão dele — antes da 0021 não havia como
+  // registrar o valor certo sem furar o saldo, e o motorista lançava R$ 2
+  // numa coleta de R$ 4.000.
+  criados.coletaSedeClientId = randomUUID();
+  const { error: eSede } = await svc.from("coletas").insert({
+    client_id: criados.coletaSedeClientId,
+    motorista_id: teste1.id,
+    litros: 2000,
+    local_nome: "Fornecedor E2E (sede paga)",
+    valor_pago: 4000,
+    certificado_tipo: "nao",
+    gps_capturado: false,
+    device_id: "e2e",
+    session_id: "e2e",
+    app_version: "e2e",
+    pago_pela_sede: true,
+    criado_em: new Date().toISOString(),
+  });
+  check("coleta paga pela sede insere", !eSede, eSede?.message);
+
+  const { data: saldosDepois } = await svc.rpc("saldos_motoristas");
+  const saldoDepois = (saldosDepois || []).find((x) => x.motorista_id === teste1.id);
+  check(
+    "R$ 4.000 pagos pela sede NÃO mexem no saldo do motorista (segue 3875)",
+    Number(saldoDepois?.saldo) === 3875,
+    `saldo=${saldoDepois?.saldo}`
+  );
+
   // ---- 15. acerto com corte: saldo pós-acerto = valor_saldo carry ----
   const { data: acerto, error: e15 } = await svc.from("acertos").insert({
     motorista_id: teste1.id, valor_devolvido: 3000, valor_vale: 800,
@@ -560,6 +590,7 @@ async function cleanup() {
     await del("despesas", "client_id", criados.despesaClientId);
     await del("abastecimentos", "client_id", criados.abastClientId);
     await del("abastecimentos", "client_id", criados.abastAssinadoClientId);
+    await del("coletas", "client_id", criados.coletaSedeClientId);
     await del("coletas", "client_id", criados.coletaClientId);
     await del("cargas", "id", criados.cargaId);
     await del("caminhoes", "id", criados.caminhaoId);
