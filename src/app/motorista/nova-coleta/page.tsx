@@ -283,6 +283,11 @@ export default function NovaColetaPage() {
   function handleValorChange(s: string) {
     setValorTexto(s);
     setValorFormatado("");
+    // O aviso de preço olha litros E valor. Se ele corrigir o valor depois
+    // de ver o aviso, a conta tem que ser refeita — senão o segundo toque
+    // passaria batido mesmo com o novo número ainda errado.
+    setAvisoPreco(false);
+    setErroLancamento(null);
   }
 
   function handleValorBlur() {
