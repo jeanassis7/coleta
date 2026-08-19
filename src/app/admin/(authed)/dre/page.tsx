@@ -31,9 +31,9 @@ export default async function DrePage({
     <div>
       <h1 className="text-2xl font-bold mb-2">DRE</h1>
       <p className="text-sm text-cinza-suave mb-6">
-        Por <strong>competência</strong>: o gasto pesa no mês em que
-        aconteceu, não no mês em que foi pago. Quem responde &ldquo;sobrou
-        dinheiro?&rdquo; é o{" "}
+        <strong>O dinheiro que saiu, classificado.</strong> Regime de caixa:
+        o gasto pesa no dia em que saiu da conta (ou da mão do motorista).
+        Quem responde &ldquo;quanto tenho agora?&rdquo; é o{" "}
         <a href="/admin/caixa" className="text-verde hover:underline">
           Caixa
         </a>

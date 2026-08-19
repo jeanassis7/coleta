@@ -716,18 +716,17 @@ try {
 console.log("\n🔬 DRE — ANTI-DOBRA (rollback no fim)\n");
 await client.query("BEGIN");
 try {
-  // A regra: conta a pagar que é ESPELHO de um lançamento operacional
-  // (abastecimento "assinei a nota", manutenção a prazo, coleta paga pela
-  // sede, compra direta) não entra no DRE — lá o gasto já foi contado na
-  // tabela de origem. Se entrasse, o mesmo real contaria duas vezes.
+  // REGIME DE CAIXA: o DRE conta a conta a pagar QUANDO PAGA, e o lançamento
+  // operacional só quando ele NÃO virou conta (pagou na hora). Um fato com
+  // conta é ignorado no DRE e contado quando a conta sai do caixa.
   //
-  // 'documento' é a EXCEÇÃO: o documento não lança gasto nenhum, só registra
-  // vencimento e estimativa. Quem tem o gasto é a conta. Excluí-la faria
-  // IPVA e seguro sumirem do DRE.
-  const ESPELHO = ["abastecimento", "manutencao", "compra_direta", "coleta"];
+  // O que os checks abaixo guardam é a integridade desse elo: conta órfã
+  // (aponta pra fato que não existe) e fato com duas contas quebram a regra
+  // dos dois lados — um faz sumir, o outro faz dobrar.
+  const COM_FATO = ["abastecimento", "manutencao", "compra_direta", "coleta"];
 
-  // 1) Toda conta espelho aponta pra um lançamento que EXISTE. Órfã seria
-  //    valor excluído do DRE sem ter sido contado em lugar nenhum — some.
+  // 1) Toda conta com origem aponta pra um lançamento que EXISTE. Órfã é
+  //    conta que ninguém consegue rastrear até o fato que a gerou.
   const { rows: [orfas] } = await client.query(
     `select count(*)::int n from public.contas_a_pagar cp
       where cp.origem_tipo = any($1)
@@ -740,24 +739,25 @@ try {
           union all
           select 1 from public.coletas co where cp.origem_tipo='coleta' and co.id = cp.origem_id
         )`,
-    [ESPELHO]
+    [COM_FATO]
   );
-  afirmar("nenhuma conta espelho é órfã (valor sumiria do DRE)", orfas.n === 0);
+  afirmar("nenhuma conta aponta pra um fato que não existe", orfas.n === 0);
 
-  // 2) Um lançamento de origem não pode ter DUAS contas: a segunda seria
-  //    excluída do DRE junto, mas o caixa a contaria duas vezes.
+  // 2) Um fato não pode ter DUAS contas: as duas seriam pagas e o mesmo
+  //    gasto sairia do caixa (e do DRE) duas vezes.
   const { rows: [dupes] } = await client.query(
     `select count(*)::int n from (
        select origem_tipo, origem_id from public.contas_a_pagar
        where origem_tipo = any($1) and origem_id is not null
        group by 1,2 having count(*) > 1
      ) x`,
-    [ESPELHO]
+    [COM_FATO]
   );
   afirmar("nenhum lançamento operacional tem 2 contas", dupes.n === 0);
 
-  // 3) Conta de DOCUMENTO tem que continuar contável — se alguém a puser na
-  //    lista de espelho, IPVA e seguro somem do DRE sem erro nenhum.
+  // 3) Conta gerada por DOCUMENTO tem que ser contável como qualquer outra.
+  //    Se alguém a tratar como caso especial, IPVA e seguro somem do DRE
+  //    sem erro nenhum — o número só fica menor.
   const perfil = (await client.query(
     "select id from public.profiles where role='admin' and ativo limit 1"
   )).rows[0];
@@ -777,9 +777,9 @@ try {
     const { rows: [contavel] } = await client.query(
       `select count(*)::int n from public.contas_a_pagar
         where origem_tipo = 'documento' and not (origem_tipo = any($1))`,
-      [ESPELHO]
+      [COM_FATO]
     );
-    afirmar("conta de documento NÃO é espelho (IPVA e seguro contam)", contavel.n >= 1);
+    afirmar("conta de documento é contável (IPVA e seguro entram)", contavel.n >= 1);
   }
 
   // 4) Categoria vazia é linha que não cai em grupo nenhum do DRE — soma
