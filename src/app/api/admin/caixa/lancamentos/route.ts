@@ -1,0 +1,90 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { linhaPlano, pedePessoa } from "@/lib/plano-contas";
+
+/**
+ * POST /api/admin/caixa/lancamentos — lançar o que JÁ SAIU.
+ *
+ * É o ritmo do extrato: o Jean olha o banco e lança linha a linha o que já
+ * aconteceu. Diferente de "conta a pagar", que é o que ainda vai vencer.
+ *
+ * Grava em `contas_a_pagar` com `status = 'paga'` de propósito: uma tabela só
+ * pra todo dinheiro que sai é o que torna o DRE possível sem dobrar. Conta
+ * paga é conta que foi paga — o modelo não precisa de tabela nova.
+ *
+ * Não confundir com `/api/admin/lancamentos`, que é abastecimento e despesa
+ * de veículo lançados pelo painel.
+ */
+export async function POST(req: NextRequest) {
+  const admin = await exigirAdmin();
+  if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  const body = await req.json();
+  const categoria = String(body.categoria || "");
+  const valor = Number(body.valor);
+  const data = String(body.data || "").trim();
+  const conta_id = body.conta_id ? String(body.conta_id) : null;
+  const pessoa_id = body.pessoa_id ? String(body.pessoa_id) : null;
+  const descricao = String(body.descricao || "").trim();
+  const forma_pagamento = body.forma_pagamento
+    ? String(body.forma_pagamento)
+    : null;
+
+  const linha = linhaPlano(categoria);
+  if (!linha) {
+    return NextResponse.json({ error: "categoria inválida" }, { status: 400 });
+  }
+  // Categoria automática vem de outra tabela. Deixar lançar na mão dobraria
+  // o valor no DRE sem ninguém perceber.
+  if (linha.fonte !== "lancamento") {
+    return NextResponse.json(
+      {
+        error: `"${linha.label}" o sistema já calcula sozinho (${linha.vemDe}). Lançar na mão contaria duas vezes.`,
+      },
+      { status: 400 }
+    );
+  }
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return NextResponse.json({ error: "valor inválido" }, { status: 400 });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    return NextResponse.json({ error: "data inválida" }, { status: 400 });
+  }
+  if (!conta_id) {
+    return NextResponse.json(
+      { error: "diga de qual conta saiu o dinheiro" },
+      { status: 400 }
+    );
+  }
+  if (pedePessoa(categoria) && !pessoa_id) {
+    return NextResponse.json(
+      { error: `"${linha.label}" precisa dizer de quem é` },
+      { status: 400 }
+    );
+  }
+
+  const client = getSupabaseAdmin(admin.id);
+  const { data: criado, error } = await client
+    .from("contas_a_pagar")
+    .insert({
+      descricao: descricao || linha.label,
+      fornecedor: body.fornecedor ? String(body.fornecedor).trim() : null,
+      categoria,
+      valor: Math.round(valor * 100) / 100,
+      // O que já saiu vence e é pago no mesmo dia: é registro, não previsão.
+      vencimento: data,
+      pago_em: data,
+      status: "paga",
+      forma_pagamento,
+      conta_id,
+      pessoa_id: pedePessoa(categoria) ? pessoa_id : null,
+      observacao: body.observacao ? String(body.observacao).trim() : null,
+      registrado_por: admin.id,
+    })
+    .select("id")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json({ ok: true, id: criado.id });
+}

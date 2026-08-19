@@ -127,3 +127,61 @@ export async function buscarDinheiroNaMao(): Promise<DinheiroNaMao[]> {
       saldo: Number(m.saldo_atual),
     }));
 }
+
+export interface Lancamento {
+  id: string;
+  descricao: string;
+  fornecedor: string | null;
+  categoria: string;
+  valor: number;
+  pago_em: string;
+  forma_pagamento: string | null;
+  conta_id: string | null;
+  pessoa_id: string | null;
+  origem_tipo: string | null;
+  observacao: string | null;
+  criado_em: string;
+}
+
+export interface FiltrosLancamento {
+  inicio?: string;
+  fim?: string;
+  categoria?: string;
+  conta_id?: string;
+  pessoa_id?: string;
+}
+
+/**
+ * O que já saiu, no ritmo do extrato.
+ *
+ * Só `status = 'paga'` — o que ainda vai vencer vive na tela de Contas a
+ * pagar, que é outra pergunta ("o que eu devo") e outra tela.
+ */
+export async function buscarLancamentos(
+  f: FiltrosLancamento = {},
+  limite = 500
+): Promise<Lancamento[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("contas_a_pagar")
+    .select(
+      "id, descricao, fornecedor, categoria, valor, pago_em, forma_pagamento, conta_id, pessoa_id, origem_tipo, observacao, criado_em"
+    )
+    .eq("status", "paga")
+    .order("pago_em", { ascending: false })
+    .order("criado_em", { ascending: false })
+    .limit(limite);
+
+  if (f.inicio) q = q.gte("pago_em", f.inicio);
+  if (f.fim) q = q.lte("pago_em", f.fim);
+  if (f.categoria) q = q.eq("categoria", f.categoria);
+  if (f.conta_id) q = q.eq("conta_id", f.conta_id);
+  if (f.pessoa_id) q = q.eq("pessoa_id", f.pessoa_id);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return ((data as Lancamento[]) || []).map((l) => ({
+    ...l,
+    valor: Number(l.valor),
+  }));
+}

@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { linhaPlano } from "@/lib/plano-contas";
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
-const CATEGORIAS = [
-  "combustivel",
-  "manutencao",
-  "oleo",
-  "imposto",
-  "fixa",
-  "folha",
-  "outra",
-];
+// A lista velha de 7 valores foi substituída pelo plano de contas (importado
+// acima): é o mesmo vocabulário do DRE, e sem isso as duas telas contariam
+// coisas diferentes com o mesmo nome.
 
 /**
  * POST: cria conta avulsa ou parcelada.
@@ -26,7 +21,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const descricao = String(body.descricao || "").trim();
-  const categoria = String(body.categoria || "outra");
+  const categoria = String(body.categoria || "");
   const valor = Number(body.valor);
   const vencimento = String(body.vencimento || "").trim();
   const parcelas = Math.max(1, Math.min(36, Number(body.parcelas) || 1));
@@ -35,8 +30,12 @@ export async function POST(req: NextRequest) {
   if (descricao.length < 2) {
     return NextResponse.json({ error: "descreva a conta" }, { status: 400 });
   }
-  if (!CATEGORIAS.includes(categoria)) {
-    return NextResponse.json({ error: "categoria inválida" }, { status: 400 });
+  const linha = linhaPlano(categoria);
+  if (!linha || linha.fonte !== "lancamento") {
+    return NextResponse.json(
+      { error: "categoria inválida pra uma conta a pagar" },
+      { status: 400 }
+    );
   }
   if (!Number.isFinite(valor) || valor <= 0) {
     return NextResponse.json({ error: "valor inválido" }, { status: 400 });
