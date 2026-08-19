@@ -103,14 +103,26 @@ serwist.addEventListeners();
 // Apaga o cache antigo de navegação, que continha páginas do /admin gravadas
 // pela versão anterior deste arquivo. Sem isto, quem já tem o app instalado
 // continuaria recebendo o painel velho até o cache vencer — 30 dias.
+//
+// ⚠️ NÃO acrescentar `caches.delete("static-resources")` aqui, por mais
+// tentador que pareça na hora de caçar 404. Já esteve nesta linha e foi
+// removido de propósito:
+//
+//   `activate` dispara a CADA DEPLOY — o manifest de precache muda em toda
+//   build, o que gera um SW novo. Apagar os scripts a cada deploy significa
+//   que o motorista que abre o app logo depois de um deploy e entra numa
+//   área sem sinal fica com HTML em cache apontando pra scripts que não
+//   existem mais localmente. App quebrado no meio do Paraná, sem ninguém
+//   pra ligar — e offline-first é o motivo deste app existir.
+//
+//   Não há 404 a evitar: os scripts têm hash no nome, então HTML novo pede
+//   arquivo novo e o cache velho nunca é servido por engano.
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
+      // Só o cache de navegação legado, que guardava páginas do /admin.
+      // A navegação do motorista vive em "pages-motorista".
       await caches.delete("pages");
-      // Os scripts em cache apontam pra builds antigas e são a fonte dos
-      // 404. Descartar é seguro: o que ainda for válido volta na primeira
-      // visita com internet.
-      await caches.delete("static-resources");
     })()
   );
 });
