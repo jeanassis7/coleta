@@ -10,9 +10,18 @@ import { TIPOS_DOC_CAMINHAO, TIPOS_DOC_MOTORISTA } from "@/lib/documentos";
  * aqui a checagem é repetida pra devolver mensagem em português em vez do
  * 23514 cru do Postgres.
  *
- * Documento NÃO gera conta a pagar — decisão do plano do Módulo 2: ele vira
- * previsão recorrente, que é outra máquina. O `valor` aqui é histórico de
- * quanto custou renovar.
+ * Documento COM valor vira uma conta **PREVISTA** (status 'prevista'), com o
+ * vencimento do documento como vencimento da conta.
+ *
+ * Decisão do Evaner, 19/08/2026. O plano do Módulo 2 dizia "documento não
+ * vira conta a pagar", mas ali o raciocínio era sobre previsão recorrente.
+ * `prevista` é justamente o status de "sei que vem, mais ou menos isso":
+ * entra no fluxo de caixa futuro e fica FORA do `a_pagar_total`, então não
+ * mente sobre o que se deve hoje. Quando chegar a hora, é só mudar o status
+ * na tela de contas a pagar.
+ *
+ * Sem valor não nasce conta nenhuma — é o caso "sei que vence, não sei
+ * quanto vai ser".
  */
 export async function POST(req: NextRequest) {
   const admin = await exigirAdmin();
@@ -83,5 +92,36 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  if (valor != null && valor > 0) {
+    const { error: errConta } = await client.from("contas_a_pagar").insert({
+      descricao: `${rotuloDoc(tipo, descricao)} — vence ${vencimento}`,
+      categoria: "documento",
+      valor: Math.round(valor * 100) / 100,
+      vencimento,
+      status: "prevista",
+      origem_tipo: "documento",
+      origem_id: criado.id,
+      registrado_por: admin.id,
+    });
+    if (errConta) {
+      return NextResponse.json(
+        {
+          error: `Documento salvo, mas a previsão no caixa falhou: ${errConta.message}`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   return NextResponse.json({ ok: true, id: criado.id });
+}
+
+/** Rótulo legível pro texto da conta prevista. */
+function rotuloDoc(tipo: string, descricao: string | null): string {
+  if (tipo === "outro") return descricao?.trim() || "Documento";
+  const achado =
+    TIPOS_DOC_CAMINHAO.find((t) => t.valor === tipo) ??
+    TIPOS_DOC_MOTORISTA.find((t) => t.valor === tipo);
+  return achado?.label ?? tipo;
 }

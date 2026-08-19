@@ -193,13 +193,20 @@ export function ListaDocumentos({
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">
-                Custou quanto <span className="text-cinza-suave">(opcional)</span>
+                Vai custar quanto{" "}
+                <span className="text-cinza-suave">(mais ou menos)</span>
               </label>
               <InputDinheiro
                 centavos={valorCentavos}
                 onChange={setValorCentavos}
                 grande={false}
               />
+              <p className="text-xs text-cinza-suave mt-1">
+                Preenchendo, entra em <strong>Contas a pagar</strong> como{" "}
+                <strong>previsão</strong> na data do vencimento — aparece no
+                caixa futuro sem contar como dívida de hoje. Deixe vazio se não
+                souber quanto vai ser.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -291,7 +298,7 @@ export function ListaDocumentos({
                   <div className="text-sm text-cinza-suave">
                     Vence em {formatData(d.vencimento)}
                     {d.valor != null &&
-                      ` · custou R$ ${d.valor.toLocaleString("pt-BR", {
+                      ` · previsto R$ ${d.valor.toLocaleString("pt-BR", {
                         minimumFractionDigits: 2,
                       })}`}
                     {d.observacao && ` · ${d.observacao}`}

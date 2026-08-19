@@ -519,6 +519,44 @@ try {
       [cam.id]
     );
     afirmar("documento com vencimento no passado é encontrável", venc.n >= 1);
+
+    // --- documento com valor vira PREVISÃO, não dívida -------------------
+    // O ponto do desenho: IPVA entra no fluxo de caixa futuro sem contar
+    // como o que se deve hoje. Se um dia alguém trocar 'prevista' por
+    // 'a_pagar' aqui, o "a pagar" do painel incha e ninguém entende por quê.
+    const { rows: [antes] } = await client.query(
+      "select * from public.resumo_contas_a_pagar()"
+    );
+    const { rows: [docV] } = await client.query(
+      `insert into public.documentos (caminhao_id, tipo, vencimento, valor, registrado_por)
+       values ($1, 'ipva', current_date + 60, 1250.00, $2) returning id`,
+      [cam.id, perfil.id]
+    );
+    await client.query(
+      `insert into public.contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, origem_tipo, origem_id, registrado_por)
+       values ('IPVA — E2E','documento',1250.00, current_date + 60,'prevista','documento',$1,$2)`,
+      [docV.id, perfil.id]
+    );
+    const { rows: [depoisDoc] } = await client.query(
+      "select * from public.resumo_contas_a_pagar()"
+    );
+    checar(
+      "previsão do documento entra no previsto",
+      Number(depoisDoc.previsto_total) - Number(antes.previsto_total),
+      1250
+    );
+    checar(
+      "previsão do documento NÃO entra no que se deve",
+      Number(depoisDoc.a_pagar_total) - Number(antes.a_pagar_total),
+      0
+    );
+    const { rows: [lig2] } = await client.query(
+      `select count(*)::int n from public.contas_a_pagar
+        where origem_tipo = 'documento' and origem_id = $1`,
+      [docV.id]
+    );
+    afirmar("previsão fica ligada ao documento que a gerou", lig2.n === 1);
   }
 } finally {
   await client.query("ROLLBACK");

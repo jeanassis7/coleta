@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { TIPOS_DOC_CAMINHAO, TIPOS_DOC_MOTORISTA } from "@/lib/documentos";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -67,7 +68,65 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("documentos").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Sincroniza a previsão no caixa. Se mudou vencimento ou valor, a linha
+  // que já existe tem que acompanhar — senão renovar o IPVA deixa a previsão
+  // velha pendurada e o fluxo de caixa passa a mentir.
+  if (updates.vencimento !== undefined || updates.valor !== undefined) {
+    const { data: doc } = await client
+      .from("documentos")
+      .select("tipo, descricao, vencimento, valor")
+      .eq("id", id)
+      .maybeSingle();
+
+    // Só mexe na previsão que AINDA NÃO foi paga. Se a anterior já virou
+    // 'paga', ela é histórico do ano passado — e a nova é a renovação.
+    const { data: pendente } = await client
+      .from("contas_a_pagar")
+      .select("id")
+      .eq("origem_tipo", "documento")
+      .eq("origem_id", id)
+      .eq("status", "prevista")
+      .maybeSingle();
+
+    const temValor = doc?.valor != null && Number(doc.valor) > 0;
+
+    if (pendente && !temValor) {
+      // Tirou o valor: a previsão perde o sentido.
+      await client.from("contas_a_pagar").delete().eq("id", pendente.id);
+    } else if (pendente && temValor) {
+      await client
+        .from("contas_a_pagar")
+        .update({
+          descricao: `${rotuloDoc(doc!.tipo, doc!.descricao)} — vence ${doc!.vencimento}`,
+          valor: doc!.valor,
+          vencimento: doc!.vencimento,
+        })
+        .eq("id", pendente.id);
+    } else if (!pendente && temValor) {
+      await client.from("contas_a_pagar").insert({
+        descricao: `${rotuloDoc(doc!.tipo, doc!.descricao)} — vence ${doc!.vencimento}`,
+        categoria: "documento",
+        valor: doc!.valor,
+        vencimento: doc!.vencimento,
+        status: "prevista",
+        origem_tipo: "documento",
+        origem_id: id,
+        registrado_por: admin.id,
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true });
+}
+
+/** Rótulo legível pro texto da conta prevista. */
+function rotuloDoc(tipo: string, descricao: string | null): string {
+  if (tipo === "outro") return descricao?.trim() || "Documento";
+  const achado =
+    TIPOS_DOC_CAMINHAO.find((t) => t.valor === tipo) ??
+    TIPOS_DOC_MOTORISTA.find((t) => t.valor === tipo);
+  return achado?.label ?? tipo;
 }
 
 /** DELETE: apaga o cadastro. O arquivo no Storage vai junto, se houver. */
@@ -82,6 +141,16 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     .select("arquivo_path")
     .eq("id", id)
     .maybeSingle();
+
+  // A previsão que ainda não foi paga vai junto: sem o documento ela vira
+  // linha órfã no fluxo de caixa. Conta JÁ PAGA fica — aquilo aconteceu, e
+  // apagar histórico de dinheiro reescreve o caixa.
+  await client
+    .from("contas_a_pagar")
+    .delete()
+    .eq("origem_tipo", "documento")
+    .eq("origem_id", id)
+    .eq("status", "prevista");
 
   const { error } = await client.from("documentos").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
