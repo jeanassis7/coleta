@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Caminhao } from "@/lib/admin/queries";
 import { FormCaminhao } from "./FormCaminhao";
 import { ModalConfirmar, ModalInputTexto } from "./Modais";
@@ -100,7 +101,14 @@ export function TabelaCaminhoes({ caminhoes }: { caminhoes: Caminhao[] }) {
                   c.ativo ? "" : "opacity-50"
                 }`}
               >
-                <td className="py-3 pr-3 font-mono font-semibold">{c.placa}</td>
+                <td className="py-3 pr-3 font-mono font-semibold">
+                  <Link
+                    href={`/admin/caminhoes/${c.id}`}
+                    className="text-verde hover:underline"
+                  >
+                    {c.placa}
+                  </Link>
+                </td>
                 <td className="py-3 pr-3">
                   {c.marca}
                   {c.modelo ? ` ${c.modelo}` : ""}
