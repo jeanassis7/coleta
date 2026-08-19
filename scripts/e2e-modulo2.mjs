@@ -100,7 +100,7 @@ const vazou = await client.query(`
   from public.descargas d
   join public.cargas g on g.id = d.carga_id
   join public.profiles p on p.id = g.motorista_id
-  where p.is_teste = true
+  where p.nome like '%E2E%'
     and d.id in (select referencia_id from public.movimentos_estoque)
 `);
 afirmar(
@@ -198,7 +198,7 @@ console.log("\n🔬 VENDA, CONTA CORRENTE E CHEQUE DEVOLVIDO (rollback no fim)\n
 await client.query("BEGIN");
 try {
   const { rows: [perfil] } = await client.query(
-    "select id from public.profiles where role in ('dev','admin') limit 1"
+    "select id from public.profiles where role = 'admin' and ativo = true limit 1"
   );
   if (!perfil) throw new Error("nenhum perfil admin/dev pra usar como registrado_por");
 
@@ -343,7 +343,7 @@ console.log("\n🔬 CONTAS A PAGAR (rollback no fim)\n");
 await client.query("BEGIN");
 try {
   const { rows: [perfil] } = await client.query(
-    "select id from public.profiles where role in ('dev','admin') limit 1"
+    "select id from public.profiles where role = 'admin' and ativo = true limit 1"
   );
 
   const conta = (descricao, valor, status, venc) =>
@@ -353,6 +353,11 @@ try {
        values ($1,'outra',$2,$3,$4,$5) returning id`,
       [descricao, valor, venc, status, perfil.id]
     );
+
+  // Baseline ANTES de inserir: o banco de produção tem contas reais, e
+  // comparar total absoluto quebrava o teste toda vez que o Jean lançava
+  // uma. O que importa aqui é o quanto ESTAS linhas mexeram.
+  const { rows: [base] } = await client.query("select * from public.resumo_contas_a_pagar()");
 
   await conta("Vencida E2E", 300, "a_pagar", "2020-01-01");
   await client.query(
@@ -364,11 +369,12 @@ try {
   await conta("Chute E2E", 9999, "prevista", "2030-01-01");
 
   const { rows: [res] } = await client.query("select * from public.resumo_contas_a_pagar()");
+  const delta = (campo) => Number(res[campo]) - Number(base[campo]);
   // 300 (vencida) + 500 (semana) — a prevista de 9999 fica FORA do que se deve.
-  checar("total a pagar ignora previsão", res.a_pagar_total, 800);
-  checar("vencidas", res.vencidas_total, 300);
-  checar("vence em 7 dias", res.semana_total, 500);
-  checar("previsto fica separado", res.previsto_total, 9999);
+  checar("total a pagar ignora previsão", delta("a_pagar_total"), 800);
+  checar("vencidas", delta("vencidas_total"), 300);
+  checar("vence em 7 dias", delta("semana_total"), 500);
+  checar("previsto fica separado", delta("previsto_total"), 9999);
 
   // Gerar contas do mês duas vezes não pode duplicar o aluguel
   const { rows: [rec] } = await client.query(

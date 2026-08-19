@@ -1,10 +1,13 @@
 /**
  * E2E da camada de dados do Módulo 1 — roda contra produção.
  *
- * ISOLAMENTO: cria um motorista próprio descartável ("E2E Bot",
- * is_teste=true) e deleta ele no final. NUNCA toca no Teste 1 nem em
- * qualquer dado que não criou — o Teste 1 é o ambiente de teste MANUAL
- * do Evaner e pode ter carga ativa a qualquer momento.
+ * ISOLAMENTO: cria um motorista próprio descartável ("E2E Bot") e deleta
+ * ele no final. NUNCA toca em dado que não criou.
+ *
+ * O bot é um motorista comum — a coluna is_teste deixou de existir em
+ * 19/08/2026. Enquanto o run acontece (~1 min) os lançamentos dele ficam
+ * visíveis no painel; é a mesma escolha de testar com perfil real e
+ * apagar depois.
  *
  * Testa: RLS como motorista, unique de 1 carga ativa, inserts idempotentes
  * (client_id 23505), coluna generated peso_liquido, update atômico de
@@ -77,14 +80,16 @@ async function main() {
   if (errBot || !criado?.user) throw new Error("criar bot: " + errBot?.message);
   const { error: errPerfil } = await svc.from("profiles").insert({
     id: criado.user.id, nome: "E2E Bot", role: "motorista",
-    ativo: true, exige_foto: false, is_teste: true, features: {},
+    ativo: true, exige_foto: false, features: {},
   });
   if (errPerfil) throw new Error("perfil bot: " + errPerfil.message);
   const teste1 = { id: criado.user.id }; // "motorista" deste run
   criados.motoristaId = teste1.id;
 
-  const { data: dev } = await svc.from("profiles").select("id").eq("role", "dev").limit(1).maybeSingle();
-  if (!dev) throw new Error("dev não encontrado");
+  // Um admin qualquer serve como "quem lançou pelo painel". O papel `dev`
+  // deixou de existir em 19/08/2026 — sobrou motorista | admin.
+  const { data: dev } = await svc.from("profiles").select("id").eq("role", "admin").eq("ativo", true).limit(1).maybeSingle();
+  if (!dev) throw new Error("nenhum admin ativo encontrado");
 
   const { data: cam, error: errCam } = await svc
     .from("caminhoes")
@@ -240,17 +245,15 @@ async function main() {
   // ---- 10. query aninhada do /admin/cargas (sintaxe PostgREST — risco D7) ----
   const SELECT_CARGAS = `id, motorista_id, caminhao_id, km_inicial, km_final, status,
        iniciada_em, encerrada_em,
-       profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+       profiles!cargas_motorista_id_fkey!inner(nome),
        caminhoes(placa, marca, cor, capacidade_l),
        coletas(id, litros, valor_pago),
        despesas(id, valor),
        abastecimentos(id, valor),
        descargas(peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`;
-  const { data: cargasSemTeste, error: e10 } = await svc.from("cargas")
-    .select(SELECT_CARGAS).eq("profiles.is_teste", false).order("iniciada_em", { ascending: false });
+  const { error: e10 } = await svc.from("cargas")
+    .select(SELECT_CARGAS).order("iniciada_em", { ascending: false });
   check("query /admin/cargas roda sem erro", !e10, e10?.message);
-  check("filtro is_teste esconde carga do teste",
-    !e10 && !(cargasSemTeste || []).some((c) => c.id === carga.id));
   const { data: cargasTodas, error: e10b } = await svc.from("cargas").select(SELECT_CARGAS);
   const minha = (cargasTodas || []).find((c) => c.id === carga.id);
   check("agregados da carga corretos (1 coleta, 1 despesa, 2 abast, 1 descarga)",
@@ -263,16 +266,13 @@ async function main() {
        litros_estimados, umidade_pct, foto_papel_path, criado_em,
        cargas!inner(
          motorista_id,
-         profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+         profiles!cargas_motorista_id_fkey!inner(nome),
          caminhoes(placa)
        )`;
-  const { data: descSemTeste, error: e11 } = await svc.from("descargas")
-    .select(SELECT_DESC).eq("cargas.profiles.is_teste", false);
+  const { error: e11 } = await svc.from("descargas").select(SELECT_DESC);
   check("query /admin/descarregamentos roda sem erro", !e11, e11?.message);
-  check("filtro aninhado is_teste esconde descarga do teste",
-    !e11 && !(descSemTeste || []).some((d) => d.carga_id === carga.id));
   const { data: descTodas } = await svc.from("descargas").select(SELECT_DESC);
-  check("descarga do teste aparece sem filtro",
+  check("descarga do bot aparece na query do admin",
     (descTodas || []).some((d) => d.carga_id === carga.id));
 
   // ---- 12. lançar umidade (como o PATCH do admin faz) ----
@@ -385,51 +385,50 @@ async function main() {
   check("pós-acerto: eventos antigos fora do ciclo, saldo = carry 75", saldoPos === 75,
     `adiantamentos pós-corte=${(adsPos || []).length}, coletas pós-corte=${(colPos || []).length}`);
 
-  // ---- 16. dashboard: coleta de teste invisível ----
+  // ---- 16. query do dashboard ----
   const { data: dash, error: e16 } = await svc.from("coletas")
-    .select("*, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)")
-    .eq("profiles.is_teste", false)
+    .select("*, profiles!coletas_motorista_id_fkey!inner(nome)")
     .gte("criado_em", new Date(Date.now() - 3600_000).toISOString());
-  check("dashboard: coleta do teste invisível", !e16 &&
-    !(dash || []).some((c) => c.client_id === criados.coletaClientId), e16?.message);
+  check("dashboard: query roda e enxerga a coleta do bot", !e16 &&
+    (dash || []).some((c) => c.client_id === criados.coletaClientId), e16?.message);
 
-  // ---- 17. curadoria: coleta de teste invisível ----
+  // ---- 17. query da curadoria ----
   const { data: cur, error: e17 } = await svc.from("coletas")
-    .select("id, client_id, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)")
-    .eq("profiles.is_teste", false).is("local_id", null);
-  check("curadoria: coleta do teste invisível", !e17 &&
-    !(cur || []).some((c) => c.client_id === criados.coletaClientId), e17?.message);
+    .select("id, client_id, profiles!coletas_motorista_id_fkey!inner(nome)")
+    .is("local_id", null);
+  check("curadoria: query roda e enxerga a coleta do bot", !e17 &&
+    (cur || []).some((c) => c.client_id === criados.coletaClientId), e17?.message);
 
   // ---- 18. queries do motor de alertas (PostgREST aninhado — risco de 400) ----
   const { error: eA1 } = await svc.from("cargas").select(
     `id, iniciada_em,
-     profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+     profiles!cargas_motorista_id_fkey!inner(nome),
      caminhoes(placa, capacidade_l),
      coletas(litros, criado_em),
      despesas(criado_em),
      abastecimentos(criado_em)`
-  ).eq("status", "ativa").eq("profiles.is_teste", false);
+  ).eq("status", "ativa");
   check("alertas: query de cargas ativas roda", !eA1, eA1?.message);
 
   const { error: eA2 } = await svc.from("descargas").select(
     `id, peso_liquido_kg, umidade_pct, criado_em,
      cargas!inner(
-       profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+       profiles!cargas_motorista_id_fkey!inner(nome),
        coletas(litros)
      )`
-  ).eq("cargas.profiles.is_teste", false);
+  );
   check("alertas: query de descargas roda", !eA2, eA2?.message);
 
   const { error: eA3 } = await svc.from("adiantamentos").select(
     `id, valor, pular_contador,
-     profiles!adiantamentos_motorista_id_fkey!inner(nome, is_teste)`
-  ).eq("status", "pendente").gte("pular_contador", 10).eq("profiles.is_teste", false);
+     profiles!adiantamentos_motorista_id_fkey!inner(nome)`
+  ).eq("status", "pendente").gte("pular_contador", 10);
   check("alertas: query de adiantamentos pulados roda", !eA3, eA3?.message);
 
   const { error: eA4 } = await svc.from("coletas").select(
     `id, motorista_id, litros, valor_pago, gps_capturado, foto_path, local_nome, criado_em,
-     profiles!coletas_motorista_id_fkey!inner(nome, is_teste, exige_foto)`
-  ).eq("profiles.is_teste", false).limit(5);
+     profiles!coletas_motorista_id_fkey!inner(nome, exige_foto)`
+  ).limit(5);
   check("alertas: query de coletas (foto/gps/preco) roda", !eA4, eA4?.message);
 
   // ---- 19. alertas_vistos: dispensar e ler de volta ----
@@ -446,23 +445,23 @@ async function main() {
   // ---- 20. queries das abas de operacao (filtro por caminhao via join) ----
   const { error: eO1 } = await svc.from("despesas").select(
     `id, carga_id, valor, descricao, foto_path, criado_em,
-     profiles!despesas_motorista_id_fkey!inner(nome, is_teste),
+     profiles!despesas_motorista_id_fkey!inner(nome),
      cargas!inner(caminhao_id, caminhoes(placa))`
-  ).eq("profiles.is_teste", false).eq("cargas.caminhao_id", cam.id);
+  ).eq("cargas.caminhao_id", cam.id);
   check("aba Despesas: query com filtro de caminhao roda", !eO1, eO1?.message);
 
   const { error: eO2 } = await svc.from("abastecimentos").select(
     `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em,
-     profiles!abastecimentos_motorista_id_fkey!inner(nome, is_teste),
+     profiles!abastecimentos_motorista_id_fkey!inner(nome),
      cargas!inner(caminhao_id, caminhoes(placa))`
-  ).eq("profiles.is_teste", false).eq("cargas.caminhao_id", cam.id);
+  ).eq("cargas.caminhao_id", cam.id);
   check("aba Abastecimentos: query com filtro de caminhao roda", !eO2, eO2?.message);
 
   // ---- 21. drill-down: carga completa com todos os filhos ----
   const { data: completa, error: eD } = await svc.from("cargas").select(
     `id, motorista_id, km_inicial, km_final, status, iniciada_em, encerrada_em,
      foto_painel_path,
-     profiles!cargas_motorista_id_fkey(nome, is_teste),
+     profiles!cargas_motorista_id_fkey(nome),
      caminhoes(placa, marca, cor, capacidade_l, tara_kg),
      coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, criado_em),
      despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),

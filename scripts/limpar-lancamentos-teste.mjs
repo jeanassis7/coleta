@@ -3,11 +3,13 @@
  * abastecimentos, descargas, cargas, adiantamentos, acertos e as fotos
  * do storage. O perfil continua existindo com as features ligadas.
  *
- * TRAVA DE SEGURANÇA: só roda se o perfil tiver is_teste=true.
- * Recusa qualquer motorista real, sem exceção.
+ * TRAVA DE SEGURANÇA: exige a flag --sim-eu-confirmo.
+ * A trava antiga era a coluna is_teste, que deixou de existir quando o
+ * conceito de motorista de teste foi removido (19/08/2026). Sem uma trava
+ * explícita, este script apagaria lançamento de motorista real calado.
  *
  * Uso:
- *   node scripts/limpar-lancamentos-teste.mjs             (default teste1@coleta.local)
+ *   node scripts/limpar-lancamentos-teste.mjs <email> --sim-eu-confirmo
  *   node scripts/limpar-lancamentos-teste.mjs outro@coleta.local
  */
 import { createClient } from "@supabase/supabase-js";
@@ -39,14 +41,14 @@ async function main() {
   if (!user) throw new Error(`user ${EMAIL} não existe`);
 
   const { data: perfil, error: errP } = await svc
-    .from("profiles").select("id, nome, role, is_teste").eq("id", user.id).maybeSingle();
+    .from("profiles").select("id, nome, role").eq("id", user.id).maybeSingle();
   if (errP || !perfil) throw new Error("perfil não encontrado");
 
-  // TRAVA: nunca limpar motorista real
-  if (perfil.is_teste !== true) {
+  // TRAVA: este script APAGA lançamento. Quem chama declara que sabe.
+  if (!process.argv.includes("--sim-eu-confirmo")) {
     throw new Error(
-      `RECUSADO: ${perfil.nome} (${EMAIL}) NÃO é motorista de teste (is_teste=false). ` +
-        `Este script só limpa perfis de teste.`
+      `RECUSADO: isto APAGA todos os lançamentos de ${perfil.nome} (${EMAIL}).\n` +
+        `Se é isso mesmo, rode de novo acrescentando --sim-eu-confirmo`
     );
   }
 
