@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { podeAcessarAdmin } from "@/lib/auth/roles";
 
 async function exigirAdmin() {
   const supabase = await getSupabaseServer();
@@ -28,6 +29,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
   const body = await req.json();
+  // Um cliente só por handler: é o que faz todas as gravações deste clique
+  // compartilharem o mesmo id de operação e saírem agrupadas no log.
+  const adminClient = getSupabaseAdmin(admin.id);
   const updates: Record<string, unknown> = {};
   if (typeof body.ativo === "boolean") updates.ativo = body.ativo;
   if (typeof body.exige_foto === "boolean") updates.exige_foto = body.exige_foto;
@@ -37,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // por isso o servidor move os dois juntos, venha de onde vier.
   if (typeof body.mostra_saldo_app === "boolean") {
     updates.mostra_saldo_app = body.mostra_saldo_app;
-    const { data: atual } = await getSupabaseAdmin()
+    const { data: atual } = await adminClient
       .from("profiles")
       .select("features")
       .eq("id", id)
@@ -52,8 +56,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
-
-  const adminClient = getSupabaseAdmin();
 
   // Se mudou exige_foto, registra evento
   if ("exige_foto" in updates) {
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       { status: 400 }
     );
   }
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
   const { error } = await adminClient.auth.admin.updateUserById(id, {
     password: senha,
   });
@@ -125,7 +127,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const url = new URL(req.url);
   const forcado = url.searchParams.get("forcado") === "1";
 
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
 
   // Conta coletas do motorista
   const { count: numColetas } = await adminClient

@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "forma_pagamento deve ser dinheiro ou pix" }, { status: 400 });
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { data, error } = await client
     .from("adiantamentos")
     .insert({

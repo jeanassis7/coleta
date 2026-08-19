@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { podeAcessarAdmin } from "@/lib/auth/roles";
 
 async function exigirAdmin() {
   const supabase = await getSupabaseServer();
@@ -13,7 +14,9 @@ async function exigirAdmin() {
     .select("role, ativo")
     .eq("id", user.id)
     .maybeSingle();
-  if (!profile || profile.role !== "admin" || !profile.ativo) return null;
+  // podeAcessarAdmin cobre admin E dev. Comparar com "admin" exato
+  // barrava o dev — inclusive da curadoria de locais.
+  if (!profile || !podeAcessarAdmin(profile) || !profile.ativo) return null;
   return user;
 }
 
@@ -49,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     updates.notas_internas = body.notas_internas.trim() || null;
   }
 
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
   const { error } = await adminClient.from("locais").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   const ids = body.coleta_ids.map((x: unknown) => String(x));
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
 
   const { error } = await adminClient
     .from("coletas")
@@ -86,7 +89,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
 
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
 
   // Desvincula coletas (mantém histórico, só limpa o link)
   await adminClient.from("coletas").update({ local_id: null }).eq("local_id", id);

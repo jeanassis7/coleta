@@ -1502,3 +1502,86 @@ export async function buscarDespesasRecorrentes(): Promise<DespesaRecorrente[]> 
     valor: Number(d.valor),
   }));
 }
+
+// ============================================================================
+// LOG DE AÇÕES DO PAINEL (migration 0022)
+// ============================================================================
+
+export interface LinhaLog {
+  id: number;
+  ator_id: string | null;
+  ator_nome: string;
+  operacao_id: string | null;
+  acao: "criou" | "editou" | "apagou";
+  tabela: string;
+  registro_id: string | null;
+  antes: Record<string, unknown> | null;
+  depois: Record<string, unknown> | null;
+  criado_em: string;
+}
+
+/**
+ * Um grupo = um clique. Todas as gravações que saíram da mesma ação
+ * compartilham `operacao_id`, então apagar um motorista com 59 coletas vira
+ * UM grupo de 60 linhas em vez de 60 entradas soltas.
+ *
+ * Linha sem `operacao_id` (migration minha, ou endpoint onde esqueci de
+ * passar o ator) vira um grupo de uma linha só — aparece, só não agrupa.
+ */
+export interface GrupoLog {
+  chave: string;
+  ator_nome: string;
+  criado_em: string;
+  linhas: LinhaLog[];
+}
+
+export async function buscarLog(
+  opts: { ator?: string; tabela?: string; limite?: number } = {}
+): Promise<GrupoLog[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("log_admin")
+    .select("*")
+    .order("id", { ascending: false })
+    .limit(opts.limite ?? 500);
+  if (opts.ator) q = q.eq("ator_id", opts.ator);
+  if (opts.tabela) q = q.eq("tabela", opts.tabela);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const linhas = (data as LinhaLog[]) || [];
+  const grupos: GrupoLog[] = [];
+  for (const l of linhas) {
+    const chave = l.operacao_id ?? `solta-${l.id}`;
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.chave === chave) {
+      ultimo.linhas.push(l);
+    } else {
+      grupos.push({
+        chave,
+        ator_nome: l.ator_nome,
+        criado_em: l.criado_em,
+        linhas: [l],
+      });
+    }
+  }
+  return grupos;
+}
+
+/** Quem já apareceu no log — pro filtro da tela. */
+export async function buscarAtoresDoLog(): Promise<
+  Array<{ id: string; nome: string }>
+> {
+  const supabase = await getSupabaseServer();
+  const { data } = await supabase
+    .from("log_admin")
+    .select("ator_id, ator_nome")
+    .not("ator_id", "is", null)
+    .limit(2000);
+  const mapa = new Map<string, string>();
+  for (const r of (data as Array<{ ator_id: string; ator_nome: string }>) || []) {
+    mapa.set(r.ator_id, r.ator_nome);
+  }
+  return [...mapa].map(([id, nome]) => ({ id, nome }));
+}

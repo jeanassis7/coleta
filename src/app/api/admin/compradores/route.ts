@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "diga o nome do comprador" }, { status: 400 });
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { data, error } = await client
     .from("compradores")
     .insert({

@@ -28,7 +28,7 @@ export async function PATCH(
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("descargas").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

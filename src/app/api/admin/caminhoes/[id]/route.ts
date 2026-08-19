@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("caminhoes").update(updates).eq("id", id);
   if (error) {
     if (error.code === "23505") {
@@ -68,7 +68,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   const admin = await exigirAdmin();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
 
   // Bloqueia delete se caminhão tem cargas — precisa inativar em vez disso
   const { count } = await client

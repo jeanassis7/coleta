@@ -26,10 +26,12 @@ export function Sidebar({
   nome,
   dev,
   mostrarModulo1,
+  veLog = false,
 }: {
   nome: string;
   dev: boolean;
   mostrarModulo1: boolean;
+  veLog?: boolean;
 }) {
   const pathname = usePathname();
   const [aberto, setAberto] = useState(false); // drawer no mobile
@@ -80,6 +82,7 @@ export function Sidebar({
       itens: [
         { href: "/admin/eventos", label: "Eventos" },
         ...(dev ? [{ href: "/admin/dev/features", label: "🧪 Features" }] : []),
+        ...(veLog ? [{ href: "/admin/log", label: "🔎 Log" }] : []),
       ],
     },
   ].filter((g) => g.itens.length > 0);

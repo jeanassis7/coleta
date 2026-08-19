@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "data inválida" }, { status: 400 });
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
 
   const { data: estoque, error: erroEstoque } = await client.rpc("estoque_atual");
   if (erroEstoque) {

@@ -63,7 +63,7 @@ export async function PATCH(
     updates.repassado_para = para;
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { data, error } = await client
     .from("cheques")
     .update(updates)

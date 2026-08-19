@@ -23,7 +23,7 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json();
   const acao = String(body.acao || "");
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   if (acao === "cancelar") {
@@ -143,7 +143,7 @@ export async function DELETE(
   const admin = await exigirAdmin();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("contas_a_pagar").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

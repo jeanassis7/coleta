@@ -19,7 +19,7 @@ export async function DELETE(
   const admin = await exigirAdmin();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
 
   const { data: venda } = await client
     .from("vendas")

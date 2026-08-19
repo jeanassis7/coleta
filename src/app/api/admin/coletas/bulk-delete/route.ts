@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { podeAcessarAdmin } from "@/lib/auth/roles";
 
 async function exigirAdmin() {
   const supabase = await getSupabaseServer();
@@ -13,7 +14,9 @@ async function exigirAdmin() {
     .select("role, ativo")
     .eq("id", user.id)
     .maybeSingle();
-  if (!profile || profile.role !== "admin" || !profile.ativo) return null;
+  // podeAcessarAdmin cobre admin E dev. Comparar com "admin" exato
+  // barrava o dev — inclusive da curadoria de locais.
+  if (!profile || !podeAcessarAdmin(profile) || !profile.ativo) return null;
   return user;
 }
 
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
 
   // 1. Busca fotos pra apagar do Storage
   const { data: coletasComFoto } = await adminClient

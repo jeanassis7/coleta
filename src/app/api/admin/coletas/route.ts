@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     litros_certificado = Math.round(n * 100) / 100;
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { data: carga } = await client
     .from("cargas")
     .select("id, motorista_id, iniciada_em")

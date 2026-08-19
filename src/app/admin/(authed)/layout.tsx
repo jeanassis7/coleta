@@ -20,7 +20,7 @@ export default async function AdminLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("nome, role")
+    .select("nome, role, ve_log")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -29,6 +29,9 @@ export default async function AdminLayout({
   }
 
   const dev = isDev(profile);
+  // O log é por marca no cadastro, não por papel — quando o `dev` for
+  // aposentado, o acesso continua de pé.
+  const veLog = !!(profile as { ve_log?: boolean }).ve_log;
   // Módulo 1 — Estágio 1 (dev-only). Promoção pro Jean: flip em gate-modulo1.ts
   const mostrarModulo1 = dev || MODULO1_LIBERADO_PARA_ADMIN;
 
@@ -38,6 +41,7 @@ export default async function AdminLayout({
         nome={profile.nome}
         dev={dev}
         mostrarModulo1={mostrarModulo1}
+        veLog={veLog}
       />
       <main className="flex-1 min-w-0 px-4 py-6 md:px-6">{children}</main>
     </div>

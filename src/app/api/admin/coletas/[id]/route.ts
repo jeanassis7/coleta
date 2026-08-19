@@ -88,7 +88,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
 
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(admin.id);
 
   // Estado ANTES, pra saber se está marcando agora ou se já estava marcada
   // (evita criar a mesma dívida duas vezes ao salvar de novo).

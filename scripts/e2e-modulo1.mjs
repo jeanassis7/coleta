@@ -55,10 +55,19 @@ const criados = {
   compraLitrosId: null,
   compraCertId: null,
   coletaAdminClientId: null,
+  logDesdeId: null,
   fotos: [],
 };
 
 async function main() {
+  // O E2E escreve com a chave de serviço, então o gatilho da 0022 grava
+  // cada gravação dele no log como "não identificado". O marco tem que ser
+  // a PRIMEIRA coisa do run: anotado depois, o próprio insert do perfil do
+  // bot já teria escapado.
+  const { data: ultimoLog } = await svc
+    .from("log_admin").select("id").order("id", { ascending: false }).limit(1).maybeSingle();
+  criados.logDesdeId = ultimoLog?.id ?? 0;
+
   // ---- setup: motorista descartável só deste run ----
   const E2E_EMAIL = `e2e-bot-${Date.now()}@coleta.local`;
   const E2E_SENHA = randomUUID();
@@ -601,6 +610,14 @@ async function cleanup() {
       await del("profiles", "id", criados.motoristaId);
       const { error } = await svc.auth.admin.deleteUser(criados.motoristaId);
       if (error) sobrou.push(`auth.users ${criados.motoristaId}: ${error.message}`);
+    }
+
+    // POR ÚLTIMO: apagar o bot também gera linha de log. Se isto rodasse
+    // antes, a linha da própria exclusão ficaria pra trás.
+    if (criados.logDesdeId !== undefined && criados.logDesdeId !== null) {
+      const { error } = await svc
+        .from("log_admin").delete().gt("id", criados.logDesdeId);
+      if (error) sobrou.push(`log_admin > ${criados.logDesdeId}: ${error.message}`);
     }
   } catch (e) {
     sobrou.push(`exceção: ${e.message}`);

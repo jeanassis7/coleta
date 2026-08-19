@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("despesas_recorrentes").insert({
     descricao,
     categoria: String(body.categoria || "fixa"),

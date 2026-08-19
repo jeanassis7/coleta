@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       : hojeBr.toISOString().slice(0, 7);
 
   const [ano, mes] = competencia.split("-").map(Number);
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
 
   const { data: recorrentes, error } = await client
     .from("despesas_recorrentes")

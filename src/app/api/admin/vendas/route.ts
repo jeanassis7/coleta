@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   const total = n2(peso_total_kg);
   const fino = n2(total - grosso);
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { data: venda, error } = await client
     .from("vendas")
     .insert({

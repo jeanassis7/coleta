@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const admin = getSupabaseAdmin();
+  const admin = getSupabaseAdmin(auth.user?.id ?? null);
   const { data: created, error: errAuth } = await admin.auth.admin.createUser({
     email,
     password: senha,

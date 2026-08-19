@@ -47,7 +47,7 @@ export async function PATCH(
     );
   }
 
-  const adminClient = getSupabaseAdmin();
+  const adminClient = getSupabaseAdmin(user.id);
 
   // Lê features atuais, merge, salva
   const { data: atual, error: errRead } = await adminClient

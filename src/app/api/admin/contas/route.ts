@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     };
   });
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("contas_a_pagar").insert(linhas);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, criadas: linhas.length });

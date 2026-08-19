@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "chave inválida" }, { status: 400 });
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(user.id);
   const { error } = await client
     .from("alertas_vistos")
     .upsert({ chave, visto_por: user.id, visto_em: new Date().toISOString() });

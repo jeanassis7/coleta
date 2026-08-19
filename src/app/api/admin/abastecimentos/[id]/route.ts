@@ -49,7 +49,7 @@ export async function PATCH(
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("abastecimentos").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
@@ -67,7 +67,7 @@ export async function DELETE(
   const admin = await exigirAdmin();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
 
   const { data: abast } = await client
     .from("abastecimentos")

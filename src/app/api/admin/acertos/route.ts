@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   // pro motorista (pagou agora / soma no salário / leva pro próximo ciclo).
   // A coerência (soma = saldo) é garantida pelo modal do acerto.
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const { data, error } = await client
     .from("acertos")
     .insert({

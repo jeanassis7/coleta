@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   // Meio-dia pra a data não escorregar pro dia anterior no fuso BR.
   const quando = new Date(`${criado_em}T12:00:00-03:00`).toISOString();
 
-  const client = getSupabaseAdmin();
+  const client = getSupabaseAdmin(admin.id);
   const comum = {
     carga_id: null,
     motorista_id: null,
