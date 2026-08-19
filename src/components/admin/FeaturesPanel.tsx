@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface MotoristaTeste {
+interface MotoristaFeature {
   id: string;
   nome: string;
   features: Record<string, unknown> | null;
@@ -20,11 +20,12 @@ export function FeaturesPanel({
   motoristas,
   featuresDisponiveis,
 }: {
-  motoristas: MotoristaTeste[];
+  motoristas: MotoristaFeature[];
   featuresDisponiveis: FeatureDef[];
 }) {
   const router = useRouter();
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
 
   async function toggleFeature(
     motoristaId: string,
@@ -33,6 +34,7 @@ export function FeaturesPanel({
   ) {
     const key = `${motoristaId}:${feature}`;
     setLoadingKey(key);
+    setErro(null);
     try {
       const res = await fetch(`/api/admin/motoristas/${motoristaId}/feature`, {
         method: "PATCH",
@@ -40,8 +42,9 @@ export function FeaturesPanel({
         body: JSON.stringify({ feature, valor: !valorAtual }),
       });
       if (!res.ok) {
+        // Nada de alert(): popup do navegador é proibido na UI deste projeto.
         const err = await res.json();
-        alert("Erro: " + err.error);
+        setErro(err.error || "Falha ao mudar a feature.");
       } else {
         router.refresh();
       }
@@ -52,13 +55,15 @@ export function FeaturesPanel({
 
   return (
     <div className="space-y-6">
+      {erro && (
+        <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm">
+          {erro}
+        </div>
+      )}
       {motoristas.map((m) => (
         <div key={m.id} className="card">
           <div className="flex items-center gap-2 mb-4">
             <h2 className="text-lg font-semibold">{m.nome}</h2>
-            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300">
-              🧪 TESTE
-            </span>
           </div>
 
           <div className="space-y-3">

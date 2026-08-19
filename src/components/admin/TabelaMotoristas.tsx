@@ -292,13 +292,17 @@ export function TabelaMotoristas({
                   >
                     Resetar senha
                   </button>
-                  <button
-                    onClick={() => setModalDeletar({ id: m.id, nome: m.nome })}
-                    disabled={loadingId === m.id}
-                    className="text-alerta hover:underline text-left"
-                  >
-                    Deletar
-                  </button>
+                  {/* Admin não é deletável: o usuário sairia do Supabase Auth
+                      e só voltaria por script. O servidor também recusa. */}
+                  {m.role !== "admin" && (
+                    <button
+                      onClick={() => setModalDeletar({ id: m.id, nome: m.nome })}
+                      disabled={loadingId === m.id}
+                      className="text-alerta hover:underline text-left"
+                    >
+                      Deletar
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>

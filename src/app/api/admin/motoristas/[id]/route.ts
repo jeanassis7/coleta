@@ -125,17 +125,30 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
 
-  if (id === admin.id) {
-    return NextResponse.json(
-      { error: "você não pode deletar seu próprio usuário" },
-      { status: 400 }
-    );
-  }
-
   const url = new URL(req.url);
   const forcado = url.searchParams.get("forcado") === "1";
 
   const adminClient = getSupabaseAdmin(admin.id);
+
+  // Nenhum admin é deletável pelo painel — nem você mesmo, nem o outro.
+  // Antes só a si próprio era protegido, o que deixava um gestor apagar o
+  // usuário do outro. Sem o papel `dev` não existe backdoor: o usuário
+  // apagado sai do Supabase Auth e só volta por script.
+  // A checagem é no servidor porque esconder o botão não impede a chamada.
+  const { data: alvo } = await adminClient
+    .from("profiles")
+    .select("role")
+    .eq("id", id)
+    .maybeSingle();
+  if (alvo?.role === "admin") {
+    return NextResponse.json(
+      {
+        error:
+          "Admin não pode ser deletado pelo painel. Mude o papel pra motorista antes, se for isso mesmo.",
+      },
+      { status: 400 }
+    );
+  }
 
   // Conta coletas do motorista
   const { count: numColetas } = await adminClient
