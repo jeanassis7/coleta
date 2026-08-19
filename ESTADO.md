@@ -19,7 +19,7 @@ reais continuam usando só a coleta.
 
 | | |
 |---|---|
-| Migrations aplicadas | 24 (`0001` → `0024`) |
+| Migrations aplicadas | 26 (`0001` → `0026`) |
 | Páginas admin | 22 |
 | Telas do motorista | 9 |
 | Endpoints de API | 33 |
@@ -54,6 +54,8 @@ NOTA"), despesa, descarregar e cancelar carga.
 - **Cargas** — tabela densa + drill-down com mapa, linha do tempo e fotos
 - **Abastecimentos · Despesas · Compra direta · Adiantamentos**
 - **Caminhões · Motoristas · Curadoria de locais · Eventos**
+- **Ficha do caminhão** (`/admin/caminhoes/[id]`) — próxima troca de óleo por km com semáforo, km/L e gasto do mês, histórico de manutenção e documentos
+- **Ficha do motorista** (`/admin/motoristas/[id]`) — CNH, toxicológico, MOPP, cursos, com vencimento e arquivo anexado
 - **`/admin/features`** — liga feature por motorista (rollout gradual)
 - **`/admin/log`** — quem fez o quê (só quem tem `ve_log`; hoje só o Evaner)
 
@@ -113,10 +115,10 @@ página. Otimização pendente: `prefetch={false}` na sidebar e colapsar os 3
 1. **Umidade não desconta nada** — espera a máquina de medir.
 2. **OCR de cheque em lote** — desenhado no plano, não implementado. Precisa
    de `ANTHROPIC_API_KEY` no Vercel.
-3. **Manutenção, pneus e documentos com vencimento** — Bloco 3 do Módulo 2,
-   desenhado no plano, não implementado.
-4. **Fichas de caminhão e motorista** (`/admin/caminhoes/[id]`,
-   `/admin/motoristas/[id]`) — Bloco 3.
+3. **Bloco 3 (frota e documentos) — FEITO em 19/08/2026.** Manutenção com
+   custo, documentos com vencimento (CIPP, CIV, IPVA, CNH, toxicológico,
+   cursos), as duas fichas, 6 alertas novos e os 3 KPIs de topo. Falta só
+   você cadastrar os documentos reais e ver os alertas nascerem.
 
 ### Módulo 3 — Salários (só no papel)
 

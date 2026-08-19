@@ -82,7 +82,11 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
     /abastecimentos             → lista + edição (corrigir lançamento errado)
     /adiantamentos              → saldo por motorista + enviar + acerto
     /adiantamentos/[id]         → histórico de dinheiro do motorista
-    /caminhoes                  → CRUD da frota
+    /caminhoes                  → lista da frota (placa clica pra ficha)
+    /caminhoes/[id]             → FICHA: próxima troca de óleo por km, km/L e
+                                  gasto do mês, manutenções e documentos
+    /motoristas/[id]            → FICHA: documentos (CNH, toxicológico, MOPP,
+                                  cursos) + link pro histórico de dinheiro
     /features                   → liga feature por motorista (rollout gradual)
     /log                        → quem fez o quê (só quem tem ve_log)
     /estoque · /vendas · /cheques · /contas · /compradores   (Módulo 2)
@@ -90,7 +94,7 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
 /api/admin/*                    → endpoints com service_role
   /motoristas[/id][/feature], /coletas/[id], /coletas/bulk-delete, /locais[/id],
   /caminhoes[/id], /descargas/[id], /abastecimentos/[id], /adiantamentos[/id],
-  /acertos, /alertas/visto
+  /acertos, /alertas/visto, /manutencoes[/id], /documentos[/id]
 /api/locais/proximos            → busca por proximidade (client motorista)
 ```
 
@@ -152,6 +156,10 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0022_log_admin.sql` — tabela `log_admin` + trigger `trg_log_admin` em 19 tabelas + `profiles.ve_log`
 - `0023_evaner_vira_admin.sql` — quem era `dev` vira `admin` (rodou ANTES do deploy, ver comentário no arquivo)
 - `0024_fim_do_is_teste.sql` — `is_admin()` perde o `dev` e vira `stable`; `movimentos_estoque` perde o filtro de teste; **`profiles.is_teste` é derrubada** (rodou DEPOIS do deploy)
+- `0025_manutencoes.sql` — `manutencoes` (tipo, valor, km, `proxima_km` da troca de óleo), admin-only
+- `0026_documentos.sql` — `documentos` com CHECK `um_dono_so` (caminhão XOR motorista) + bucket privado `documentos`, admin-only
+
+⚠️ **Tabela nova ganha log sozinha.** A `0022` instalou o event trigger `trg_auto_ligar_log`: toda `create table` em `public` recebe `trg_log_admin` automaticamente. **Não criar o trigger na mão** — dá trigger duplicado e log em dobro.
 
 ## MÓDULO 1 (Cargas/ERP) — regras que valem pra tudo daqui pra frente
 
@@ -206,7 +214,8 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 |---|---|---|
 | Coleta (registro) | Supabase Postgres, permanente | Apagada 24h após sync 100% |
 | Despesa / Abastecimento / Descarga | Supabase Postgres, permanente | Apagados 24h após sync 100% |
-| Foto (blob) | Supabase Storage, permanente | Blob apagado junto com o lançamento (24h) |
+| Foto (blob) | Supabase Storage (`fotos-coletas`), permanente | Blob apagado junto com o lançamento (24h) |
+| Documento (CNH, CIPP, nota de manutenção) | Supabase Storage (`documentos`), permanente | **Nunca vai pro celular** — bucket é admin-only |
 | Evento (log) | Supabase Postgres, permanente | Apagado 7 dias após sync |
 | Perfil + carga ativa | Supabase Auth + Postgres | Cache em localStorage (limpo no logout) |
 
@@ -254,6 +263,7 @@ Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fa
 - **Relógio local ≠ relógio do banco** — teste que compara `new Date()` do Node com `now()` do Postgres falha sozinho. Em teste, derivar a data do próprio banco.
 - **Supabase JS quebra no Node 20** ("Node.js 20 detected without native WebSocket") — scripts precisam de `import ws` + `globalThis.WebSocket = ws`.
 - **`pg` + session pooler** — parsear a connection string na mão (`new URL`) e passar host/user/password separados, com `ssl: { rejectUnauthorized: false }`.
+- **Status de cheque é `em_carteira`, não `carteira`** — errar isso numa query com `.in("status", [...])` não dá erro nenhum: só faz o filtro nunca casar. Alerta que nunca acende parece alerta que não tem o que alertar. Conferir o CHECK da 0017 antes de escrever filtro de status.
 - **iOS Safari NÃO tem `beforeinstallprompt`** — motorista iPhone precisa instalar manual via Compartilhar > Adicionar à Tela de Início. Fluxo pós-instalação é idêntico.
 
 ## Workflow de deploy
