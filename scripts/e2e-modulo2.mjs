@@ -712,6 +712,87 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ────────────────────────────────────── 3g. DRE: a conta não dobra nem some
+console.log("\n🔬 DRE — ANTI-DOBRA (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  // A regra: conta a pagar que é ESPELHO de um lançamento operacional
+  // (abastecimento "assinei a nota", manutenção a prazo, coleta paga pela
+  // sede, compra direta) não entra no DRE — lá o gasto já foi contado na
+  // tabela de origem. Se entrasse, o mesmo real contaria duas vezes.
+  //
+  // 'documento' é a EXCEÇÃO: o documento não lança gasto nenhum, só registra
+  // vencimento e estimativa. Quem tem o gasto é a conta. Excluí-la faria
+  // IPVA e seguro sumirem do DRE.
+  const ESPELHO = ["abastecimento", "manutencao", "compra_direta", "coleta"];
+
+  // 1) Toda conta espelho aponta pra um lançamento que EXISTE. Órfã seria
+  //    valor excluído do DRE sem ter sido contado em lugar nenhum — some.
+  const { rows: [orfas] } = await client.query(
+    `select count(*)::int n from public.contas_a_pagar cp
+      where cp.origem_tipo = any($1)
+        and not exists (
+          select 1 from public.abastecimentos a where cp.origem_tipo='abastecimento' and a.id = cp.origem_id
+          union all
+          select 1 from public.manutencoes m where cp.origem_tipo='manutencao' and m.id = cp.origem_id
+          union all
+          select 1 from public.compras_diretas c where cp.origem_tipo='compra_direta' and c.id = cp.origem_id
+          union all
+          select 1 from public.coletas co where cp.origem_tipo='coleta' and co.id = cp.origem_id
+        )`,
+    [ESPELHO]
+  );
+  afirmar("nenhuma conta espelho é órfã (valor sumiria do DRE)", orfas.n === 0);
+
+  // 2) Um lançamento de origem não pode ter DUAS contas: a segunda seria
+  //    excluída do DRE junto, mas o caixa a contaria duas vezes.
+  const { rows: [dupes] } = await client.query(
+    `select count(*)::int n from (
+       select origem_tipo, origem_id from public.contas_a_pagar
+       where origem_tipo = any($1) and origem_id is not null
+       group by 1,2 having count(*) > 1
+     ) x`,
+    [ESPELHO]
+  );
+  afirmar("nenhum lançamento operacional tem 2 contas", dupes.n === 0);
+
+  // 3) Conta de DOCUMENTO tem que continuar contável — se alguém a puser na
+  //    lista de espelho, IPVA e seguro somem do DRE sem erro nenhum.
+  const perfil = (await client.query(
+    "select id from public.profiles where role='admin' and ativo limit 1"
+  )).rows[0];
+  const cam = (await client.query("select id from public.caminhoes limit 1")).rows[0];
+  if (cam) {
+    const { rows: [doc] } = await client.query(
+      `insert into public.documentos (caminhao_id, tipo, vencimento, valor, registrado_por)
+       values ($1,'ipva', current_date + 40, 1500, $2) returning id`,
+      [cam.id, perfil.id]
+    );
+    await client.query(
+      `insert into public.contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, origem_tipo, origem_id, registrado_por)
+       values ('IPVA E2E','ipva_frota',1500, current_date + 40,'a_pagar','documento',$1,$2)`,
+      [doc.id, perfil.id]
+    );
+    const { rows: [contavel] } = await client.query(
+      `select count(*)::int n from public.contas_a_pagar
+        where origem_tipo = 'documento' and not (origem_tipo = any($1))`,
+      [ESPELHO]
+    );
+    afirmar("conta de documento NÃO é espelho (IPVA e seguro contam)", contavel.n >= 1);
+  }
+
+  // 4) Categoria vazia é linha que não cai em grupo nenhum do DRE — soma
+  //    some do relatório sem ninguém achar.
+  const { rows: [semCat] } = await client.query(
+    `select count(*)::int n from public.contas_a_pagar
+      where categoria is null or trim(categoria) = ''`
+  );
+  afirmar("nenhuma conta sem categoria (sumiria do DRE)", semCat.n === 0);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"
