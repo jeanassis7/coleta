@@ -4,18 +4,27 @@ import {
   buscarCheques,
   resumoContasAPagar,
 } from "@/lib/admin/queries";
+import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { ContasPainel } from "@/components/admin/ContasPainel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContasPage() {
 
-  const [contas, recorrentes, chequesCarteira, resumo] = await Promise.all([
-    buscarContasAPagar(),
-    buscarDespesasRecorrentes(),
-    buscarCheques({ status: ["em_carteira"] }),
-    resumoContasAPagar(),
-  ]);
+  const [contas, recorrentes, chequesCarteira, resumo, contasFin] =
+    await Promise.all([
+      buscarContasAPagar(),
+      buscarDespesasRecorrentes(),
+      buscarCheques({ status: ["em_carteira"] }),
+      resumoContasAPagar(),
+      buscarContasFinanceiras(),
+    ]);
+  const opcoesConta = contasFin.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    tipo: c.tipo,
+  }));
+
 
   return (
     <div>
@@ -27,6 +36,7 @@ export default async function ContasPage() {
         pra onde foi.
       </p>
       <ContasPainel
+        contasFinanceiras={opcoesConta}
         contas={contas}
         recorrentes={recorrentes}
         chequesCarteira={chequesCarteira}

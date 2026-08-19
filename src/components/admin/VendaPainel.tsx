@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { formatBRL, formatData } from "@/lib/format";
@@ -35,11 +36,14 @@ export function VendaPainel({
   compradores,
   estoque,
   veiculos,
+  contasFinanceiras,
 }: {
   vendas: Venda[];
   compradores: Comprador[];
   estoque: EstoqueTipo[];
   veiculos: Array<{ id: string; placa: string; marca: string; tipo: string }>;
+  /** Pra dizer em qual conta a entrada à vista caiu. */
+  contasFinanceiras: ContaOpcao[];
 }) {
   const [aberto, setAberto] = useState(false);
 
@@ -67,6 +71,7 @@ export function VendaPainel({
           compradores={compradores}
           estoque={estoque}
           veiculos={veiculos}
+          contasFinanceiras={contasFinanceiras}
           onFim={() => setAberto(false)}
         />
       )}
@@ -80,11 +85,13 @@ function FormVenda({
   compradores,
   estoque,
   veiculos,
+  contasFinanceiras,
   onFim,
 }: {
   compradores: Comprador[];
   estoque: EstoqueTipo[];
   veiculos: Array<{ id: string; placa: string; marca: string; tipo: string }>;
+  contasFinanceiras: ContaOpcao[];
   onFim: () => void;
 }) {
   const router = useRouter();
@@ -102,6 +109,9 @@ function FormVenda({
 
   const [recebidoCentavos, setRecebidoCentavos] = useState<number | null>(null);
   const [formaAVista, setFormaAVista] = useState<"pix" | "dinheiro" | "transferencia">("pix");
+  // Só a entrada à vista entra em conta agora. O cheque fica no papel até
+  // compensar — a conta dele é registrada na compensação.
+  const [contaAVista, setContaAVista] = useState("");
   const [cheques, setCheques] = useState<ChequeForm[]>([]);
 
   const [foto, setFoto] = useState<Blob | null>(null);
@@ -219,6 +229,7 @@ function FormVenda({
           foto_ticket_path,
           recebido_agora: recebidoCentavos ? centavosParaReais(recebidoCentavos) : 0,
           forma_a_vista: formaAVista,
+          conta_id: recebidoCentavos ? contaAVista : null,
           cheques: cheques
             .filter((c) => c.valorCentavos)
             .map((c) => ({
@@ -429,6 +440,17 @@ function FormVenda({
               ))}
             </div>
           </div>
+
+          {!!recebidoCentavos && (
+            <div className="mt-3">
+              <SelectConta
+                contas={contasFinanceiras}
+                valor={contaAVista}
+                onChange={setContaAVista}
+                label="Em qual conta o dinheiro entrou"
+              />
+            </div>
+          )}
         </div>
 
         {cheques.map((ch, i) => (

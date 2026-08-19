@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatData } from "@/lib/format";
 import {
@@ -53,11 +54,14 @@ export function ContasPainel({
   recorrentes,
   chequesCarteira,
   resumo,
+  contasFinanceiras,
 }: {
   contas: ContaAPagar[];
   recorrentes: DespesaRecorrente[];
   chequesCarteira: Cheque[];
   resumo: ResumoContas;
+  /** Contas financeiras — de qual caixa o pagamento saiu. */
+  contasFinanceiras: ContaOpcao[];
 }) {
   const [aba, setAba] = useState<Aba>("a_pagar");
   const [novaConta, setNovaConta] = useState(false);
@@ -168,6 +172,7 @@ export function ContasPainel({
             contas={daAba}
             aba={aba}
             chequesCarteira={chequesCarteira}
+            contasFinanceiras={contasFinanceiras}
           />
         </>
       )}
@@ -392,10 +397,12 @@ function TabelaContas({
   contas,
   aba,
   chequesCarteira,
+  contasFinanceiras,
 }: {
   contas: ContaAPagar[];
   aba: Aba;
   chequesCarteira: Cheque[];
+  contasFinanceiras: ContaOpcao[];
 }) {
   const router = useRouter();
   const [pagando, setPagando] = useState<ContaAPagar | null>(null);
@@ -526,6 +533,7 @@ function TabelaContas({
         <ModalPagar
           conta={pagando}
           chequesCarteira={chequesCarteira}
+          contasFinanceiras={contasFinanceiras}
           onFechar={() => setPagando(null)}
         />
       )}
@@ -553,16 +561,20 @@ function TabelaContas({
 function ModalPagar({
   conta,
   chequesCarteira,
+  contasFinanceiras,
   onFechar,
 }: {
   conta: ContaAPagar;
   chequesCarteira: Cheque[];
+  contasFinanceiras: ContaOpcao[];
   onFechar: () => void;
 }) {
   const router = useRouter();
   const [forma, setForma] = useState<FormaPagamento>("pix");
   const [pagoEm, setPagoEm] = useState(hojeBr());
   const [chequeId, setChequeId] = useState("");
+  // Pagar COM cheque não tira dinheiro de conta nenhuma — quitou com o papel.
+  const [contaFinId, setContaFinId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -571,6 +583,9 @@ function ModalPagar({
   async function pagar() {
     if (forma === "cheque" && !chequeId) {
       return setErro("Escolha qual cheque da carteira vai pagar");
+    }
+    if (forma !== "cheque" && !contaFinId) {
+      return setErro("Diga de qual conta saiu o dinheiro");
     }
     setErro(null);
     setSalvando(true);
@@ -583,6 +598,7 @@ function ModalPagar({
           forma_pagamento: forma,
           pago_em: pagoEm,
           cheque_id: forma === "cheque" ? chequeId : null,
+          conta_id: forma === "cheque" ? null : contaFinId,
           repassado_para: conta.fornecedor || conta.descricao,
         }),
       });
@@ -671,6 +687,15 @@ function ModalPagar({
             onChange={(e) => setPagoEm(e.target.value)}
           />
         </div>
+
+        {forma !== "cheque" && (
+          <SelectConta
+            contas={contasFinanceiras}
+            valor={contaFinId}
+            onChange={setContaFinId}
+            label="De qual conta saiu"
+          />
+        )}
 
         {erro && (
           <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">

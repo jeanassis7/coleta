@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import {
@@ -19,9 +20,12 @@ interface Motorista {
 export function AdiantamentosPanel({
   motoristas,
   saldos,
+  contas,
 }: {
   motoristas: Motorista[];
   saldos: MotoristaComSaldo[];
+  /** Contas financeiras — de onde o dinheiro sai / pra onde volta. */
+  contas: ContaOpcao[];
 }) {
   const router = useRouter();
   const [modal, setModal] = useState<"novo" | "acerto" | null>(null);
@@ -165,6 +169,7 @@ export function AdiantamentosPanel({
         <ModalNovoAdiantamento
           motoristas={motoristas}
           motoristaId={motoristaSelId}
+          contas={contas}
           onClose={() => setModal(null)}
         />
       )}
@@ -173,6 +178,7 @@ export function AdiantamentosPanel({
           motoristaId={saldoSelecionado.id}
           motoristaNome={saldoSelecionado.nome}
           saldoAtual={saldoSelecionado.saldo_atual}
+          contas={contas}
           onClose={() => setModal(null)}
         />
       )}
@@ -199,10 +205,12 @@ function StatusBadge({ status }: { status: string }) {
 function ModalNovoAdiantamento({
   motoristas,
   motoristaId,
+  contas,
   onClose,
 }: {
   motoristas: Motorista[];
   motoristaId: string;
+  contas: ContaOpcao[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -211,12 +219,17 @@ function ModalNovoAdiantamento({
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [forma, setForma] = useState<"dinheiro" | "pix">("dinheiro");
   const [obs, setObs] = useState("");
+  const [contaId, setContaId] = useState("");
 
   const nome = motoristas.find((m) => m.id === motoristaId)?.nome || "—";
 
   async function enviar() {
     if (valorCentavos === null || valorCentavos <= 0) {
       setErro("Valor inválido");
+      return;
+    }
+    if (!contaId) {
+      setErro("Diga de qual conta saiu o dinheiro");
       return;
     }
     setErro(null);
@@ -229,6 +242,7 @@ function ModalNovoAdiantamento({
           motorista_id: motoristaId,
           valor: centavosParaReais(valorCentavos),
           forma_pagamento: forma,
+          conta_id: contaId,
           observacao: obs.trim() || null,
         }),
       });
@@ -257,6 +271,12 @@ function ModalNovoAdiantamento({
             autoFocus
           />
         </div>
+        <SelectConta
+          contas={contas}
+          valor={contaId}
+          onChange={setContaId}
+          label="De qual conta saiu"
+        />
         <div>
           <label className="block text-sm font-medium mb-1">Forma</label>
           <div className="flex gap-2">
@@ -325,11 +345,13 @@ function ModalAcerto({
   motoristaId,
   motoristaNome,
   saldoAtual,
+  contas,
   onClose,
 }: {
   motoristaId: string;
   motoristaNome: string;
   saldoAtual: number;
+  contas: ContaOpcao[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -339,6 +361,9 @@ function ModalAcerto({
   // levar pro próximo ciclo) e são gravados com sinal negativo.
   const saldoCent = reaisParaCentavos(saldoAtual);
   const negativo = saldoCent < 0;
+  // Só faz sentido quando ele devolve dinheiro de verdade: aí o dinheiro
+  // entra em algum caixa. Vale e saldo não movem conta nenhuma.
+  const [contaId, setContaId] = useState("");
   const alvo = Math.abs(saldoCent);
   const [devolvido, setDevolvido] = useState<number | null>(
     !negativo && saldoCent > 0 ? saldoCent : null
@@ -377,6 +402,7 @@ function ModalAcerto({
           valor_devolvido: centavosParaReais(sinal * d),
           valor_vale: centavosParaReais(sinal * v),
           valor_saldo: centavosParaReais(sinal * s),
+          conta_id: contaId || null,
           observacao: obs.trim() || null,
         }),
       });
@@ -436,6 +462,15 @@ function ModalAcerto({
           </label>
           <InputDinheiro centavos={saldo} onChange={setSaldo} grande={false} />
         </div>
+
+        {devolvido !== null && devolvido !== 0 && (
+          <SelectConta
+            contas={contas}
+            valor={contaId}
+            onChange={setContaId}
+            label={negativo ? "De qual conta você vai pagar" : "Em qual conta o dinheiro entrou"}
+          />
+        )}
 
         <div className={`text-sm ${bate ? "text-green-700" : "text-alerta"}`}>
           Total: {formatBRL(soma / 100)}{" "}

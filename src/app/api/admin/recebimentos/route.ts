@@ -37,6 +37,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "data inválida" }, { status: 400 });
   }
 
+  // Cheque NÃO entra em conta: o dinheiro fica no papel, na gaveta, e só
+  // vira saldo quando compensa — e aí a conta é registrada no próprio
+  // cheque. Nas outras formas o dinheiro entrou em algum lugar agora.
+  const conta_id = body.conta_id ? String(body.conta_id) : null;
+  if (forma !== "cheque" && !conta_id) {
+    return NextResponse.json(
+      { error: "diga em qual conta o dinheiro entrou" },
+      { status: 400 }
+    );
+  }
+
   const client = getSupabaseAdmin(admin.id);
 
   if (forma === "cheque") {
@@ -90,6 +101,7 @@ export async function POST(req: NextRequest) {
     forma,
     valor: n2(valor),
     data,
+    conta_id,
     observacao: body.observacao ? String(body.observacao).trim() : null,
     registrado_por: admin.id,
   });

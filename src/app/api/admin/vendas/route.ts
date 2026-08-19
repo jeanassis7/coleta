@@ -88,21 +88,32 @@ export async function POST(req: NextRequest) {
 
   const avisos: string[] = [];
 
-  // Entrada à vista (pix/dinheiro/transferência)
+  // Entrada à vista (pix/dinheiro/transferência) — esse dinheiro entrou em
+  // alguma conta agora. Aqui é AVISO e não erro de propósito: a venda já foi
+  // gravada, e derrubar tudo por causa da conta faria o Jean relançar a
+  // pesagem inteira. A entrada aparece no aviso pra ele corrigir.
   const aVista = Number(body.recebido_agora);
   if (Number.isFinite(aVista) && aVista > 0) {
     const forma = ["pix", "dinheiro", "transferencia"].includes(body.forma_a_vista)
       ? body.forma_a_vista
       : "pix";
-    const { error: eRec } = await client.from("recebimentos").insert({
-      comprador_id,
-      venda_id: venda.id,
-      forma,
-      valor: n2(aVista),
-      data,
-      registrado_por: admin.id,
-    });
-    if (eRec) avisos.push(`entrada à vista não registrada: ${eRec.message}`);
+    const contaId = body.conta_id ? String(body.conta_id) : null;
+    if (!contaId) {
+      avisos.push(
+        "entrada à vista não registrada: faltou dizer em qual conta o dinheiro entrou — lance o recebimento na ficha do comprador"
+      );
+    } else {
+      const { error: eRec } = await client.from("recebimentos").insert({
+        comprador_id,
+        venda_id: venda.id,
+        forma,
+        valor: n2(aVista),
+        data,
+        conta_id: contaId,
+        registrado_por: admin.id,
+      });
+      if (eRec) avisos.push(`entrada à vista não registrada: ${eRec.message}`);
+    }
   }
 
   // Cheques — cada um vira SEU PRÓPRIO recebimento (1:1). Assim, se um

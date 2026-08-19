@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatData } from "@/lib/format";
 import {
@@ -38,11 +39,13 @@ export function FichaComprador({
   vendas,
   recebimentos,
   cheques,
+  contas,
 }: {
   comprador: CompradorComSaldo;
   vendas: Venda[];
   recebimentos: Recebimento[];
   cheques: Cheque[];
+  contas: ContaOpcao[];
 }) {
   const [pagando, setPagando] = useState(false);
 
@@ -135,6 +138,7 @@ export function FichaComprador({
         <FormPagamento
           compradorId={comprador.id}
           sugestao={Math.max(0, comprador.saldo)}
+          contas={contas}
           onFim={() => setPagando(false)}
         />
       )}
@@ -193,10 +197,12 @@ export function FichaComprador({
 function FormPagamento({
   compradorId,
   sugestao,
+  contas,
   onFim,
 }: {
   compradorId: string;
   sugestao: number;
+  contas: ContaOpcao[];
   onFim: () => void;
 }) {
   const router = useRouter();
@@ -213,9 +219,14 @@ function FormPagamento({
   const [bomPara, setBomPara] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Cheque não entra em conta: fica no papel até compensar.
+  const [contaId, setContaId] = useState("");
 
   async function salvar() {
     if (!valorCentavos || valorCentavos <= 0) return setErro("Informe o valor");
+    if (forma !== "cheque" && !contaId) {
+      return setErro("Diga em qual conta o dinheiro entrou");
+    }
     if (forma === "cheque" && (!banco.trim() || !emitente.trim() || !bomPara)) {
       return setErro("Cheque precisa de banco, emitente e a data do 'bom para'");
     }
@@ -230,6 +241,7 @@ function FormPagamento({
           forma,
           valor: centavosParaReais(valorCentavos),
           data,
+          conta_id: forma === "cheque" ? null : contaId,
           ...(forma === "cheque"
             ? {
                 banco: banco.trim(),
@@ -302,6 +314,15 @@ function FormPagamento({
           />
         </div>
       </div>
+
+      {forma !== "cheque" && (
+        <SelectConta
+          contas={contas}
+          valor={contaId}
+          onChange={setContaId}
+          label="Em qual conta o dinheiro entrou"
+        />
+      )}
 
       {forma === "cheque" && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 border border-cinza-borda rounded-xl p-3">

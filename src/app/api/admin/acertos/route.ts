@@ -13,8 +13,17 @@ export async function POST(req: NextRequest) {
   const valor_vale = aCentavos(body.valor_vale);
   const valor_saldo = aCentavos(body.valor_saldo);
   const observacao = body.observacao ? String(body.observacao).trim() : null;
+  const conta_id = body.conta_id ? String(body.conta_id) : null;
 
   if (!motorista_id) return NextResponse.json({ error: "motorista_id obrigatório" }, { status: 400 });
+  // Só exige conta quando ele devolveu dinheiro — aí o dinheiro entrou em
+  // algum lugar. Acerto que só vira vale ou carrega saldo não move caixa.
+  if (valor_devolvido > 0 && !conta_id) {
+    return NextResponse.json(
+      { error: "diga em qual conta entrou o dinheiro devolvido" },
+      { status: 400 }
+    );
+  }
   // Negativos são VÁLIDOS desde a 0011: saldo negativo = empresa devendo
   // pro motorista (pagou agora / soma no salário / leva pro próximo ciclo).
   // A coerência (soma = saldo) é garantida pelo modal do acerto.
@@ -24,6 +33,7 @@ export async function POST(req: NextRequest) {
     .from("acertos")
     .insert({
       motorista_id,
+      conta_id: valor_devolvido > 0 ? conta_id : null,
       valor_devolvido,
       valor_vale,
       valor_saldo,

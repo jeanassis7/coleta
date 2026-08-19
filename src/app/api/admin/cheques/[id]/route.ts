@@ -61,6 +61,21 @@ export async function PATCH(
     updates.repassado_para = para;
   }
 
+  // COMPENSAR é o único momento em que o cheque vira dinheiro na conta.
+  // Em carteira ou depositado o valor ainda não é seu; repassado nem passa
+  // pela sua conta (o papel foi embora). Sem a conta aqui, todo cheque que
+  // compensasse sumiria do caixa e o saldo ficaria menor que a realidade.
+  if (t.para === "compensado") {
+    const contaId = body.conta_id ? String(body.conta_id) : null;
+    if (!contaId) {
+      return NextResponse.json(
+        { error: "diga em qual conta o cheque caiu" },
+        { status: 400 }
+      );
+    }
+    updates.conta_id = contaId;
+  }
+
   const client = getSupabaseAdmin(admin.id);
   const { data, error } = await client
     .from("cheques")

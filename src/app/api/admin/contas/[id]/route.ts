@@ -71,6 +71,17 @@ export async function PATCH(
   if (!["dinheiro", "pix", "deposito", "boleto", "cheque"].includes(forma)) {
     return NextResponse.json({ error: "forma de pagamento inválida" }, { status: 400 });
   }
+
+  // Pagar COM cheque não tira dinheiro de conta nenhuma: quitou com o papel,
+  // que sai da carteira e vira 'repassado'. Nas outras formas o dinheiro saiu
+  // de algum lugar agora, e sem dizer de onde o caixa não fecha.
+  const contaId = body.conta_id ? String(body.conta_id) : null;
+  if (forma !== "cheque" && !contaId) {
+    return NextResponse.json(
+      { error: "diga de qual conta saiu o dinheiro" },
+      { status: 400 }
+    );
+  }
   const pagoEm =
     body.pago_em && /^\d{4}-\d{2}-\d{2}$/.test(body.pago_em) ? body.pago_em : hoje;
 
@@ -112,6 +123,7 @@ export async function PATCH(
       forma_pagamento: forma,
       pago_em: pagoEm,
       cheque_id: chequeId,
+      conta_id: forma === "cheque" ? null : contaId,
     })
     .eq("id", id)
     .in("status", ["prevista", "a_pagar"])

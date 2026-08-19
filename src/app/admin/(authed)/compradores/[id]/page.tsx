@@ -6,6 +6,7 @@ import {
   buscarRecebimentos,
   buscarCheques,
 } from "@/lib/admin/queries";
+import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { FichaComprador } from "@/components/admin/FichaComprador";
 
 export const dynamic = "force-dynamic";
@@ -17,12 +18,19 @@ export default async function FichaCompradorPage({
 }) {
   const { id } = await params;
 
-  const [compradores, vendas, recebimentos, cheques] = await Promise.all([
-    buscarCompradores(),
-    buscarVendas({ compradorId: id }),
-    buscarRecebimentos(id),
-    buscarCheques({ compradorId: id }),
-  ]);
+  const [compradores, vendas, recebimentos, cheques, contasFin] =
+    await Promise.all([
+      buscarCompradores(),
+      buscarVendas({ compradorId: id }),
+      buscarRecebimentos(id),
+      buscarCheques({ compradorId: id }),
+      buscarContasFinanceiras(),
+    ]);
+  const opcoesConta = contasFin.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    tipo: c.tipo,
+  }));
 
   const comprador = compradores.find((c) => c.id === id);
   if (!comprador) notFound();
@@ -41,6 +49,7 @@ export default async function FichaCompradorPage({
       </p>
 
       <FichaComprador
+        contas={opcoesConta}
         comprador={comprador}
         vendas={vendas}
         recebimentos={recebimentos}

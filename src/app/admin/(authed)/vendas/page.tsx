@@ -4,6 +4,7 @@ import {
   buscarEstoque,
   buscarVeiculos,
 } from "@/lib/admin/queries";
+import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { VendaPainel } from "@/components/admin/VendaPainel";
 import { formatBRL } from "@/lib/format";
 
@@ -11,12 +12,20 @@ export const dynamic = "force-dynamic";
 
 export default async function VendasPage() {
 
-  const [vendas, compradores, estoque, veiculos] = await Promise.all([
-    buscarVendas(),
-    buscarCompradores(),
-    buscarEstoque(),
-    buscarVeiculos(),
-  ]);
+  const [vendas, compradores, estoque, veiculos, contasFin] =
+    await Promise.all([
+      buscarVendas(),
+      buscarCompradores(),
+      buscarEstoque(),
+      buscarVeiculos(),
+      buscarContasFinanceiras(),
+    ]);
+  const opcoesConta = contasFin.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    tipo: c.tipo,
+  }));
+
 
   const totalKg = vendas.reduce((s, v) => s + v.peso_total_kg, 0);
   const totalValor = vendas.reduce((s, v) => s + v.valor_total, 0);
@@ -58,6 +67,7 @@ export default async function VendasPage() {
       )}
 
       <VendaPainel
+        contasFinanceiras={opcoesConta}
         vendas={vendas}
         compradores={compradores}
         estoque={estoque}

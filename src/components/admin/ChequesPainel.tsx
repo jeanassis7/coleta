@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatData } from "@/lib/format";
 import { ModalConfirmar, ModalInputTexto } from "@/components/admin/Modais";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import type { Cheque, StatusCheque } from "@/lib/admin/queries";
 
 const ROTULO: Record<StatusCheque, string> = {
@@ -32,7 +33,13 @@ function diasAte(bomPara: string): number {
   return Math.round((alvo.getTime() - hojeBr().getTime()) / 86400000);
 }
 
-export function ChequesPainel({ cheques }: { cheques: Cheque[] }) {
+export function ChequesPainel({
+  cheques,
+  contas,
+}: {
+  cheques: Cheque[];
+  contas: ContaOpcao[];
+}) {
   const [filtro, setFiltro] = useState<"ativos" | "todos">("ativos");
 
   // "Ativo" = ainda mexe com dinheiro. Compensado e repassado já acabaram
@@ -112,26 +119,39 @@ export function ChequesPainel({ cheques }: { cheques: Cheque[] }) {
         ))}
       </div>
 
-      <Tabela cheques={visiveis} />
+      <Tabela cheques={visiveis} contas={contas} />
     </>
   );
 }
 
-function Tabela({ cheques }: { cheques: Cheque[] }) {
+function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }) {
   const router = useRouter();
   const [acao, setAcao] = useState<{ cheque: Cheque; tipo: string } | null>(null);
   const [repassando, setRepassando] = useState<Cheque | null>(null);
+  // Compensar tem modal próprio: é o único momento em que o cheque vira
+  // dinheiro numa conta, e precisa dizer em QUAL.
+  const [compensando, setCompensando] = useState<Cheque | null>(null);
+  const [contaCompensou, setContaCompensou] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  async function executar(cheque: Cheque, tipo: string, repassadoPara?: string) {
+  async function executar(
+    cheque: Cheque,
+    tipo: string,
+    repassadoPara?: string,
+    contaId?: string
+  ) {
     setLoading(true);
     setErro(null);
     try {
       const res = await fetch(`/api/admin/cheques/${cheque.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao: tipo, repassado_para: repassadoPara }),
+        body: JSON.stringify({
+          acao: tipo,
+          repassado_para: repassadoPara,
+          conta_id: contaId,
+        }),
       });
       const resposta = await res.json();
       if (!res.ok) {
@@ -143,6 +163,7 @@ function Tabela({ cheques }: { cheques: Cheque[] }) {
       setLoading(false);
       setAcao(null);
       setRepassando(null);
+      setCompensando(null);
     }
   }
 
@@ -236,7 +257,7 @@ function Tabela({ cheques }: { cheques: Cheque[] }) {
                     )}
                     {c.status === "depositado" && (
                       <button
-                        onClick={() => setAcao({ cheque: c, tipo: "compensar" })}
+                        onClick={() => setCompensando(c)}
                         className="text-verde hover:underline"
                       >
                         Compensou
@@ -286,6 +307,52 @@ function Tabela({ cheques }: { cheques: Cheque[] }) {
           onConfirmar={() => executar(acao.cheque, acao.tipo)}
           onFechar={() => setAcao(null)}
         />
+      )}
+
+      {compensando && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div>
+              <h2 className="text-lg font-bold">O dinheiro caiu na conta?</h2>
+              <p className="text-sm text-cinza-suave mt-1">
+                {compensando.banco} · {formatBRL(compensando.valor)}. A partir
+                daqui esse dinheiro é caixa de verdade — por isso preciso saber
+                em qual conta ele entrou.
+              </p>
+            </div>
+
+            <SelectConta
+              contas={contas}
+              valor={contaCompensou}
+              onChange={setContaCompensou}
+              label="Caiu em qual conta"
+            />
+
+            {erro && (
+              <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                {erro}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setCompensando(null)}
+                className="px-4 py-2 text-cinza-suave hover:underline"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() =>
+                  executar(compensando, "compensar", undefined, contaCompensou)
+                }
+                disabled={loading || !contaCompensou}
+                className="btn-primario disabled:opacity-40"
+              >
+                {loading ? "Salvando…" : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {repassando && (

@@ -1,14 +1,22 @@
 import { buscarCheques, buscarCompradores } from "@/lib/admin/queries";
+import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { ChequesPainel } from "@/components/admin/ChequesPainel";
 import { LoteChequesPainel } from "@/components/admin/LoteChequesPainel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChequesPage() {
-  const [cheques, compradores] = await Promise.all([
+  const [cheques, compradores, contasFin] = await Promise.all([
     buscarCheques(),
     buscarCompradores(),
+    buscarContasFinanceiras(),
   ]);
+  const opcoesConta = contasFin.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    tipo: c.tipo,
+  }));
+
 
   // A leitura por foto é atalho, não dependência: sem a chave no servidor a
   // tela some o botão e o lançamento manual segue funcionando igual.
@@ -28,7 +36,7 @@ export default async function ChequesPage() {
         ocrDisponivel={ocrDisponivel}
       />
 
-      <ChequesPainel cheques={cheques} />
+      <ChequesPainel cheques={cheques} contas={opcoesConta} />
     </div>
   );
 }
