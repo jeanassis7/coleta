@@ -38,6 +38,7 @@ export function Sidebar({
       titulo: "OPERAÇÃO",
       icone: "🚚",
       itens: [
+        { href: "/admin/caixa", label: "Caixa" },
         { href: "/admin/estoque", label: "Estoque" },
         { href: "/admin/vendas", label: "Vendas" },
         { href: "/admin/cheques", label: "Cheques" },

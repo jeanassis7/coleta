@@ -634,6 +634,84 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ───────────────────────────────────────────────── 3f. caixa (contas e saldos)
+console.log("\n🔬 CAIXA (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role = 'admin' and ativo = true limit 1"
+  );
+  const { rows: [mot] } = await client.query(
+    "select id from public.profiles where role = 'motorista' limit 1"
+  );
+
+  const conta = async (nome, tipo, inicial, diasAtras) => (await client.query(
+    `insert into public.contas_financeiras (nome,tipo,saldo_inicial,saldo_inicial_em)
+     values ($1,$2,$3, current_date - $4::int) returning id`,
+    [nome, tipo, inicial, diasAtras]
+  )).rows[0].id;
+
+  const esp = await conta("E2E Espécie", "especie", 10000, 30);
+  const bb  = await conta("E2E Banco",   "banco",   50000, 30);
+
+  const saldoDe = async (id) => Number((await client.query(
+    "select saldo from public.saldo_contas() where conta_id = $1", [id]
+  )).rows[0].saldo);
+
+  checar("saldo nasce igual ao saldo inicial", await saldoDe(esp), 10000);
+
+  // Saque: sai do banco, entra na espécie. Tem que mover OS DOIS lados.
+  await client.query(
+    `insert into public.transferencias (conta_origem_id,conta_destino_id,valor,data,descricao,registrado_por)
+     values ($1,$2,5000,current_date,'Saque E2E',$3)`, [bb, esp, perfil.id]
+  );
+  checar("saque entra na espécie", await saldoDe(esp), 15000);
+  checar("saque sai do banco",     await saldoDe(bb),  45000);
+
+  // Adiantamento sai do caixa de onde saiu o dinheiro.
+  await client.query(
+    `insert into public.adiantamentos (motorista_id,valor,data_envio,forma_pagamento,registrado_por,status,conta_id)
+     values ($1,3000,current_date,'dinheiro',$2,'aceito',$3)`, [mot.id, perfil.id, esp]
+  );
+  checar("adiantamento sai da conta de origem", await saldoDe(esp), 12000);
+
+  // CANCELADO não saiu: o dinheiro nunca foi entregue.
+  await client.query(
+    `insert into public.adiantamentos (motorista_id,valor,data_envio,forma_pagamento,registrado_por,status,conta_id)
+     values ($1,9999,current_date,'dinheiro',$2,'cancelado',$3)`, [mot.id, perfil.id, esp]
+  );
+  checar("adiantamento CANCELADO não sai do caixa", await saldoDe(esp), 12000);
+
+  // Antes do corte já está embutido no saldo inicial — somar de novo dobraria.
+  await client.query(
+    `insert into public.transferencias (conta_origem_id,conta_destino_id,valor,data,descricao,registrado_por)
+     values ($1,$2,7777, current_date - 60,'antes do corte',$3)`, [bb, esp, perfil.id]
+  );
+  checar("movimento ANTES do corte é ignorado", await saldoDe(esp), 12000);
+
+  // Acerto devolve dinheiro da mão do motorista PRO caixa: é entrada.
+  await client.query(
+    `insert into public.acertos (motorista_id,corte_em,valor_devolvido,valor_vale,valor_saldo,registrado_por,conta_id)
+     values ($1, now(), 500, 0, 0, $2, $3)`, [mot.id, perfil.id, esp]
+  );
+  checar("acerto devolvido entra no caixa", await saldoDe(esp), 12500);
+
+  // Origem igual ao destino é dinheiro que não anda — o banco recusa.
+  let mesmaConta = false;
+  try {
+    await client.query("savepoint spc");
+    await client.query(
+      `insert into public.transferencias (conta_origem_id,conta_destino_id,valor,data,registrado_por)
+       values ($1,$1,100,current_date,$2)`, [esp, perfil.id]
+    );
+    mesmaConta = true;
+    await client.query("rollback to spc");
+  } catch { await client.query("rollback to spc"); }
+  afirmar("transferir pra própria conta é barrado", !mesmaConta);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"
