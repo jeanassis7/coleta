@@ -1,22 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { podeAcessarAdmin, isDev } from "@/lib/auth/roles";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
-async function exigirAdmin() {
-  const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, ativo")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!profile || !profile.ativo || !podeAcessarAdmin(profile)) return null;
-  return { user, profile };
-}
 
 export async function POST(req: NextRequest) {
   const auth = await exigirAdmin();
@@ -27,7 +12,6 @@ export async function POST(req: NextRequest) {
     email?: string;
     senha?: string;
     role?: string;
-    is_teste?: boolean;
   };
   try {
     body = await req.json();
@@ -39,8 +23,6 @@ export async function POST(req: NextRequest) {
   const email = body.email?.trim().toLowerCase();
   const senha = body.senha;
   const role = body.role === "admin" ? "admin" : "motorista";
-  // Motorista de teste: só o dev cria (fica invisível em dashboards)
-  const is_teste = isDev(auth.profile) && body.is_teste === true;
 
   if (!nome || !email || !senha) {
     return NextResponse.json(
@@ -55,7 +37,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const admin = getSupabaseAdmin(auth.user?.id ?? null);
+  const admin = getSupabaseAdmin(auth.id);
   const { data: created, error: errAuth } = await admin.auth.admin.createUser({
     email,
     password: senha,
@@ -76,7 +58,6 @@ export async function POST(req: NextRequest) {
     ativo: true,
     exige_foto: false,
     senha_visivel: senha,
-    is_teste,
   });
 
   if (errProfile) {

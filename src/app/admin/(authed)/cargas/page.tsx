@@ -1,15 +1,13 @@
 import { buscarCargas } from "@/lib/admin/queries";
 import { TabelaCargas } from "@/components/admin/TabelaCargas";
 import { ExportCsv } from "@/components/admin/ExportCsv";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatDataHora } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function CargasPage() {
-  const { ehDev } = await exigirAcessoModulo1OuRedirect();
   // Dev vê cargas de motorista de teste (com badge 🧪); admin nunca vê.
-  const cargas = await buscarCargas({ incluirTeste: ehDev });
+  const cargas = await buscarCargas();
 
   const linhasCsv = cargas.map((c) => {
     const kmRodado =

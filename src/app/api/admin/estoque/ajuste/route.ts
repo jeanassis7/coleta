@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { exigirAcessoModulo1 } from "@/lib/auth/gate-modulo1";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 // Módulo 2 herda o gate do Módulo 1 (dev-only até o Evaner liberar).
-const exigirAdmin = exigirAcessoModulo1;
-
 /**
  * POST: registra um inventário (ou a abertura) do estoque.
  *

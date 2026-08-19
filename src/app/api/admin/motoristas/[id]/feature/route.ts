@@ -1,39 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { isDev } from "@/lib/auth/roles";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 /**
  * PATCH /api/admin/motoristas/:id/feature
  * Body: { feature: string, valor: boolean }
  *
  * Liga/desliga uma feature dentro de profiles.features (jsonb).
- * SÓ dev pode chamar (features em teste ficam invisíveis pro admin
- * até serem "promovidas" — se admin quiser ligar, será via toggle
- * dedicado na tela de motoristas, não aqui).
+ *
+ * Era dev-only enquanto o papel `dev` existia. Agora é do admin: o ciclo
+ * de uma feature é ligar num motorista, acompanhar alguns dias e estender
+ * pros outros — isso é trabalho de gestão, não de desenvolvimento.
  */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, ativo")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!isDev(profile) || !profile?.ativo) {
-    return NextResponse.json(
-      { error: "apenas dev pode alterar features" },
-      { status: 403 }
-    );
-  }
+  const user = await exigirAdmin();
+  if (!user) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const { id } = await params;
   const body = await req.json();

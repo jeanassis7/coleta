@@ -61,7 +61,7 @@ export default async function EventosPage({
   if (motoristaId !== "todos") q = q.eq("motorista_id", motoristaId);
 
   const { data: eventos } = await q;
-  const motoristas = await buscarMotoristas({ incluirTeste: true });
+  const motoristas = await buscarMotoristas();
 
   // Filtros: mantém querystring
   function linkParam(key: string, value: string) {

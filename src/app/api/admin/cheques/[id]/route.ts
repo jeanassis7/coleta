@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { exigirAcessoModulo1 } from "@/lib/auth/gate-modulo1";
-
-const exigirAdmin = exigirAcessoModulo1;
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 /**
  * O cheque tem DOIS RELÓGIOS:

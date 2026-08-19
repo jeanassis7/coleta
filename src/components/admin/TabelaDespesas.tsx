@@ -70,9 +70,6 @@ export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
               </td>
               <td className="py-2 pr-3 whitespace-nowrap">
                 {d.motorista_nome}
-                {d.motorista_is_teste && (
-                  <span title="Motorista de teste — invisível pro admin"> 🧪</span>
-                )}
               </td>
               <td className="py-2 pr-3 font-mono">{d.caminhao_placa}</td>
               <td className="py-2 pr-3">{d.descricao}</td>

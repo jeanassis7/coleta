@@ -1,11 +1,9 @@
 import { buscarCheques } from "@/lib/admin/queries";
 import { ChequesPainel } from "@/components/admin/ChequesPainel";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChequesPage() {
-  await exigirAcessoModulo1OuRedirect();
   const cheques = await buscarCheques();
 
   return (

@@ -1,11 +1,9 @@
 import { buscarCompradores } from "@/lib/admin/queries";
 import { CompradoresPainel } from "@/components/admin/CompradoresPainel";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
 export default async function CompradoresPage() {
-  await exigirAcessoModulo1OuRedirect();
   const compradores = await buscarCompradores();
 
   return (

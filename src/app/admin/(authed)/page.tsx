@@ -15,7 +15,6 @@ import {
   type CargaDetalhada,
 } from "@/lib/admin/queries";
 import { buscarAlertas, type Alerta } from "@/lib/admin/alertas";
-import { acessoModulo1Atual } from "@/lib/auth/gate-modulo1";
 import { formatData } from "@/lib/format";
 import { Filtros } from "@/components/admin/Filtros";
 import { KpiCardsComDelta } from "@/components/admin/KpiCardsComDelta";
@@ -49,26 +48,17 @@ export default async function AdminDashboardPage({
     buscarMotoristas(),
   ]);
 
-  // Painel de operação do Módulo 1 — invisível pro Jean até a promoção
-  // (flip em gate-modulo1.ts). Dev vê inclusive dados de teste.
-  const { temAcesso: verModulo1, ehDev } = await acessoModulo1Atual();
-  let cargasAtivas: CargaDetalhada[] = [];
-  let cargasTodas: CargaDetalhada[] = [];
-  let alertas: Alerta[] = [];
+  // Painel de operação. Uma busca de cargas só (as ativas saem daqui por
+  // filtro em memória) e os saldos calculados UMA vez, repassados pros
+  // alertas — antes o dashboard fazia tudo em dobro e demorava ~4s.
+  const [cargasTodas, saldos] = await Promise.all([
+    buscarCargas(),
+    buscarMotoristasComSaldo(),
+  ]);
+  const cargasAtivas = cargasTodas.filter((c) => c.status === "ativa");
   const saldoPorMotorista = new Map<string, number | null>();
-  if (verModulo1) {
-    // Uma busca de cargas só (as ativas saem daqui por filtro em memória)
-    // e os saldos são calculados UMA vez e repassados pros alertas —
-    // antes o dashboard fazia tudo em dobro e demorava ~4s.
-    const [todas, saldos] = await Promise.all([
-      buscarCargas({ incluirTeste: ehDev }),
-      buscarMotoristasComSaldo({ incluirTeste: ehDev }),
-    ]);
-    cargasTodas = todas;
-    cargasAtivas = todas.filter((c) => c.status === "ativa");
-    for (const s of saldos) saldoPorMotorista.set(s.id, s.saldo_atual);
-    alertas = await buscarAlertas({ incluirTeste: ehDev, saldos });
-  }
+  for (const s of saldos) saldoPorMotorista.set(s.id, s.saldo_atual);
+  const alertas = await buscarAlertas({ saldos });
 
   const motoristasMotoristas = motoristas.filter((m) => m.role === "motorista");
   const kpisAtuais = calcularKpis(coletas);
@@ -121,16 +111,12 @@ export default async function AdminDashboardPage({
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
 
       {/* Operação agora — antes dos filtros porque não depende de período */}
-      {verModulo1 && (
-        <>
-          <CardAlertas alertas={alertas} />
-          <CardCargasAtivas
-            cargas={cargasAtivas}
-            saldoPorMotorista={saldoPorMotorista}
-          />
-          <CardDescargasRecentes cargas={cargasTodas} />
-        </>
-      )}
+      <CardAlertas alertas={alertas} />
+      <CardCargasAtivas
+        cargas={cargasAtivas}
+        saldoPorMotorista={saldoPorMotorista}
+      />
+      <CardDescargasRecentes cargas={cargasTodas} />
 
       <Filtros
         motoristas={motoristasMotoristas}
@@ -142,7 +128,7 @@ export default async function AdminDashboardPage({
         kpisAtuais={kpisAtuaisComCompras}
         kpisAnterior={kpisAnteriorComCompras}
         periodo={filtros.periodo}
-        compraDireta={verModulo1 ? compraAtual : null}
+        compraDireta={compraAtual}
       />
 
       {/* Volume por motorista */}

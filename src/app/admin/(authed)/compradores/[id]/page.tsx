@@ -7,7 +7,6 @@ import {
   buscarCheques,
 } from "@/lib/admin/queries";
 import { FichaComprador } from "@/components/admin/FichaComprador";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +15,6 @@ export default async function FichaCompradorPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await exigirAcessoModulo1OuRedirect();
   const { id } = await params;
 
   const [compradores, vendas, recebimentos, cheques] = await Promise.all([

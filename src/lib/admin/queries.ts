@@ -134,12 +134,9 @@ async function buscarColetasDoIntervalo(
   motoristaId?: string
 ): Promise<ColetaCompleta[]> {
   const supabase = await getSupabaseServer();
-  // !inner + filtro em profiles.is_teste EXCLUI coletas de motoristas de teste
-  // do dashboard/KPI. Ver /admin/eventos/motoristas pra visualização com testes.
   let q = supabase
     .from("coletas")
-    .select("*, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)")
-    .eq("profiles.is_teste", false)
+    .select("*, profiles!coletas_motorista_id_fkey!inner(nome)")
     .gte("criado_em", inicio.toISOString())
     .lte("criado_em", fim.toISOString())
     .order("criado_em", { ascending: false });
@@ -163,41 +160,14 @@ export async function buscarColetasAnterior(filtros: FiltrosDashboard) {
   return buscarColetasDoIntervalo(inicio, fim, filtros.motorista);
 }
 
-/**
- * Lista motoristas cadastrados. Por padrão EXCLUI motoristas de teste
- * (is_teste=true) pra não contaminar dashboards/dropdowns. Passar
- * { incluirTeste: true } quando a tela precisa mostrar todos
- * (ex: /admin/motoristas, /admin/dev/features).
- */
-export async function buscarMotoristas(
-  opts: { incluirTeste?: boolean } = {}
-) {
-  const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("profiles")
-    .select(
-      "id, nome, role, ativo, exige_foto, senha_visivel, is_teste, features, mostra_saldo_app, criado_em"
-    )
-    .order("nome");
-  if (!opts.incluirTeste) {
-    q = q.eq("is_teste", false);
-  }
-  const { data, error } = await q;
-  if (error) throw error;
-  return data || [];
-}
-
-/**
- * Só motoristas de teste (is_teste=true, role=motorista).
- * Usado no painel dev /admin/dev/features.
- */
-export async function buscarMotoristasTeste() {
+/** Lista todos os perfis cadastrados (motoristas e admins), por nome. */
+export async function buscarMotoristas() {
   const supabase = await getSupabaseServer();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, nome, features, mostra_saldo_app, criado_em")
-    .eq("role", "motorista")
-    .eq("is_teste", true)
+    .select(
+      "id, nome, role, ativo, exige_foto, senha_visivel, features, mostra_saldo_app, criado_em"
+    )
     .order("nome");
   if (error) throw error;
   return data || [];
@@ -235,7 +205,6 @@ export interface CargaDetalhada {
   id: string;
   motorista_id: string;
   motorista_nome: string;
-  motorista_is_teste: boolean;
   caminhao_id: string;
   caminhao_placa: string;
   caminhao_marca: string;
@@ -273,7 +242,7 @@ export interface CargaDetalhada {
  * Filtra motoristas de teste por padrão.
  */
 export async function buscarCargas(
-  opts: { incluirTeste?: boolean; status?: "ativa" | "encerrada" | "cancelada"; motorista_id?: string } = {}
+  opts: { status?: "ativa" | "encerrada" | "cancelada"; motorista_id?: string } = {}
 ): Promise<CargaDetalhada[]> {
   const supabase = await getSupabaseServer();
   let q = supabase
@@ -281,7 +250,7 @@ export async function buscarCargas(
     .select(
       `id, motorista_id, caminhao_id, km_inicial, km_final, status,
        iniciada_em, encerrada_em,
-       profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+       profiles!cargas_motorista_id_fkey!inner(nome),
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
        coletas(id, litros, valor_pago),
        despesas(id, valor),
@@ -289,8 +258,6 @@ export async function buscarCargas(
        descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
     )
     .order("iniciada_em", { ascending: false });
-
-  if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
   if (opts.status) q = q.eq("status", opts.status);
   if (opts.motorista_id) q = q.eq("motorista_id", opts.motorista_id);
 
@@ -306,7 +273,7 @@ export async function buscarCargas(
     status: "ativa" | "encerrada" | "cancelada";
     iniciada_em: string;
     encerrada_em: string | null;
-    profiles: { nome: string; is_teste: boolean } | null;
+    profiles: { nome: string } | null;
     caminhoes: { placa: string; marca: string; cor: string; capacidade_l: number; tara_kg: number } | null;
     coletas: { id: string; litros: number; valor_pago: number }[] | null;
     despesas: { id: string; valor: number }[] | null;
@@ -336,7 +303,6 @@ export async function buscarCargas(
       id: r.id,
       motorista_id: r.motorista_id,
       motorista_nome: r.profiles?.nome || "—",
-      motorista_is_teste: !!r.profiles?.is_teste,
       caminhao_id: r.caminhao_id,
       caminhao_placa: r.caminhoes?.placa || "—",
       caminhao_marca: r.caminhoes?.marca || "",
@@ -372,7 +338,6 @@ export interface FiltrosOperacaoParams {
   fim?: string;
   motorista?: string;
   caminhao?: string;
-  incluirTeste?: boolean;
 }
 
 /** Intervalo do filtro; null = "tudo" (sem recorte de data). */
@@ -393,7 +358,6 @@ export interface AbastecimentoAdmin {
   id: string;
   carga_id: string;
   motorista_nome: string;
-  motorista_is_teste: boolean;
   caminhao_placa: string;
   posto_nome: string;
   litros: number;
@@ -405,7 +369,7 @@ export interface AbastecimentoAdmin {
 
 /**
  * Abastecimentos, mais recente primeiro. O admin pode editar e apagar
- * (motorista lançou errado mesmo com antiburro). incluirTeste = dev.
+ * (motorista lançou errado mesmo com antiburro).
  */
 export async function buscarAbastecimentos(
   opts: FiltrosOperacaoParams = {}
@@ -415,12 +379,11 @@ export async function buscarAbastecimentos(
     .from("abastecimentos")
     .select(
       `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em,
-       profiles!abastecimentos_motorista_id_fkey!inner(nome, is_teste),
+       profiles!abastecimentos_motorista_id_fkey!inner(nome),
        cargas!inner(caminhao_id, caminhoes(placa))`
     )
     .order("criado_em", { ascending: false })
     .limit(1000);
-  if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
   if (opts.motorista && opts.motorista !== "todos") {
     q = q.eq("motorista_id", opts.motorista);
   }
@@ -446,7 +409,7 @@ export async function buscarAbastecimentos(
     km_atual: number;
     foto_path: string | null;
     criado_em: string;
-    profiles: { nome: string; is_teste: boolean } | null;
+    profiles: { nome: string } | null;
     cargas: { caminhoes: { placa: string } | null } | null;
   };
   const rows = (data as unknown as Row[]) || [];
@@ -454,7 +417,6 @@ export async function buscarAbastecimentos(
     id: r.id,
     carga_id: r.carga_id,
     motorista_nome: r.profiles?.nome || "—",
-    motorista_is_teste: !!r.profiles?.is_teste,
     caminhao_placa: r.cargas?.caminhoes?.placa || "—",
     posto_nome: r.posto_nome,
     litros: Number(r.litros),
@@ -469,7 +431,6 @@ export interface DespesaAdmin {
   id: string;
   carga_id: string;
   motorista_nome: string;
-  motorista_is_teste: boolean;
   caminhao_placa: string;
   valor: number;
   descricao: string;
@@ -486,12 +447,11 @@ export async function buscarDespesas(
     .from("despesas")
     .select(
       `id, carga_id, valor, descricao, foto_path, criado_em,
-       profiles!despesas_motorista_id_fkey!inner(nome, is_teste),
+       profiles!despesas_motorista_id_fkey!inner(nome),
        cargas!inner(caminhao_id, caminhoes(placa))`
     )
     .order("criado_em", { ascending: false })
     .limit(1000);
-  if (!opts.incluirTeste) q = q.eq("profiles.is_teste", false);
   if (opts.motorista && opts.motorista !== "todos") {
     q = q.eq("motorista_id", opts.motorista);
   }
@@ -515,7 +475,7 @@ export async function buscarDespesas(
     descricao: string;
     foto_path: string | null;
     criado_em: string;
-    profiles: { nome: string; is_teste: boolean } | null;
+    profiles: { nome: string } | null;
     cargas: { caminhoes: { placa: string } | null } | null;
   };
   const rows = (data as unknown as Row[]) || [];
@@ -523,7 +483,6 @@ export async function buscarDespesas(
     id: r.id,
     carga_id: r.carga_id,
     motorista_nome: r.profiles?.nome || "—",
-    motorista_is_teste: !!r.profiles?.is_teste,
     caminhao_placa: r.cargas?.caminhoes?.placa || "—",
     valor: Number(r.valor),
     descricao: r.descricao,
@@ -612,7 +571,6 @@ export interface CargaCompleta {
   id: string;
   motorista_id: string;
   motorista_nome: string;
-  motorista_is_teste: boolean;
   caminhao_placa: string;
   caminhao_marca: string;
   caminhao_cor: string;
@@ -680,7 +638,7 @@ export async function buscarCargaCompleta(
     .select(
       `id, motorista_id, km_inicial, km_final, status, iniciada_em, encerrada_em,
        foto_painel_path,
-       profiles!cargas_motorista_id_fkey(nome, is_teste),
+       profiles!cargas_motorista_id_fkey(nome),
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
        coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
        despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),
@@ -701,7 +659,6 @@ export async function buscarCargaCompleta(
     id: r.id,
     motorista_id: r.motorista_id,
     motorista_nome: r.profiles?.nome || "—",
-    motorista_is_teste: !!r.profiles?.is_teste,
     caminhao_placa: r.caminhoes?.placa || "—",
     caminhao_marca: r.caminhoes?.marca || "",
     caminhao_cor: r.caminhoes?.cor || "",
@@ -751,7 +708,6 @@ export interface Acerto {
 export interface MotoristaComSaldo {
   id: string;
   nome: string;
-  is_teste: boolean;
   saldo_atual: number;
   ultimo_adiantamento: Adiantamento | null;
   pular_contador_atual: number;
@@ -764,24 +720,18 @@ export interface MotoristaComSaldo {
  *       − despesas.valor (desde corte)
  *       − abastecimentos.valor (desde corte)
  *       + valor_saldo do último acerto (carry-over)
- *
- * incluirTeste: dev vê motoristas de teste (com badge na UI) pra poder
- * testar adiantamentos; admin nunca vê.
  */
-export async function buscarMotoristasComSaldo(
-  opts: { incluirTeste?: boolean } = {}
-): Promise<MotoristaComSaldo[]> {
+export async function buscarMotoristasComSaldo(): Promise<MotoristaComSaldo[]> {
   const supabase = await getSupabaseServer();
 
   // 3 idas ao banco no total, não importa quantos motoristas existam.
   // (Antes: ~7 por motorista, em fila — era o que fazia o painel demorar.)
-  let qM = supabase
+  const qM = supabase
     .from("profiles")
-    .select("id, nome, is_teste")
+    .select("id, nome")
     .eq("role", "motorista")
     .eq("ativo", true)
     .order("nome");
-  if (!opts.incluirTeste) qM = qM.eq("is_teste", false);
 
   const [{ data: motoristas, error: errM }, { data: saldos }, { data: adiantamentos }] =
     await Promise.all([
@@ -815,7 +765,6 @@ export async function buscarMotoristasComSaldo(
   return (motoristas || []).map((m) => ({
     id: m.id,
     nome: m.nome,
-    is_teste: !!m.is_teste,
     saldo_atual: saldoPorId.get(m.id) ?? 0,
     ultimo_adiantamento: ultimoPorId.get(m.id) ?? null,
     pular_contador_atual: pendentePorId.get(m.id)?.pular_contador ?? 0,
@@ -850,10 +799,8 @@ export async function buscarHistoricoAdiantamentos(motoristaId: string) {
  * Usa o cliente service_role pra listar os usuários do Auth e casar por id.
  * Só usar em telas de admin — faz uma chamada extra ao Auth.
  */
-export async function buscarMotoristasComEmail(
-  opts: { incluirTeste?: boolean } = {}
-) {
-  const motoristas = await buscarMotoristas(opts);
+export async function buscarMotoristasComEmail() {
+  const motoristas = await buscarMotoristas();
   const admin = getSupabaseAdmin();
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const emailPorId = new Map(

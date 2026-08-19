@@ -5,12 +5,10 @@ import {
   resumoContasAPagar,
 } from "@/lib/admin/queries";
 import { ContasPainel } from "@/components/admin/ContasPainel";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContasPage() {
-  await exigirAcessoModulo1OuRedirect();
 
   const [contas, recorrentes, chequesCarteira, resumo] = await Promise.all([
     buscarContasAPagar(),

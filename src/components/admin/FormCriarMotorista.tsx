@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function FormCriarMotorista({ ehDev = false }: { ehDev?: boolean }) {
+export function FormCriarMotorista() {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [carregando, setCarregando] = useState(false);
@@ -11,7 +11,6 @@ export function FormCriarMotorista({ ehDev = false }: { ehDev?: boolean }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [role, setRole] = useState<"motorista" | "admin">("motorista");
-  const [isTeste, setIsTeste] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   // Auto-gera email a partir do nome
@@ -31,7 +30,7 @@ export function FormCriarMotorista({ ehDev = false }: { ehDev?: boolean }) {
       const res = await fetch("/api/admin/motoristas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome, email, senha, role, is_teste: isTeste }),
+        body: JSON.stringify({ nome, email, senha, role }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -42,7 +41,6 @@ export function FormCriarMotorista({ ehDev = false }: { ehDev?: boolean }) {
       setEmail("");
       setSenha("");
       setRole("motorista");
-      setIsTeste(false);
       setAberto(false);
       router.refresh();
     } catch (err) {
@@ -108,23 +106,6 @@ export function FormCriarMotorista({ ehDev = false }: { ehDev?: boolean }) {
           <option value="admin">Admin</option>
         </select>
       </div>
-      {ehDev && role === "motorista" && (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isTeste}
-            onChange={(e) => setIsTeste(e.target.checked)}
-            className="w-5 h-5 cursor-pointer"
-          />
-          <span className="text-sm">
-            🧪 Motorista de teste
-            <span className="text-cinza-suave block text-xs">
-              Não aparece em dashboards, KPIs nem curadoria — só pra você validar
-              features
-            </span>
-          </span>
-        </label>
-      )}
       {erro && (
         <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
           {erro}

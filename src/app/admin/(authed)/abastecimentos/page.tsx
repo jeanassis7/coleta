@@ -7,7 +7,6 @@ import { TabelaAbastecimentos } from "@/components/admin/TabelaAbastecimentos";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
 import { ExportCsv } from "@/components/admin/ExportCsv";
 import { BotaoLancamentoAvulso } from "@/components/admin/BotaoLancamentoAvulso";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -17,19 +16,17 @@ export default async function AbastecimentosPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const { ehDev } = await exigirAcessoModulo1OuRedirect();
   const params = await searchParams;
 
   const [abastecimentos, motoristas, caminhoes] = await Promise.all([
     buscarAbastecimentos({
-      incluirTeste: ehDev,
       periodo: params.periodo,
       inicio: params.inicio,
       fim: params.fim,
       motorista: params.motorista,
       caminhao: params.caminhao,
     }),
-    buscarMotoristas({ incluirTeste: ehDev }),
+    buscarMotoristas(),
     buscarCaminhoes(),
   ]);
 
@@ -74,7 +71,7 @@ export default async function AbastecimentosPage({
       <FiltrosOperacao
         motoristas={motoristas
           .filter((m) => m.role === "motorista")
-          .map((m) => ({ id: m.id, nome: m.is_teste ? `${m.nome} 🧪` : m.nome }))}
+          .map((m) => ({ id: m.id, nome: m.nome }))}
         caminhoes={caminhoes.map((c) => ({
           id: c.id,
           nome: `${c.placa} ${c.marca}`,

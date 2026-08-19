@@ -2,7 +2,6 @@ import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { buscarCargaCompleta } from "@/lib/admin/queries";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { LinhaDoTempoCarga } from "@/components/admin/LinhaDoTempoCarga";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
@@ -23,7 +22,6 @@ export default async function CargaDetalhePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await exigirAcessoModulo1OuRedirect();
   const { id } = await params;
   const carga = await buscarCargaCompleta(id);
   if (!carga) notFound();
@@ -107,7 +105,6 @@ export default async function CargaDetalhePage({
         </Link>
         <h1 className="text-2xl font-bold">
           Carga de {carga.motorista_nome}
-          {carga.motorista_is_teste && <span title="Motorista de teste"> 🧪</span>}
         </h1>
         <StatusBadge status={carga.status} />
       </div>

@@ -4,12 +4,10 @@ import {
   buscarAjustesEstoque,
 } from "@/lib/admin/queries";
 import { EstoquePainel } from "@/components/admin/EstoquePainel";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
 export default async function EstoquePage() {
-  await exigirAcessoModulo1OuRedirect();
 
   const [estoque, movimentos, ajustes] = await Promise.all([
     buscarEstoque(),

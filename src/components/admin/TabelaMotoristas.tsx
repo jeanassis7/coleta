@@ -13,7 +13,6 @@ interface Motorista {
   ativo: boolean;
   exige_foto: boolean;
   senha_visivel: string | null;
-  is_teste?: boolean | null;
   mostra_saldo_app?: boolean | null;
   criado_em: string;
 }
@@ -198,14 +197,6 @@ export function TabelaMotoristas({
                 ) : (
                   <div className="flex items-center gap-2">
                     <span>{m.nome}</span>
-                    {m.is_teste && (
-                      <span
-                        className="text-xs font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300"
-                        title="Motorista de teste — não aparece em dashboards"
-                      >
-                        🧪 TESTE
-                      </span>
-                    )}
                     <button
                       onClick={() => iniciarEdicao(m.id, m.nome)}
                       className="text-cinza-suave hover:text-verde"
@@ -256,9 +247,16 @@ export function TabelaMotoristas({
                 <input
                   type="checkbox"
                   checked={m.ativo}
-                  disabled={loadingId === m.id}
+                  // Admin não se desativa por aqui: perderia o painel na hora
+                  // e não voltaria sozinho. O servidor também recusa.
+                  disabled={loadingId === m.id || m.role === "admin"}
+                  title={
+                    m.role === "admin"
+                      ? "Admin não pode ser desativado pelo painel"
+                      : undefined
+                  }
                   onChange={(e) => atualizar(m.id, { ativo: e.target.checked })}
-                  className="w-5 h-5 cursor-pointer"
+                  className="w-5 h-5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
               <td className="py-3 pr-3">

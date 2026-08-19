@@ -24,13 +24,10 @@ interface Grupo {
  */
 export function Sidebar({
   nome,
-  dev,
-  mostrarModulo1,
   veLog = false,
 }: {
   nome: string;
-  dev: boolean;
-  mostrarModulo1: boolean;
+  /** `profiles.ve_log` — quem enxerga /admin/log. Não é papel, é coluna. */
   veLog?: boolean;
 }) {
   const pathname = usePathname();
@@ -40,19 +37,17 @@ export function Sidebar({
     {
       titulo: "OPERAÇÃO",
       icone: "🚚",
-      itens: mostrarModulo1
-        ? [
-            { href: "/admin/estoque", label: "Estoque" },
-            { href: "/admin/vendas", label: "Vendas" },
-            { href: "/admin/cheques", label: "Cheques" },
-            { href: "/admin/contas", label: "Contas a pagar" },
-            { href: "/admin/cargas", label: "Cargas" },
-            { href: "/admin/abastecimentos", label: "Abastecimentos" },
-            { href: "/admin/despesas", label: "Despesas" },
-            { href: "/admin/compras", label: "Compra direta" },
-            { href: "/admin/adiantamentos", label: "Adiantamentos" },
-          ]
-        : [],
+      itens: [
+        { href: "/admin/estoque", label: "Estoque" },
+        { href: "/admin/vendas", label: "Vendas" },
+        { href: "/admin/cheques", label: "Cheques" },
+        { href: "/admin/contas", label: "Contas a pagar" },
+        { href: "/admin/cargas", label: "Cargas" },
+        { href: "/admin/abastecimentos", label: "Abastecimentos" },
+        { href: "/admin/despesas", label: "Despesas" },
+        { href: "/admin/compras", label: "Compra direta" },
+        { href: "/admin/adiantamentos", label: "Adiantamentos" },
+      ],
     },
     {
       titulo: "ANÁLISE",
@@ -68,12 +63,8 @@ export function Sidebar({
       itens: [
         { href: "/admin/motoristas", label: "Motoristas" },
         { href: "/admin/curadoria", label: "Locais (curadoria)" },
-        ...(mostrarModulo1
-          ? [
-              { href: "/admin/caminhoes", label: "Caminhões" },
-              { href: "/admin/compradores", label: "Compradores" },
-            ]
-          : []),
+        { href: "/admin/caminhoes", label: "Caminhões" },
+        { href: "/admin/compradores", label: "Compradores" },
       ],
     },
     {
@@ -81,7 +72,7 @@ export function Sidebar({
       icone: "⚙️",
       itens: [
         { href: "/admin/eventos", label: "Eventos" },
-        ...(dev ? [{ href: "/admin/dev/features", label: "🧪 Features" }] : []),
+        { href: "/admin/features", label: "Features" },
         ...(veLog ? [{ href: "/admin/log", label: "🔎 Log" }] : []),
       ],
     },
@@ -130,14 +121,6 @@ export function Sidebar({
 
       <div className="border-t border-cinza-borda px-4 py-3 space-y-2">
         <div className="flex items-center gap-2">
-          {dev && (
-            <span
-              className="text-xs font-bold px-2 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-300"
-              title="Você está logado como DEV — vê recursos em teste"
-            >
-              🧪 DEV
-            </span>
-          )}
           <span className="text-sm text-cinza-suave truncate">{nome}</span>
         </div>
         <LogoutButton />

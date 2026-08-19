@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { podeAcessarAdmin } from "@/lib/auth/roles";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
-async function exigirAdmin() {
-  const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, ativo")
-    .eq("id", user.id)
-    .maybeSingle();
-  // podeAcessarAdmin cobre admin E dev. Comparar com "admin" exato
-  // barrava o dev — inclusive da curadoria de locais.
-  if (!profile || !podeAcessarAdmin(profile) || !profile.ativo) return null;
-  return user;
-}
 
 /**
  * POST /api/admin/locais — cria um local canônico a partir de coletas existentes.

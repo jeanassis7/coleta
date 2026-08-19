@@ -2,7 +2,6 @@ import { buscarComprasDiretas } from "@/lib/admin/queries";
 import { CompraDiretaPainel } from "@/components/admin/CompraDiretaPainel";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
 import { ExportCsv } from "@/components/admin/ExportCsv";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatData } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +11,6 @@ export default async function ComprasPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await exigirAcessoModulo1OuRedirect();
   const params = await searchParams;
 
   const compras = await buscarComprasDiretas({

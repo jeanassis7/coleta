@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { exigirAcessoModulo1 } from "@/lib/auth/gate-modulo1";
-
-// Módulo 1 — Estágio 1: dev-only. Promoção pro Jean é um flip em gate-modulo1.ts.
-const exigirAdmin = exigirAcessoModulo1;
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 /**
  * POST: coleta lançada pelo gestor numa carga (o motorista coletou e

@@ -79,9 +79,6 @@ export function TabelaAbastecimentos({
               </td>
               <td className="py-2 pr-3 whitespace-nowrap">
                 {a.motorista_nome}
-                {a.motorista_is_teste && (
-                  <span title="Motorista de teste — invisível pro admin"> 🧪</span>
-                )}
               </td>
               <td className="py-2 pr-3 font-mono">{a.caminhao_placa}</td>
               <td className="py-2 pr-3">{a.posto_nome}</td>

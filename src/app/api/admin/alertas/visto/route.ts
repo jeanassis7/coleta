@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { exigirAcessoModulo1 } from "@/lib/auth/gate-modulo1";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 /**
  * POST { chave } — marca um alerta como visto ("OK, VI").
@@ -8,7 +8,7 @@ import { exigirAcessoModulo1 } from "@/lib/auth/gate-modulo1";
  * registro, a chave é diferente e o alerta aparece de novo.
  */
 export async function POST(req: NextRequest) {
-  const user = await exigirAcessoModulo1();
+  const user = await exigirAdmin();
   if (!user) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = await req.json();

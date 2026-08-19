@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { buscarHistoricoAdiantamentos } from "@/lib/admin/queries";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL, formatDataHora } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +10,12 @@ export default async function HistoricoAdiantamentosPage({
 }: {
   params: Promise<{ motoristaId: string }>;
 }) {
-  await exigirAcessoModulo1OuRedirect();
   const { motoristaId } = await params;
 
   const supabase = await getSupabaseServer();
   const { data: motorista } = await supabase
     .from("profiles")
-    .select("nome, is_teste")
+    .select("nome")
     .eq("id", motoristaId)
     .maybeSingle();
 
@@ -37,9 +35,6 @@ export default async function HistoricoAdiantamentosPage({
         </Link>
         <h1 className="text-2xl font-bold">
           Histórico — {motorista?.nome || "—"}
-          {motorista?.is_teste && (
-            <span title="Motorista de teste"> 🧪</span>
-          )}
         </h1>
       </div>
 

@@ -1,33 +1,33 @@
-export type Role = "motorista" | "admin" | "dev";
+export type Role = "motorista" | "admin";
 
 export interface ProfileMinimo {
   role: Role | string;
   features?: Record<string, unknown> | null;
-  is_teste?: boolean | null;
   mostra_saldo_app?: boolean | null;
 }
 
-/** Só o Jean (admin puro). Usado quando algo é EXCLUSIVO do admin operacional. */
-export function isAdminPuro(p: ProfileMinimo | null | undefined): boolean {
-  return p?.role === "admin";
-}
-
-/** Só o Evaner (dev). Usado pra gate de features em teste/validação. */
-export function isDev(p: ProfileMinimo | null | undefined): boolean {
-  return p?.role === "dev";
-}
-
-/** Admin OU dev. Usado pra permitir acesso ao painel /admin. */
+/**
+ * Admin — o único papel com acesso ao painel.
+ *
+ * Existiu um terceiro papel (`dev`) enquanto os Módulos 1 e 2 eram
+ * invisíveis pro Jean. Depois que o gate caiu, ele virou hierarquia sem
+ * função e foi removido (19/08/2026).
+ *
+ * REGRA QUE FICA: capacidade extra vira COLUNA no cadastro, nunca papel
+ * novo. Hoje existe uma só — `profiles.ve_log`, que diz quem enxerga
+ * /admin/log. Papel responde "entra ou não entra"; coluna responde
+ * "enxerga o quê".
+ */
 export function podeAcessarAdmin(p: ProfileMinimo | null | undefined): boolean {
-  return p?.role === "admin" || p?.role === "dev";
+  return p?.role === "admin";
 }
 
 /**
  * Motorista tem uma feature ligada?
  * Pattern:
- *   - Feature novas nascem default OFF pra todos.
- *   - Dev liga em motorista de teste pra validar.
- *   - Admin liga pros reais gradualmente quando aprova.
+ *   - Feature nova nasce default OFF pra todos.
+ *   - O admin liga num motorista em /admin/features, acompanha alguns dias
+ *     e só então estende pros outros.
  * Ex: hasFeature(profile, "carga")
  */
 export function hasFeature(

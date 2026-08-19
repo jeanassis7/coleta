@@ -24,13 +24,11 @@ export default async function ObservacoesPage({
   const motoristaId = params.motorista || "todos";
 
   const supabase = await getSupabaseServer();
-  // !inner + filtro is_teste: observações de motorista de teste ficam fora
   let q = supabase
     .from("coletas")
     .select(
-      "id, motorista_id, litros, local_nome, valor_pago, observacao, criado_em, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)"
+      "id, motorista_id, litros, local_nome, valor_pago, observacao, criado_em, profiles!coletas_motorista_id_fkey!inner(nome)"
     )
-    .eq("profiles.is_teste", false)
     .not("observacao", "is", null)
     .neq("observacao", "")
     .order("criado_em", { ascending: false })

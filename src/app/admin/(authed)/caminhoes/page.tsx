@@ -1,12 +1,10 @@
 import { buscarCaminhoes } from "@/lib/admin/queries";
 import { FormCaminhao } from "@/components/admin/FormCaminhao";
 import { TabelaCaminhoes } from "@/components/admin/TabelaCaminhoes";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 
 export const dynamic = "force-dynamic";
 
 export default async function CaminhoesPage() {
-  await exigirAcessoModulo1OuRedirect();
   const caminhoes = await buscarCaminhoes();
 
   return (

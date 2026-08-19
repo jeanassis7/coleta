@@ -56,7 +56,6 @@ export interface Profile {
   ativo: boolean;
   exige_foto: boolean;
   senha_visivel: string | null;
-  is_teste?: boolean;
   features?: Record<string, unknown> | null;
   mostra_saldo_app?: boolean;
   criado_em: string;

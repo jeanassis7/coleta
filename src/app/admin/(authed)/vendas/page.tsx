@@ -5,13 +5,11 @@ import {
   buscarVeiculos,
 } from "@/lib/admin/queries";
 import { VendaPainel } from "@/components/admin/VendaPainel";
-import { exigirAcessoModulo1OuRedirect } from "@/lib/auth/gate-modulo1";
 import { formatBRL } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function VendasPage() {
-  await exigirAcessoModulo1OuRedirect();
 
   const [vendas, compradores, estoque, veiculos] = await Promise.all([
     buscarVendas(),

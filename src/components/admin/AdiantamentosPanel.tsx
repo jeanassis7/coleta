@@ -86,11 +86,6 @@ export function AdiantamentosPanel({
                     >
                       {s.nome}
                     </a>
-                    {s.is_teste && (
-                      <span title="Motorista de teste — invisível pro admin">
-                        {" "}🧪
-                      </span>
-                    )}
                     {s.pular_contador_atual >= 10 && (
                       <span className="ml-2 text-xs font-semibold text-yellow-800 bg-yellow-100 border border-yellow-300 rounded px-1.5 py-0.5">
                         ⏸ pulou {s.pular_contador_atual}×

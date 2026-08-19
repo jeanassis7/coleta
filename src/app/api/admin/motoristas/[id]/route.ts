@@ -1,23 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { podeAcessarAdmin } from "@/lib/auth/roles";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
-async function exigirAdmin() {
-  const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, ativo")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!profile || !profile.ativo) return null;
-  if (profile.role !== "admin" && profile.role !== "dev") return null;
-  return user;
-}
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -32,6 +16,30 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // Um cliente só por handler: é o que faz todas as gravações deste clique
   // compartilharem o mesmo id de operação e saírem agrupadas no log.
   const adminClient = getSupabaseAdmin(admin.id);
+
+  // Desativar admin é caminho sem volta. O middleware tranca na hora e não
+  // existe mais o papel `dev` como backdoor — quem se desativar (ou for
+  // desativado) só volta por SQL direto no banco.
+  //
+  // A checagem tem que ser AQUI, não só no checkbox da tela: desabilitar o
+  // input não impede uma chamada direta na API.
+  if (body.ativo === false) {
+    const { data: alvo } = await adminClient
+      .from("profiles")
+      .select("role")
+      .eq("id", id)
+      .maybeSingle();
+    if (alvo?.role === "admin") {
+      return NextResponse.json(
+        {
+          error:
+            "Não dá pra desativar um admin por aqui — quem perde o acesso não consegue voltar sozinho.",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const updates: Record<string, unknown> = {};
   if (typeof body.ativo === "boolean") updates.ativo = body.ativo;
   if (typeof body.exige_foto === "boolean") updates.exige_foto = body.exige_foto;

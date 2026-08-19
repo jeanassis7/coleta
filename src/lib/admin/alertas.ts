@@ -58,7 +58,6 @@ function diaBr(): string {
 
 export async function buscarAlertas(
   opts: {
-    incluirTeste?: boolean;
     /** Quem já calculou os saldos passa aqui — evita recalcular (o
      *  dashboard chamava duas vezes e dobrava o tempo de carregamento). */
     saldos?: MotoristaComSaldo[];
@@ -66,7 +65,6 @@ export async function buscarAlertas(
 ): Promise<Alerta[]> {
   const supabase = await getSupabaseServer();
   const alertas: Alerta[] = [];
-  const incluirTeste = !!opts.incluirTeste;
 
   // ---------------------------------------------------------------------
   // Cargas ativas → carga parada + caminhão acima da capacidade
@@ -76,14 +74,13 @@ export async function buscarAlertas(
       .from("cargas")
       .select(
         `id, iniciada_em,
-         profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+         profiles!cargas_motorista_id_fkey!inner(nome),
          caminhoes(placa, capacidade_l),
          coletas(litros, criado_em),
          despesas(criado_em),
          abastecimentos(criado_em)`
       )
       .eq("status", "ativa");
-    if (!incluirTeste) q = q.eq("profiles.is_teste", false);
     const { data } = await q;
 
     type Row = {
@@ -156,13 +153,12 @@ export async function buscarAlertas(
       .select(
         `id, peso_liquido_kg, umidade_pct, criado_em,
          cargas!inner(
-           profiles!cargas_motorista_id_fkey!inner(nome, is_teste),
+           profiles!cargas_motorista_id_fkey!inner(nome),
            coletas(litros)
          )`
       )
       .gte("criado_em", new Date(Date.now() - 90 * DIA_MS).toISOString())
       .order("criado_em", { ascending: false });
-    if (!incluirTeste) q = q.eq("cargas.profiles.is_teste", false);
     const { data } = await q;
 
     type Row = {
@@ -231,11 +227,10 @@ export async function buscarAlertas(
       .from("adiantamentos")
       .select(
         `id, valor, pular_contador,
-         profiles!adiantamentos_motorista_id_fkey!inner(nome, is_teste)`
+         profiles!adiantamentos_motorista_id_fkey!inner(nome)`
       )
       .eq("status", "pendente")
       .gte("pular_contador", PULAR_ACEITE);
-    if (!incluirTeste) q = q.eq("profiles.is_teste", false);
     const { data } = await q;
 
     type Row = {
@@ -268,7 +263,7 @@ export async function buscarAlertas(
   // ---------------------------------------------------------------------
   try {
     const saldos =
-      opts.saldos ?? (await buscarMotoristasComSaldo({ incluirTeste }));
+      opts.saldos ?? (await buscarMotoristasComSaldo());
     const candidatos = saldos.filter((s) => s.saldo_atual >= SALDO_ALTO);
     if (candidatos.length > 0) {
       // Quem lançou ALGO nos últimos dias — 3 consultas no total, não 3
@@ -316,10 +311,9 @@ export async function buscarAlertas(
       .from("coletas")
       .select(
         `id, motorista_id, litros, valor_pago, gps_capturado, foto_path, local_nome, criado_em,
-         profiles!coletas_motorista_id_fkey!inner(nome, is_teste, exige_foto)`
+         profiles!coletas_motorista_id_fkey!inner(nome, exige_foto)`
       )
       .gte("criado_em", new Date(Date.now() - 90 * DIA_MS).toISOString());
-    if (!incluirTeste) q = q.eq("profiles.is_teste", false);
     const { data } = await q;
 
     type Row = {
@@ -439,12 +433,11 @@ export async function buscarAlertas(
     let q = supabase
       .from("coletas")
       .select(
-        "id, litros, valor_pago, local_nome, criado_em, profiles!coletas_motorista_id_fkey!inner(nome, is_teste)"
+        "id, litros, valor_pago, local_nome, criado_em, profiles!coletas_motorista_id_fkey!inner(nome)"
       )
       .gte("criado_em", desde)
       .order("criado_em", { ascending: false })
       .limit(500);
-    if (!incluirTeste) q = q.eq("profiles.is_teste", false);
     const { data } = await q;
 
     type Row = {

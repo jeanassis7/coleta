@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { podeAcessarAdmin } from "@/lib/auth/roles";
+import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
-async function exigirAdmin() {
-  const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, ativo")
-    .eq("id", user.id)
-    .maybeSingle();
-  // podeAcessarAdmin cobre admin E dev. Estava comparando com "admin"
-  // exato, então o dev não conseguia corrigir coleta nenhuma.
-  if (!profile || !podeAcessarAdmin(profile)) return null;
-  return user;
-}
 
 interface RouteParams {
   params: Promise<{ id: string }>;

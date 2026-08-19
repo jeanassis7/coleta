@@ -27,7 +27,6 @@ export function CardDescargasRecentes({ cargas }: { cargas: CargaDetalhada[] }) 
           >
             <div className="text-sm">
               <span className="font-medium">{c.motorista_nome}</span>
-              {c.motorista_is_teste && <span title="Motorista de teste"> 🧪</span>}
               <span className="text-cinza-suave">
                 {" "}· {formatData(c.descarga!.criado_em)} ·{" "}
               </span>

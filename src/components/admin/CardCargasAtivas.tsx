@@ -68,9 +68,6 @@ export function CardCargasAtivas({
                   <Link href="/admin/cargas" className="hover:text-verde">
                     {c.motorista_nome}
                   </Link>
-                  {c.motorista_is_teste && (
-                    <span title="Motorista de teste"> 🧪</span>
-                  )}
                 </td>
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">
                   {c.caminhao_placa}{" "}
