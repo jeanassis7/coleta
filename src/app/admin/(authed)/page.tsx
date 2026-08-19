@@ -4,6 +4,9 @@ import {
   buscarMotoristas,
   buscarCargas,
   buscarMotoristasComSaldo,
+  buscarEstoque,
+  buscarCompradores,
+  buscarCheques,
   resumoComprasDiretas,
   resolvePeriodoAnterior,
   calcularKpis,
@@ -26,6 +29,7 @@ import { AbasView } from "@/components/admin/AbasView";
 import { CardAlertas } from "@/components/admin/CardAlertas";
 import { CardCargasAtivas } from "@/components/admin/CardCargasAtivas";
 import { CardDescargasRecentes } from "@/components/admin/CardDescargasRecentes";
+import { CardsSituacao } from "@/components/admin/CardsSituacao";
 
 export const dynamic = "force-dynamic";
 
@@ -51,14 +55,28 @@ export default async function AdminDashboardPage({
   // Painel de operação. Uma busca de cargas só (as ativas saem daqui por
   // filtro em memória) e os saldos calculados UMA vez, repassados pros
   // alertas — antes o dashboard fazia tudo em dobro e demorava ~4s.
-  const [cargasTodas, saldos] = await Promise.all([
-    buscarCargas(),
-    buscarMotoristasComSaldo(),
-  ]);
+  // Os três números de situação entram no MESMO Promise.all: em sequência
+  // seriam três idas ao banco esperando uma pela outra, de graça.
+  const [cargasTodas, saldos, estoque, compradores, chequesCarteira] =
+    await Promise.all([
+      buscarCargas(),
+      buscarMotoristasComSaldo(),
+      buscarEstoque(),
+      buscarCompradores(),
+      buscarCheques({ status: ["em_carteira"] }),
+    ]);
   const cargasAtivas = cargasTodas.filter((c) => c.status === "ativa");
   const saldoPorMotorista = new Map<string, number | null>();
   for (const s of saldos) saldoPorMotorista.set(s.id, s.saldo_atual);
   const alertas = await buscarAlertas({ saldos });
+
+  // Situação agora: tanque, o que o mercado deve e cheque na gaveta.
+  const estoqueKg = estoque.reduce((s, e) => s + e.saldo_kg, 0);
+  const estoqueValor = estoque.reduce((s, e) => s + e.valor_total, 0);
+  // Só quem DEVE entra no "a receber": saldo negativo é crédito do comprador
+  // e, somado junto, abateria a dívida dos outros e mentiria o total.
+  const aReceber = compradores.reduce((s, c) => s + Math.max(0, c.saldo), 0);
+  const chequesValor = chequesCarteira.reduce((s, c) => s + Number(c.valor), 0);
 
   const motoristasMotoristas = motoristas.filter((m) => m.role === "motorista");
   const kpisAtuais = calcularKpis(coletas);
@@ -109,6 +127,14 @@ export default async function AdminDashboardPage({
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+
+      <CardsSituacao
+        estoqueKg={estoqueKg}
+        estoqueValor={estoqueValor}
+        aReceber={aReceber}
+        chequesValor={chequesValor}
+        chequesQtd={chequesCarteira.length}
+      />
 
       {/* Operação agora — antes dos filtros porque não depende de período */}
       <CardAlertas alertas={alertas} />

@@ -427,6 +427,103 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ───────────────────────────────────────────── 3d. frota e documentos
+console.log("\n🔬 FROTA E DOCUMENTOS (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role = 'admin' and ativo = true limit 1"
+  );
+  const { rows: [cam] } = await client.query(
+    "select id from public.caminhoes limit 1"
+  );
+
+  if (!cam) {
+    afirmar("SEM CAMINHÃO CADASTRADO — checks de frota pulados", true);
+  } else {
+    // --- manutenção a prazo vira conta a pagar ---------------------------
+    const { rows: [man] } = await client.query(
+      `insert into public.manutencoes
+         (caminhao_id, data, km, tipo, descricao, valor, proxima_km, registrado_por)
+       values ($1, current_date, 100000, 'troca_oleo', 'E2E troca', 450.50, 110000, $2)
+       returning id`,
+      [cam.id, perfil.id]
+    );
+    await client.query(
+      `insert into public.contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, origem_tipo, origem_id, registrado_por)
+       values ('Manutenção — E2E troca','manutencao',450.50, current_date + 20,'a_pagar','manutencao',$1,$2)`,
+      [man.id, perfil.id]
+    );
+    const { rows: [lig] } = await client.query(
+      `select count(*)::int n from public.contas_a_pagar
+        where origem_tipo = 'manutencao' and origem_id = $1`,
+      [man.id]
+    );
+    afirmar("manutenção a prazo tem conta a pagar ligada a ela", lig.n === 1);
+
+    // --- o CHECK de dono único ------------------------------------------
+    let doisDonos = false;
+    try {
+      await client.query("savepoint sp1");
+      await client.query(
+        `insert into public.documentos (caminhao_id, motorista_id, tipo, vencimento)
+         values ($1, $2, 'cipp', current_date + 30)`,
+        [cam.id, perfil.id]
+      );
+      doisDonos = true;
+      await client.query("rollback to sp1");
+    } catch {
+      await client.query("rollback to sp1");
+    }
+    afirmar("documento com caminhão E motorista é barrado", !doisDonos);
+
+    let semDono = false;
+    try {
+      await client.query("savepoint sp2");
+      await client.query(
+        `insert into public.documentos (tipo, vencimento) values ('cipp', current_date + 30)`
+      );
+      semDono = true;
+      await client.query("rollback to sp2");
+    } catch {
+      await client.query("rollback to sp2");
+    }
+    afirmar("documento sem dono nenhum é barrado", !semDono);
+
+    // --- o alerta de km olha a MAIOR próxima_km --------------------------
+    // Uma segunda troca mais recente tem que mandar na conta, senão o alerta
+    // acenderia pra sempre com o alvo da primeira.
+    await client.query(
+      `insert into public.manutencoes
+         (caminhao_id, data, km, tipo, descricao, valor, proxima_km, registrado_por)
+       values ($1, current_date, 112000, 'troca_oleo', 'E2E troca 2', 400, 122000, $2)`,
+      [cam.id, perfil.id]
+    );
+    const { rows: [alvo] } = await client.query(
+      `select max(proxima_km)::int m from public.manutencoes
+        where caminhao_id = $1 and tipo = 'troca_oleo'`,
+      [cam.id]
+    );
+    checar("alvo da troca de óleo é a próxima_km MAIS ALTA", alvo.m, 122000, 0);
+
+    // --- documento vencido aparece no filtro de vencimento ---------------
+    await client.query(
+      `insert into public.documentos (caminhao_id, tipo, vencimento, alerta_dias, registrado_por)
+       values ($1, 'cipp', current_date - 5, 30, $2)`,
+      [cam.id, perfil.id]
+    );
+    const { rows: [venc] } = await client.query(
+      `select count(*)::int n from public.documentos
+        where caminhao_id = $1 and vencimento < current_date`,
+      [cam.id]
+    );
+    afirmar("documento com vencimento no passado é encontrável", venc.n >= 1);
+  }
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"

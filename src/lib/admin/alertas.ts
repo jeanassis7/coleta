@@ -499,6 +499,16 @@ export async function buscarAlertas(
   }
 
   // ---------------------------------------------------------------------
+  // Frota, documentos, cheques e estoque (módulo separado — ver o porquê lá)
+  // ---------------------------------------------------------------------
+  try {
+    const { alertasFrota } = await import("@/lib/admin/alertas-frota");
+    alertas.push(...(await alertasFrota()));
+  } catch {
+    // segue
+  }
+
+  // ---------------------------------------------------------------------
   // Remove os já dispensados no "OK, VI"
   // ---------------------------------------------------------------------
   try {
