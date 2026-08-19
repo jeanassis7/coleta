@@ -562,6 +562,78 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ───────────────────────────────────── 3e. maço de cheques (lançamento em lote)
+console.log("\n🔬 MAÇO DE CHEQUES (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role = 'admin' and ativo = true limit 1"
+  );
+  const { rows: [comp] } = await client.query(
+    `insert into public.compradores (nome, ativo) values ('Comprador E2E', true) returning id`
+  );
+
+  // Uma venda de 5.000 vira dívida.
+  await client.query(
+    `insert into public.vendas (comprador_id, data, peso_total_kg, kg_fino, kg_grosso, preco_kg, valor_total, registrado_por)
+     values ($1, current_date, 1000, 1000, 0, 5, 5000, $2)`,
+    [comp.id, perfil.id]
+  );
+  const saldoAntes = (await client.query(
+    "select saldo from public.saldo_compradores() where comprador_id = $1", [comp.id]
+  )).rows[0];
+
+  // O maço vira UM RECEBIMENTO POR CHEQUE: cheques.recebimento_id é UNIQUE
+  // (0017), porque cada cheque tem seu bom_para e seu ciclo — cada um É um
+  // evento de pagamento. Um recebimento com N cheques bate na constraint.
+  const idsReceb = [];
+  for (const [banco, valor] of [["Sicredi", 1000], ["Bradesco", 2000]]) {
+    const { rows: [r] } = await client.query(
+      `insert into public.recebimentos (comprador_id, venda_id, forma, valor, data, registrado_por)
+       values ($1, null, 'cheque', $2, current_date, $3) returning id`,
+      [comp.id, valor, perfil.id]
+    );
+    idsReceb.push(r.id);
+    await client.query(
+      `insert into public.cheques (recebimento_id, comprador_id, banco, emitente, valor, bom_para, status)
+       values ($1, $2, $3, 'Fulano E2E', $4, current_date + 30, 'em_carteira')`,
+      [r.id, comp.id, banco, valor]
+    );
+  }
+
+  const saldoDepois = (await client.query(
+    "select saldo from public.saldo_compradores() where comprador_id = $1", [comp.id]
+  )).rows[0];
+  checar(
+    "maço de cheques abate a dívida do comprador",
+    Number(saldoAntes.saldo) - Number(saldoDepois.saldo),
+    3000
+  );
+
+  const { rows: [naCarteira] } = await client.query(
+    `select count(*)::int n, coalesce(sum(valor),0)::numeric v from public.cheques
+      where recebimento_id = any($1) and status = 'em_carteira'`,
+    [idsReceb]
+  );
+  afirmar("os 2 cheques do maço entram na carteira", naCarteira.n === 2);
+  checar("a soma dos cheques bate com o maço", Number(naCarteira.v), 3000);
+
+  // recebimento_id e comprador_id são NOT NULL: cheque solto não existe.
+  let solto = false;
+  try {
+    await client.query("savepoint sp3");
+    await client.query(
+      `insert into public.cheques (comprador_id, banco, emitente, valor, bom_para)
+       values ($1,'X','Y',10, current_date)`, [comp.id]
+    );
+    solto = true;
+    await client.query("rollback to sp3");
+  } catch { await client.query("rollback to sp3"); }
+  afirmar("cheque sem recebimento é barrado pelo banco", !solto);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"
