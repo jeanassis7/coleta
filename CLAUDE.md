@@ -27,22 +27,32 @@ Guaíra, Toledo, Cascavel, Foz do Iguaçu (oeste do PR). Muita área rural sem s
 
 - **Produção:** https://coleta-inky.vercel.app
 - **Admin (Jean):** https://coleta-inky.vercel.app/admin/login → `jean@coleta.local` / `Progevaner123$`
-- **Dev (Evaner):** mesmo login → `evaner@coleta.local` / `senharolha` (role `dev`)
+- **Evaner:** mesmo login → `evaner@coleta.local` / `senharolha` (role `admin`, `ve_log=true`)
 - **Repo:** https://github.com/jeanassis7/coleta (Evaner é colaborador com Write)
 - **Supabase project:** `jjhs-coleta` (URL `zwghaoubzrkluckrcxwi.supabase.co`)
   - `DATABASE_URL` (session pooler) está no `.env.local` — permite rodar migrations daqui via `scripts/aplicar-migration.mjs`, sem abrir o SQL Editor
 - **Motoristas** (todos em `@coleta.local`): Luis/`volante`, Lucimar/`tanque`, Lucinei/`lanterna`
-- **Motorista de teste:** `teste1@coleta.local` / `teste123` (`is_teste=true` — invisível nos dashboards)
+- **Teste 1:** `teste1@coleta.local` / `teste123` — motorista comum hoje. Não existe mais perfil "invisível": pra testar, cria-se um perfil normal e apaga-se depois.
 
-## Roles (3 níveis)
+## Roles (2 níveis) + capacidades por coluna
 
 - **`motorista`** — PWA. Features novas chegam via flag individual em `profiles.features`.
-- **`admin`** (Jean) — painel operacional.
-- **`dev`** (Evaner) — herda tudo de admin + vê o que está em teste. `is_admin()` no Postgres cobre admin E dev, então RLS não precisa saber da diferença.
+- **`admin`** — painel. **Jean e Evaner são os dois `admin`.**
 
-Helpers em `src/lib/auth/roles.ts`: `isDev`, `isAdminPuro`, `podeAcessarAdmin`, `hasFeature`.
+Helpers em `src/lib/auth/roles.ts`: `podeAcessarAdmin`, `hasFeature`. Nos endpoints, `exigirAdmin()` de `src/lib/auth/exigir-admin.ts` (gate único — checa role E `ativo`).
 
-⚠️ **Ao mexer em role/gate, checar 4 lugares** (bug real já aconteceu): `src/middleware.ts`, `/admin/(authed)/layout.tsx`, `/admin/login/page.tsx` e `/motorista/login/page.tsx`.
+**REGRA (decisão do Evaner, 19/08/2026): capacidade extra vira COLUNA no cadastro, NUNCA papel novo.**
+Papel responde "entra ou não entra"; coluna responde "enxerga o quê". Hoje existe uma só:
+
+| Coluna | O que faz | Quem tem |
+|---|---|---|
+| `profiles.ve_log` | enxerga `/admin/log` | só o Evaner |
+
+Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro Jean. Depois do flip virou hierarquia sem função e foi apagado (migrations 0023/0024). Se precisar de "só fulano vê X", **acrescente uma coluna booleana** — não recrie o `dev`.
+
+⚠️ **Ao mexer em role, checar 4 lugares** (bug real já aconteceu): `src/middleware.ts`, `/admin/(authed)/layout.tsx`, `/admin/login/page.tsx` e `/motorista/login/page.tsx`. No Postgres, `is_admin()` cobre só `role='admin'` e é `stable` — **não trocar por `volatile`**, senão a RLS reavalia linha a linha.
+
+**Admin não é desativável nem deletável pelo painel** — no servidor e na tela. Sem o papel `dev` não existe backdoor: quem perde o acesso só volta por SQL.
 
 ## Arquitetura — visão rápida
 
@@ -67,13 +77,15 @@ Helpers em `src/lib/auth/roles.ts`: `isDev`, `isAdminPuro`, `podeAcessarAdmin`, 
     /                           → dashboard: [Módulo 1] alertas + cargas ativas +
                                   descargas recentes, depois KPIs + análises + lista/mapa
     /mapa · /observacoes · /curadoria · /motoristas · /eventos   (como sempre)
-    ── Módulo 1 (dev-only até o flip) ──
+    ── Módulo 1 e 2 ──
     /cargas                     → tabela densa (19 col) + umidade na coluna Umid.
     /abastecimentos             → lista + edição (corrigir lançamento errado)
     /adiantamentos              → saldo por motorista + enviar + acerto
     /adiantamentos/[id]         → histórico de dinheiro do motorista
     /caminhoes                  → CRUD da frota
-    /dev/features               → toggles de feature por motorista de teste (só dev)
+    /features                   → liga feature por motorista (rollout gradual)
+    /log                        → quem fez o quê (só quem tem ve_log)
+    /estoque · /vendas · /cheques · /contas · /compradores   (Módulo 2)
 
 /api/admin/*                    → endpoints com service_role
   /motoristas[/id][/feature], /coletas/[id], /coletas/bulk-delete, /locais[/id],
@@ -131,14 +143,23 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0013_saldos_motoristas.sql` — função `saldos_motoristas()` (a conta de saldo inteira no Postgres; matou o N+1 que deixava o painel em 3-4s)
 - `0014_compras_diretas.sql` — `compras_diretas` com `peso_kg` generated (kg medido ou litros×0,9)
 - `0015_certificado_compra_e_coleta_admin.sql` — certificado na compra direta + `coletas.lancado_por_admin`
+- `0016_estoque.sql` — view `movimentos_estoque` + `estoque_atual()` (custo médio ponderado móvel) + `ajustes_estoque` (inventário)
+- `0017_vendas.sql` — `compradores`, `vendas`, `recebimentos`, `cheques`, `saldo_compradores()`; redefine `movimentos_estoque` incluindo o braço das vendas
+- `0018_gastos_veiculos_postos.sql` — `caminhoes.tipo` (caminhao|carro), posto por GPS em `locais.tipo`, abastecimento "assinei a nota"
+- `0019_contas_a_pagar.sql` — `contas_a_pagar`, `despesas_recorrentes`, `resumo_contas_a_pagar()`
+- `0020_foto_opcional_lancamento_admin.sql` — lançamento pelo painel sem foto
+- `0021_coleta_paga_pela_sede.sql` — coleta que a sede paga vira conta a pagar em vez de sair do saldo do motorista
+- `0022_log_admin.sql` — tabela `log_admin` + trigger `trg_log_admin` em 19 tabelas + `profiles.ve_log`
+- `0023_evaner_vira_admin.sql` — quem era `dev` vira `admin` (rodou ANTES do deploy, ver comentário no arquivo)
+- `0024_fim_do_is_teste.sql` — `is_admin()` perde o `dev` e vira `stable`; `movimentos_estoque` perde o filtro de teste; **`profiles.is_teste` é derrubada** (rodou DEPOIS do deploy)
 
 ## MÓDULO 1 (Cargas/ERP) — regras que valem pra tudo daqui pra frente
 
-**Estágio atual: DEV-ONLY.** Jean não vê nada do módulo. A promoção pro admin é **um flip** de `MODULO1_LIBERADO_PARA_ADMIN` em `src/lib/auth/gate-modulo1.ts` — libera menu + páginas + endpoints de uma vez. Páginas usam `exigirAcessoModulo1OuRedirect()`, endpoints `exigirAcessoModulo1()`, telas compartilhadas (dashboard) `acessoModulo1Atual()`.
+**Estágio atual: LIBERADO.** Jean vê tudo. O gate (`gate-modulo1.ts`) foi apagado em 19/08/2026 — endpoints usam `exigirAdmin()`, páginas não precisam de gate próprio porque o `(authed)/layout.tsx` já barra quem não é admin.
 
-**Ciclo de vida de feature:** dev-only → admin liga por motorista (`profiles.features`) → vira padrão. Feature nova nasce **OFF** pra todos.
+**Ciclo de vida de feature:** admin liga em UM motorista em `/admin/features`, acompanha alguns dias, estende pros outros. Feature nova nasce **OFF** pra todos. Desligar não apaga nada que já foi lançado.
 
-**Motorista de teste (`is_teste=true`):** invisível em dashboard, KPIs, curadoria, observações, exports. **Dev vê** (com badge 🧪); admin não. Ao criar query admin nova, decidir explicitamente.
+**Não existe mais motorista de teste.** A coluna `is_teste` foi derrubada (0024). Decisão do Evaner: pra testar, cria-se um **perfil normal**, testa-se de verdade — entrando nos relatórios como qualquer motorista — e apaga-se depois de 1-2h. Não reintroduzir filtro de teste em query nova.
 
 **Ciclo = CARGA** (não "viagem"): dura 3-10 dias, encerra na descarga (pesagem na balança). Só 1 ativa por motorista (índice único no banco).
 
@@ -175,7 +196,9 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - **Não usar input de texto livre pra dinheiro** — sempre `InputDinheiro`. O parser antigo engolia vírgula e "520,12" virou R$ 52.012 em produção.
 - **Não criar submenu no motorista** — o "MENU CARGA" existiu e foi cortado: tudo fica na home, um toque. Se a home crescer demais, discutir com o Evaner antes de esconder algo.
 - **Não pedir confirmação enquanto o motorista digita** — validação só no clique do botão.
-- **Não deixar o E2E encostar no Teste 1** — `scripts/e2e-modulo1.mjs` cria e apaga o próprio motorista descartável. O Teste 1 é o ambiente de teste manual do Evaner e pode ter carga ativa a qualquer momento.
+- **Não recriar o papel `dev` nem o `is_teste`** — os dois foram apagados de propósito. Capacidade extra é **coluna**.
+- **Não apagar `caches.delete("static-resources")`... quer dizer, não ACRESCENTAR** — ver o comentário grande em `src/app/sw.ts`. O `activate` dispara a cada deploy; apagar o cache de scripts ali quebra o app do motorista offline.
+- **Não escrever asserção de total absoluto nos E2E** — eles rodam contra produção. Medir **delta** (o teste de contas a pagar ficou vermelho sozinho quando o Jean lançou uma conta de verdade).
 
 ## Ciclo de vida dos dados
 
@@ -245,10 +268,8 @@ git push
 
 Scripts auxiliares:
 - `node scripts/aplicar-migration.mjs <arquivo.sql>` — aplica migration direto no Postgres (usa `DATABASE_URL`, roda em transação)
-- `node scripts/e2e-modulo1.mjs` — **rodar após qualquer mexida no Módulo 1**: 35 checks contra produção (RLS, idempotência, updates atômicos, queries aninhadas do admin e dos alertas, cálculo de saldo, filtros `is_teste`). Cria e apaga o próprio motorista descartável.
-- `node scripts/limpar-lancamentos-teste.mjs [email]` — zera lançamentos de um motorista de teste pra recomeçar limpo (recusa perfil real)
-- `node scripts/criar-motorista-teste.mjs [nome] [email] [senha]` — cria motorista sandbox (também dá pra criar pelo painel, checkbox só visível pro dev)
-- `node scripts/criar-dev.mjs` — cria/atualiza o usuário dev do Evaner
+- `node scripts/e2e-modulo1.mjs` — **rodar após qualquer mexida no Módulo 1**: **55 checks** contra produção (RLS, idempotência, updates atômicos, queries aninhadas do admin e dos alertas, cálculo de saldo). Cria e apaga o próprio motorista descartável.
+- `node scripts/limpar-lancamentos-teste.mjs <email> --sim-eu-confirmo` — zera os lançamentos de um motorista. **A trava agora é a flag**, não mais o `is_teste`: sem ela, recusa. Rodar em perfil real APAGA de verdade.
 - `node scripts/gerar-icones.mjs` — regenera PNGs a partir de `icone-gota.jfif`
 - `node scripts/gerar-tutorial-pdf.mjs` — regenera o manual do Jean (`tutorial-coleta.pdf` fica na raiz, ignorado pelo .gitignore)
 
@@ -304,6 +325,8 @@ Categorizado por valor estimado vs esforço. Ordem decidida pelo Evaner conforme
 - ❌ **raio_match_m configurável pelo admin** — Evaner simplificou pra 100m fixo
 - ❌ **Distância em metros na sugestão pro motorista** — só nome, sem informação técnica
 - ❌ **Rastreador via WhatsApp Live Location** — alternativa zero-código mencionada se realmente precisar
+- ❌ **Papel `dev` separado de `admin`** — existiu enquanto o Módulo 1 era invisível pro Jean. Depois do flip virou hierarquia sem função: 42 arquivos importando um gate que não gateava mais nada. Decisão do Evaner (19/08/2026): capacidade extra vira **coluna** no cadastro (`ve_log`), nunca papel novo.
+- ❌ **Motorista de teste (`is_teste`)** — sandbox invisível pro admin. Decisão do Evaner: *"se eu quiser testar um real eu crio um perfil do zero e testo na prática como se fosse um real mesmo, entrando nos relatórios tudo, sabendo que dali 1-2h eu deleto tudo"*. Mais simples e mais fiel ao que o motorista vive.
 
 ## Quando o Evaner voltar com bugs
 

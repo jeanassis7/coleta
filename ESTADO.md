@@ -1,6 +1,6 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 14/08/2026, no fim da sessão do Módulo 2.
+> Atualizado em 19/08/2026, no fim da sessão que simplificou os papéis.
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md` e
 > `PLANO-MODULO-2.md`.
 
@@ -8,11 +8,10 @@
 
 ## Resumo em uma frase
 
-**Módulo 1 (Cargas) e Módulo 2 (Estoque, Vendas, Cheques, Contas a pagar)
-estão inteiros no ar, invisíveis pro Jean**, esperando teste de campo do
-Evaner. Os motoristas reais usam só a coleta — e acabaram de ganhar a lista
-"Coletas dessa carga", que é a primeira mudança em produção com gente de
-verdade dependendo.
+**Módulos 1 e 2 estão no ar e o Jean já usa** (gate liberado em 18/08), e os
+papéis do sistema foram reduzidos a dois — `motorista` e `admin` —, com a
+única diferença entre Jean e Evaner sendo a coluna `ve_log`. Os motoristas
+reais continuam usando só a coleta.
 
 ---
 
@@ -20,12 +19,11 @@ verdade dependendo.
 
 | | |
 |---|---|
-| Migrations aplicadas | 20 (`0001` → `0020`) |
+| Migrations aplicadas | 24 (`0001` → `0024`) |
 | Páginas admin | 22 |
 | Telas do motorista | 9 |
 | Endpoints de API | 33 |
 | Linhas em `src/` | ~23.000 |
-| Commits | 53 |
 | Checks automatizados | 55 (Módulo 1) + ~30 (Módulo 2) |
 
 ---
@@ -39,13 +37,13 @@ silencioso e sugestão de local por proximidade, foto comprimida, fila
 offline no IndexedDB, sync automático em 4 gatilhos, e a lista
 **"Coletas dessa carga"** com total de litros e total pago.
 
-**Atrás de `features.carga` (só o Teste 1 hoje):** iniciar carga, barra do
+**Atrás de `features.carga` (nenhum motorista real ainda):** iniciar carga, barra do
 caminhão, abastecimento (com posto por GPS e "PAGUEI AGORA / ASSINEI A
 NOTA"), despesa, descarregar e cancelar carga.
 
 **Atrás de `features.saldo`:** aceite de adiantamento e card "Seu dinheiro".
 
-### Admin (dev-only, atrás do gate)
+### Admin (o Jean já usa tudo)
 
 - **Dashboard** — alertas didáticos, cargas ativas, descargas recentes, KPIs
 - **Estoque** — fino e grosso, saldo, custo médio ponderado móvel, inventário
@@ -56,7 +54,8 @@ NOTA"), despesa, descarregar e cancelar carga.
 - **Cargas** — tabela densa + drill-down com mapa, linha do tempo e fotos
 - **Abastecimentos · Despesas · Compra direta · Adiantamentos**
 - **Caminhões · Motoristas · Curadoria de locais · Eventos**
-- **`/admin/dev/features`** — toggles por motorista de teste
+- **`/admin/features`** — liga feature por motorista (rollout gradual)
+- **`/admin/log`** — quem fez o quê (só quem tem `ve_log`; hoje só o Evaner)
 
 ---
 
@@ -66,7 +65,8 @@ NOTA"), despesa, descarregar e cancelar carga.
 Segredos cadastrados — os quatro jobs rodam de verdade.
 
 - `scripts/e2e-modulo1.mjs` — **55 checks**. Cria e apaga o próprio motorista
-  descartável ("E2E Bot"). Nunca encosta no Teste 1.
+  descartável ("E2E Bot"). Enquanto roda (~1 min) o dado dele fica visível no
+  painel — o conceito de motorista invisível deixou de existir em 19/08.
 - `scripts/e2e-modulo2.mjs` — read-only: simula dentro de transação e dá
   ROLLBACK. Cobre a matemática do custo médio, venda baixando os dois
   estoques, cheque devolvido, contas a pagar e geração idempotente.
@@ -83,23 +83,39 @@ avião. Ver "Dívidas" abaixo.
 ### Só o Evaner pode fazer
 
 1. **Testar o Módulo 2 em produção** — estoque, venda, cheque, contas a pagar.
-   Nada disso foi usado com dado real ainda.
-2. **Avisar o Luis e o Lucimar** antes/depois do deploy da lista nova — eles
-   vão ver o histórico voltando do servidor de uma vez.
-3. **Calibrar o zoom do mapa** do drill-down (precisa de carga real espalhada).
-4. **O flip pro Jean** — `MODULO1_LIBERADO_PARA_ADMIN` em
-   `src/lib/auth/gate-modulo1.ts`. **Não perguntar quando** — ele avisa.
-5. **Ligar `features.carga`** nos motoristas reais (ele disse: "dentro de
-   alguns dias").
+   Em 19/08 as tabelas ainda estavam zeradas.
+2. **Calibrar o zoom do mapa** do drill-down (precisa de carga real espalhada).
+3. **Ligar `features.carga`** nos motoristas reais, em `/admin/features` — um
+   de cada vez. Antes disso, **cadastrar os caminhões de verdade**: hoje só
+   existe o AAA-0000 de teste, e sem caminhão o motorista não inicia carga.
+4. **Limpar o resto do dado de teste** — o caminhão AAA-0000 e o perfil
+   Teste 1. Ele disse que faz na mão.
+
+### Aberto sem causa raiz
+
+**O painel travou de forma intermitente em 19/08** — telas presas no esqueleto
+por 20-30s, inclusive o login. Investigado a fundo e **descartados com
+medição**: banco (0 linhas, RLS em 0,055ms), Supabase (135-200ms), Service
+Worker (limpo, continuou), JS quebrado (React estava hidratado). Os motoristas
+trabalhavam normalmente na mesma janela, então não foi queda de plataforma.
+**Se curou sozinho**, o que aponta pra algo com janela de tempo (rate limit ou
+estado de sessão). Se voltar: F12 → Network com Preserve log + Console, é o
+que falta pra fechar.
+
+Suspeita não confirmada: a sidebar tem 21 `<Link>`, o Next faz prefetch de
+todos, e o middleware roda `auth.getUser()` (ida de rede) + query de
+`profiles` em CADA requisição — ~45 chamadas ao Supabase por abertura de
+página. Otimização pendente: `prefetch={false}` na sidebar e colapsar os 3
+`getUser()` em um.
 
 ### Em aberto, sem decisão
 
-6. **Umidade não desconta nada** — espera a máquina de medir.
-7. **OCR de cheque em lote** — desenhado no plano, não implementado. Precisa
+1. **Umidade não desconta nada** — espera a máquina de medir.
+2. **OCR de cheque em lote** — desenhado no plano, não implementado. Precisa
    de `ANTHROPIC_API_KEY` no Vercel.
-8. **Manutenção, pneus e documentos com vencimento** — Bloco 3 do Módulo 2,
+3. **Manutenção, pneus e documentos com vencimento** — Bloco 3 do Módulo 2,
    desenhado no plano, não implementado.
-9. **Fichas de caminhão e motorista** (`/admin/caminhoes/[id]`,
+4. **Fichas de caminhão e motorista** (`/admin/caminhoes/[id]`,
    `/admin/motoristas/[id]`) — Bloco 3.
 
 ### Módulo 3 — Salários (só no papel)
@@ -144,4 +160,6 @@ entrega metade do caminho.
   levando o pix junto, o custo médio derretendo depois de saldo negativo).
 - Testa em produção com o celular. O que ele acha em 10 minutos, nenhum teste
   automatizado acha.
-- **Não pedir pra liberar pro Jean.** Quando for a hora, ele avisa.
+- **Ele quer o diagnóstico antes do conserto.** Uma sessão anterior saiu
+  mexendo em tudo sem causa raiz e ele perdeu a confiança no resultado.
+  Medir, mostrar o número, e só então propor.
