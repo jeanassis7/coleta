@@ -54,7 +54,7 @@ export function LoteChequesPainel({
   ocrDisponivel,
 }: {
   compradores: { id: string; nome: string }[];
-  /** ANTHROPIC_API_KEY existe no servidor? Sem ela, só o modo manual. */
+  /** OPENAI_API_KEY existe no servidor? Sem ela, só o modo manual. */
   ocrDisponivel: boolean;
 }) {
   const router = useRouter();

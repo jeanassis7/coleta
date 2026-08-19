@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import OpenAI from "openai";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 /**
  * POST /api/admin/cheques/ocr — lê um maço de cheques por foto.
  *
  * NÃO lança nada. Devolve uma LISTA DE CONFERÊNCIA que a tela mostra ao lado
- * da foto pra o gestor ticar um a um. Quem lança é o endpoint /lote, e só o
+ * da foto pro gestor ticar um a um. Quem lança é o endpoint /lote, e só o
  * que foi ticado.
+ *
+ * Usa OpenAI porque é o provedor que o Evaner já paga — decisão dele em
+ * 19/08/2026, pra não ter dois provedores por causa de uma tela.
  *
  * ---------------------------------------------------------------------------
  * POR QUE O PROMPT INSISTE EM DEIXAR VAZIO
@@ -19,48 +20,74 @@ import { exigirAdmin } from "@/lib/auth/exigir-admin";
  * na conferência; um campo vazio grita. Por isso a regra é: na dúvida, vazio.
  *
  * O mesmo vale pra foto ilegível, verso de cheque ou papel que não é cheque —
- * a linha volta com `deu_pra_ler: false` e tudo em branco, pra digitar na mão.
- * Nunca meio preenchida.
+ * a linha volta com `deu_pra_ler: false` e tudo em branco, pra digitar na
+ * mão. Nunca meio preenchida.
  */
 
 export const maxDuration = 60;
 
-const LinhaCheque = z.object({
-  imagem_index: z
-    .number()
-    .describe(
-      "Índice da imagem (começando em 0) de onde este cheque foi lido. É o que põe a foto ao lado da linha na tela de conferência."
-    ),
-  deu_pra_ler: z
-    .boolean()
-    .describe(
-      "false quando a foto está ilegível, é o verso do cheque, ou não é um cheque. Nesse caso todos os outros campos vêm vazios."
-    ),
-  banco: z.string().describe("Nome do banco. Vazio se não tiver certeza."),
-  emitente: z
-    .string()
-    .describe("Nome de quem assinou o cheque. Vazio se não tiver certeza."),
-  numero: z.string().describe("Número do cheque. Vazio se não tiver certeza."),
-  valor: z
-    .number()
-    .describe(
-      "Valor em reais. 0 se não tiver certeza absoluta — o valor é manuscrito e é o campo mais perigoso de chutar."
-    ),
-  bom_para: z
-    .string()
-    .describe(
-      "Data no formato aaaa-mm-dd. Vazio se não tiver certeza ou se o cheque não tiver data."
-    ),
-  observacao: z
-    .string()
-    .describe(
-      "Só quando algo atrapalhou a leitura (borrão, corte, sombra). Vazio caso contrário."
-    ),
-});
+/**
+ * Configurável por ambiente de propósito: o catálogo de modelos da OpenAI
+ * muda, e trocar não deve exigir deploy. Precisa ser um modelo com visão.
+ */
+const MODELO = process.env.OPENAI_MODEL || "gpt-4o";
 
-const Resultado = z.object({
-  cheques: z.array(LinhaCheque),
-});
+const SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["cheques"],
+  properties: {
+    cheques: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "imagem_index",
+          "deu_pra_ler",
+          "banco",
+          "emitente",
+          "numero",
+          "valor",
+          "bom_para",
+          "observacao",
+        ],
+        properties: {
+          imagem_index: {
+            type: "integer",
+            description:
+              "Índice da imagem (começando em 0) de onde este cheque foi lido.",
+          },
+          deu_pra_ler: {
+            type: "boolean",
+            description:
+              "false quando a foto está ilegível, é o verso do cheque, ou não é um cheque. Nesse caso todos os outros campos vêm vazios.",
+          },
+          banco: { type: "string", description: "Vazio se não tiver certeza." },
+          emitente: {
+            type: "string",
+            description: "Quem assinou. Vazio se não tiver certeza.",
+          },
+          numero: { type: "string", description: "Vazio se não tiver certeza." },
+          valor: {
+            type: "number",
+            description:
+              "Valor em reais. 0 se não tiver certeza absoluta — é manuscrito e é o campo mais perigoso de chutar.",
+          },
+          bom_para: {
+            type: "string",
+            description: "aaaa-mm-dd. Vazio se não tiver certeza.",
+          },
+          observacao: {
+            type: "string",
+            description:
+              "Só quando algo atrapalhou a leitura (borrão, corte, sombra). Vazio caso contrário.",
+          },
+        },
+      },
+    },
+  },
+} as const;
 
 const INSTRUCOES = `Você está lendo fotos de cheques bancários brasileiros para uma empresa de coleta de óleo.
 
@@ -83,11 +110,11 @@ export async function POST(req: NextRequest) {
   const user = await exigirAdmin();
   if (!user) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json(
       {
         error:
-          "A leitura por foto não está configurada (falta ANTHROPIC_API_KEY). Lance os cheques na mão — funciona igual.",
+          "A leitura por foto não está configurada (falta OPENAI_API_KEY). Lance os cheques na mão — funciona igual.",
       },
       { status: 501 }
     );
@@ -105,7 +132,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const blocos: Anthropic.ImageBlockParam[] = [];
+  const partesImagem: { type: "image_url"; image_url: { url: string } }[] = [];
   for (const img of imagens) {
     const media_type = String(img.media_type || "");
     const data = String(img.data || "");
@@ -118,21 +145,22 @@ export async function POST(req: NextRequest) {
     if (!data) {
       return NextResponse.json({ error: "imagem vazia" }, { status: 400 });
     }
-    blocos.push({ type: "image", source: { type: "base64", media_type: media_type as "image/jpeg" | "image/png" | "image/webp", data } });
+    partesImagem.push({
+      type: "image_url",
+      image_url: { url: `data:${media_type};base64,${data}` },
+    });
   }
 
   try {
-    const client = new Anthropic();
-    const resposta = await client.messages.parse({
-      model: "claude-opus-5",
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system: INSTRUCOES,
+    const client = new OpenAI();
+    const resposta = await client.chat.completions.create({
+      model: MODELO,
       messages: [
+        { role: "system", content: INSTRUCOES },
         {
           role: "user",
           content: [
-            ...blocos,
+            ...partesImagem,
             {
               type: "text",
               text: "Leia os cheques destas imagens e devolva uma linha por cheque.",
@@ -140,44 +168,44 @@ export async function POST(req: NextRequest) {
           ],
         },
       ],
-      output_config: { format: zodOutputFormat(Resultado) },
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "cheques_lidos", strict: true, schema: SCHEMA },
+      },
     });
 
-    // Uma recusa por política volta com HTTP 200 — checar antes de ler o
-    // resultado, senão o erro aparece como "não achou cheque nenhum".
-    if (resposta.stop_reason === "refusal") {
+    const bruto = resposta.choices[0]?.message?.content;
+    if (!bruto) {
       return NextResponse.json(
-        { error: "A leitura foi recusada. Lance os cheques na mão." },
+        { error: "A leitura voltou vazia. Lance os cheques na mão." },
         { status: 502 }
       );
     }
 
-    const lido = resposta.parsed_output;
-    if (!lido) {
+    let lido: { cheques?: unknown[] };
+    try {
+      lido = JSON.parse(bruto);
+    } catch {
       return NextResponse.json(
         { error: "Não consegui entender a resposta da leitura. Lance na mão." },
         { status: 502 }
       );
     }
 
-    return NextResponse.json({ ok: true, cheques: lido.cheques });
+    return NextResponse.json({ ok: true, cheques: lido.cheques ?? [] });
   } catch (erro) {
-    if (erro instanceof Anthropic.AuthenticationError) {
+    if (erro instanceof OpenAI.APIError) {
+      // 401 = chave errada; 429 = limite; o resto é falha do provedor. Em
+      // qualquer caso a saída é a mesma: lançar na mão, que sempre funciona.
+      const msg =
+        erro.status === 401
+          ? "A chave da leitura por foto está inválida."
+          : erro.status === 429
+            ? "Muita leitura ao mesmo tempo. Espere um minuto."
+            : `A leitura falhou (${erro.status}).`;
       return NextResponse.json(
-        { error: "A chave da leitura por foto está inválida. Lance na mão." },
-        { status: 502 }
-      );
-    }
-    if (erro instanceof Anthropic.RateLimitError) {
-      return NextResponse.json(
-        { error: "Muita leitura ao mesmo tempo. Espere um minuto e tente de novo." },
-        { status: 429 }
-      );
-    }
-    if (erro instanceof Anthropic.APIError) {
-      return NextResponse.json(
-        { error: `A leitura falhou (${erro.status}). Lance os cheques na mão.` },
-        { status: 502 }
+        { error: `${msg} Lance os cheques na mão.` },
+        { status: erro.status === 429 ? 429 : 502 }
       );
     }
     throw erro;

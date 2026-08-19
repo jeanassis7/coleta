@@ -12,7 +12,7 @@ export default async function ChequesPage() {
 
   // A leitura por foto é atalho, não dependência: sem a chave no servidor a
   // tela some o botão e o lançamento manual segue funcionando igual.
-  const ocrDisponivel = !!process.env.ANTHROPIC_API_KEY;
+  const ocrDisponivel = !!process.env.OPENAI_API_KEY;
 
   return (
     <div>
