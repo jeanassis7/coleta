@@ -11,7 +11,7 @@ import {
   GRUPOS,
   labelCategoria,
   pedePessoa,
-  contaEntraNoDre,
+  contaVeioDeLancamento,
 } from "@/lib/plano-contas";
 import type { Lancamento } from "@/lib/admin/caixa";
 
@@ -302,7 +302,7 @@ export function LancamentosPainel({
               </thead>
               <tbody>
                 {lancamentos.map((l) => {
-                  const espelho = !contaEntraNoDre(l.origem_tipo);
+                  const daOrigem = contaVeioDeLancamento(l.origem_tipo);
                   return (
                     <tr key={l.id} className="border-b border-cinza-borda">
                       <td className="py-2 pr-3 whitespace-nowrap">
@@ -313,10 +313,10 @@ export function LancamentosPainel({
                       </td>
                       <td className="py-2 pr-3">
                         {labelCategoria(l.categoria)}
-                        {espelho && (
+                        {daOrigem && (
                           <span
                             className="ml-1 text-xs text-cinza-suave"
-                            title="Veio de um lançamento operacional (abastecimento, manutenção, coleta). Conta no caixa, não no DRE — lá o gasto já foi contado na origem."
+                            title="Veio de um lançamento operacional (abastecimento, manutenção, coleta, documento). Conta normalmente — mas se apagar, apague na tela de origem."
                           >
                             ↩︎
                           </span>
@@ -334,7 +334,7 @@ export function LancamentosPainel({
                         {formatBRL(l.valor)}
                       </td>
                       <td className="py-2 pr-3">
-                        {!espelho && (
+                        {!daOrigem && (
                           <button
                             onClick={() => setApagando(l)}
                             className="text-alerta hover:underline"

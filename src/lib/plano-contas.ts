@@ -69,12 +69,15 @@ export const PLANO_CONTAS: LinhaPlano[] = [
     vemDe: "compra direta e coletas pagas pela sede",
   },
   {
+    // LANÇÁVEL, não automática — e isso é consequência do regime de caixa.
+    // Comissão calculada não é comissão paga: ela só entra no DRE quando o
+    // dinheiro sai. A tela /admin/remuneracao calcula quanto se deve; aqui
+    // entra quando você paga.
     chave: "comissao",
     label: "Comissão dos motoristas",
     grupo: "custo_oleo",
-    fonte: "automatico",
+    fonte: "lancamento",
     pedePessoa: true,
-    vemDe: "litros coletados × a vigência da comissão",
   },
 
   // ------------------------------------------------------------ operacional
@@ -181,20 +184,17 @@ export function categoriaDeDocumento(tipoDoc: string): string {
 }
 
 /**
- * A REGRA ANTI-DOBRA, num lugar só.
+ * A conta nasceu de um lançamento operacional?
  *
- * Uma conta a pagar pode ser o ESPELHO de algo que já foi lançado noutra
- * tabela — abastecimento "assinei a nota", manutenção a prazo, coleta paga
- * pela sede, compra direta a prazo. Nesses casos o DRE conta pela tabela de
- * origem e ignora a conta, senão o mesmo real conta duas vezes.
+ * Abastecimento "assinei a nota", manutenção a prazo, coleta paga pela sede,
+ * compra direta a prazo e documento com valor geram conta a pagar. Sob
+ * regime de CAIXA a conta conta normalmente quando é paga — o que muda é que
+ * ela não deve ser apagada pela tela de Lançamentos: quem a criou foi o
+ * lançamento de origem, e apagar só a conta deixaria o fato sem contrapartida.
  *
- * `documento` é a EXCEÇÃO e por um motivo real: o documento não lança gasto
- * nenhum — ele registra um vencimento e uma estimativa. Quem tem o gasto é a
- * conta. Se ela fosse excluída, IPVA e seguro sumiriam do DRE.
+ * (No modelo de competência isto servia pra EXCLUIR a conta do DRE. Sob
+ * caixa não exclui nada — é só um aviso de procedência na tela.)
  */
-const ORIGENS_ESPELHO = ["abastecimento", "manutencao", "compra_direta", "coleta"];
-
-export function contaEntraNoDre(origemTipo: string | null): boolean {
-  if (!origemTipo) return true;
-  return !ORIGENS_ESPELHO.includes(origemTipo);
+export function contaVeioDeLancamento(origemTipo: string | null): boolean {
+  return !!origemTipo;
 }

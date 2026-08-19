@@ -793,6 +793,86 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ─────────────────────────────────── 3h. vigências de remuneração e comissão
+console.log("\n🔬 REMUNERAÇÃO COM VIGÊNCIA (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role='admin' and ativo limit 1"
+  );
+  const { rows: [mot] } = await client.query(
+    "select id from public.profiles where role='motorista' limit 1"
+  );
+
+  const vig = async (pessoa, tipo, valor, base, desde) =>
+    client.query(
+      `insert into public.vigencias_remuneracao
+         (pessoa_id, tipo, valor, litros_base, vigente_desde, registrado_por)
+       values ($1,$2,$3,$4,$5,$6)`,
+      [pessoa, tipo, valor, base, desde, perfil.id]
+    );
+
+  // Regra geral da empresa, e um reajuste depois.
+  await vig(null, "comissao", 100, 200, "2026-01-01");
+  await vig(null, "comissao", 120, 200, "2026-06-01");
+
+  // A busca: a de MAIOR vigente_desde que seja <= a data.
+  const valeEm = async (data, pessoa) => (await client.query(
+    `select valor, litros_base from public.vigencias_remuneracao
+      where tipo='comissao' and vigente_desde <= $1::date
+        and (pessoa_id = $2 or pessoa_id is null)
+      order by vigente_desde desc, (pessoa_id is null) asc
+      limit 1`,
+    [data, pessoa]
+  )).rows[0];
+
+  checar("coleta de março usa a regra de janeiro", Number((await valeEm("2026-03-15", mot.id)).valor), 100);
+  checar("coleta de agosto usa o reajuste de junho", Number((await valeEm("2026-08-15", mot.id)).valor), 120);
+
+  // Regra específica da pessoa vence a geral NA MESMA DATA — é o caso de
+  // "todo mundo ganha X, menos o fulano".
+  await vig(mot.id, "comissao", 150, 200, "2026-06-01");
+  checar("regra da pessoa vence a geral no mesmo dia", Number((await valeEm("2026-08-15", mot.id)).valor), 150);
+
+  // A conta é PROPORCIONAL: metade dos litros paga metade.
+  const r = await valeEm("2026-08-15", mot.id);
+  const comissaoDe = (litros) => (litros / Number(r.litros_base)) * Number(r.valor);
+  checar("350 L numa base de 200 paga 1,75x", comissaoDe(350), 262.5);
+  checar("100 L numa base de 200 paga metade", comissaoDe(100), 75);
+
+  // Duas vigências do mesmo tipo, mesma pessoa, mesmo dia seria ambíguo.
+  let dupe = false;
+  try {
+    await client.query("savepoint spv");
+    await vig(mot.id, "comissao", 999, 200, "2026-06-01");
+    dupe = true;
+    await client.query("rollback to spv");
+  } catch { await client.query("rollback to spv"); }
+  afirmar("duas vigências no mesmo dia são barradas", !dupe);
+
+  // Comissão sem base de litros não calcula nada.
+  let semBase = false;
+  try {
+    await client.query("savepoint spb");
+    await vig(null, "comissao", 100, null, "2027-01-01");
+    semBase = true;
+    await client.query("rollback to spb");
+  } catch { await client.query("rollback to spb"); }
+  afirmar("comissão sem base de litros é barrada", !semBase);
+
+  // E salário NÃO usa base — o campo é só da comissão.
+  let salarioComBase = false;
+  try {
+    await client.query("savepoint sps");
+    await vig(mot.id, "salario", 2500, 200, "2026-01-01");
+    salarioComBase = true;
+    await client.query("rollback to sps");
+  } catch { await client.query("rollback to sps"); }
+  afirmar("salário com base de litros é barrado", !salarioComBase);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"

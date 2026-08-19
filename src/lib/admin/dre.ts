@@ -178,9 +178,6 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
       ),
       (c) => c.valor
     ),
-    // Fase D. Mostrar zerada é melhor que esconder: deixa claro que a
-    // comissão ainda não entra na conta.
-    comissao: 0,
     combustivel: soma(abastAVista, (a) => a.valor),
     troca_oleo: manutPorTipo(["troca_oleo"]),
     pneus: manutPorTipo(["pneu"]),

@@ -41,6 +41,7 @@ export function Sidebar({
         { href: "/admin/caixa", label: "Caixa" },
         { href: "/admin/lancamentos", label: "Lançamentos" },
         { href: "/admin/dre", label: "DRE" },
+        { href: "/admin/remuneracao", label: "Remuneração" },
         { href: "/admin/estoque", label: "Estoque" },
         { href: "/admin/vendas", label: "Vendas" },
         { href: "/admin/cheques", label: "Cheques" },
