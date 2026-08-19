@@ -2,17 +2,23 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
 /**
- * Gate do MÓDULO 1 (Cargas, Caminhões, Descargas, Adiantamentos, Acertos).
+ * Gate dos MÓDULOS 1 e 2 (Cargas, Estoque, Vendas, Cheques, Contas a pagar,
+ * Compradores, Caminhões, Adiantamentos e Acertos).
  *
- * ESTÁGIO ATUAL: DEV-ONLY (Estágio 1 do ciclo de vida de feature).
- * Só o Evaner (role='dev') vê os menus, acessa as páginas e chama os endpoints.
- * Jean (role='admin') não vê nada do módulo até a promoção.
+ * ESTÁGIO ATUAL: LIBERADO PRO ADMIN (Estágio 2).
+ * Liberado em 18/08/2026, a pedido do Evaner, depois que o log de ações
+ * (migration 0022) entrou — assim os primeiros dias com dois gestores
+ * lançando já nascem com rastro de quem fez o quê.
  *
- * PRA PROMOVER PRO JEAN (Estágio 2): mudar a constante abaixo pra `true`.
- * Um único flip libera de uma vez: links do menu, as 4 páginas e os 6 endpoints.
- * Nada mais precisa ser editado.
+ * O que o dev ainda tem a mais, e por isso este gate não foi removido:
+ * o painel de features (/admin/dev/features) e ver os dados do motorista de
+ * teste com 🧪. Quando isso também deixar de importar, dá pra apagar o
+ * arquivo inteiro e trocar as chamadas por `podeAcessarAdmin`.
+ *
+ * PRA VOLTAR ATRÁS: mudar a constante pra `false`. Fecha tudo de uma vez —
+ * menus, páginas e endpoints — sem precisar editar mais nada.
  */
-export const MODULO1_LIBERADO_PARA_ADMIN = false;
+export const MODULO1_LIBERADO_PARA_ADMIN = true;
 
 interface ProfileGate {
   role: string;
