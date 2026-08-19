@@ -1,187 +1,193 @@
-# DRE — desenho pra aprovação
+# DRE — desenho (v2, depois das suas respostas)
 
 > **Isto não é plano de execução.** É o modelo, pra você revisar antes de eu
-> escrever qualquer linha. As decisões em aberto estão marcadas com ❓.
+> escrever qualquer linha. O que ainda depende de você está marcado com ❓.
 
-Base: a lista que você mandou em 19/08/2026, com as 4 seções separadas por
-linha em branco.
+Base: sua lista de categorias + o print da aba **Lançamentos** da planilha
+"2026 - FLUXO TOTAL EMPRESA" (19/08/2026).
 
 ---
 
-## A descoberta que muda o trabalho
+## Como funciona hoje (o que o print mostra)
 
-**Você não precisa lançar quase nada disso de novo.** Metade das suas linhas
-já existe como dado estruturado no sistema:
+Você olha o **extrato do banco** e lança linha a linha:
 
-| Sua linha | De onde já sai hoje |
+| Coluna | O que é |
 |---|---|
-| Óleo pago pela sede | `coletas.pago_pela_sede` (0021) + `compras_diretas` |
-| Lucimar / Nei / Fumaça — Dinheiro em mãos | `adiantamentos` aceitos |
-| Combustível | `abastecimentos` |
-| Troca de óleo | `manutencoes` tipo `troca_oleo` |
-| Pneus | `manutencoes` tipo `pneu` |
-| Manutenção | `manutencoes` tipo `revisao`/`corretiva`/`outro` |
-| Seguro Caminhão | `documentos` tipo `seguro` → conta prevista |
-| IPVA da frota | `documentos` tipo `ipva` → conta prevista |
-| Salários Lucimar/Lucinei/Luiz | Módulo 3 (a construir) |
+| Ano / Mês / Dia | quando |
+| **Fonte** | de onde saiu o dinheiro — `$$` (espécie) ou `BB` (banco) |
+| Valor | quanto |
+| **Local** | a categoria (é a sua lista de ~30) |
+| Obs. | texto livre — "PIX DÉ CAMPINA LAGOA OLEO FUMACA", "ALDO CHAPEADOR ECOSPORT" |
+| Forma / Parcela / OBS | complementos |
 
-O resto — pró-labore, advogado, contabilidade, luz/internet/telefone, taxas,
-banco, sistema, lavagem, equipamento, benfeitorias, viagem, empréstimos,
-dívidas PF, impostos — **é conta a pagar lançada na mão**, que já existe.
+E as abas: *Controle Geral (só olhar)*, **Lançamentos**, *Entradas*,
+*Acompanhamento de caixa*, *Soma de dívidas PF*.
 
-Então o DRE **não é tabela nova**. É:
-
-1. um **plano de contas** (a sua lista virando uma lista fixa no código), e
-2. uma **função que soma cada linha da fonte natural dela**.
+**O modelo que você descreveu está certo:** o **lançamento é mutável**, a
+**DRE é painel imutável** calculado em cima dele. É assim que vou construir.
 
 ---
 
-## ❓ Decisão 1 — "Dinheiro em mãos" não é despesa
+## Decisões já fechadas
 
-Sua lista tem *Lucimar / Nei / Fumaça — Dinheiro em mãos* como custo. **Em DRE
-isso não é gasto: é transferência de caixa.** O dinheiro sai do seu bolso e
-entra no bolso dele, mas o **gasto** só acontece quando ele usa — pagando uma
-coleta, abastecendo, ou numa despesa.
-
-Se o DRE contar o adiantamento **e** as coletas que ele pagou com aquele
-dinheiro, **o mesmo real é contado duas vezes** e o resultado fica pior do que
-é.
-
-Minha proposta: **adiantamento sai do DRE e fica só no fluxo de caixa**. O que
-entra no DRE é o que ele efetivamente gastou (coletas, combustível, despesas),
-que o sistema já sabe uma a uma.
-
-Se hoje a sua planilha conta o adiantamento e **não** conta as coletas, os dois
-jeitos dão o mesmo total — mas o meu mostra **em que** o dinheiro foi.
-
-**Você concorda em tirar do DRE?**
+| # | Decisão |
+|---|---|
+| 1 | **"Dinheiro em mãos" vira "Óleo comprado por [motorista]"** — e sai automático (ver abaixo) |
+| 2 | **DRE por competência** |
+| 3 | Não dobrar nem sumir — **comigo**, com teste no E2E provando |
+| 4 | **Valdecir** é faz-tudo, sem caminhão, recebe transferência. "Pró-labore" não é o termo técnico: é **transferência pra uma pessoa** (Jean e Valdecir) |
+| 5 | **Receita e margem bruta entram** |
 
 ---
 
-## ❓ Decisão 2 — competência ou caixa?
+## Mudança 1 — "Dinheiro em mãos" some, e vira melhor
 
-- **Caixa:** a conta entra no mês em que foi **paga**. É como sua planilha
-  parece funcionar hoje.
-- **Competência:** entra no mês em que o gasto **aconteceu**. O IPVA de 2027
-  pesa em 2027 mesmo que você pague em janeiro; a manutenção de março pesa em
-  março mesmo pagando em abril.
+Hoje você lança **"Lucimar — Dinheiro em mãos, R$ 5.000, $$ ENTREGUE"**. Isso
+é a **entrega**, não o gasto — e a planilha nunca soube quanto daqueles
+R$ 5.000 virou óleo.
 
-Competência é o que faz o DRE responder *"esse mês foi bom?"* sem o resultado
-pular por causa de quando o boleto venceu. Caixa responde *"sobrou dinheiro?"*
-— que é a pergunta do **fluxo de caixa**, e essa você já tem em Contas a pagar.
+O sistema sabe. Cada coleta do Lucimar tem litros e valor pago, uma a uma.
 
-Minha proposta: **DRE por competência**, fluxo de caixa por caixa. Os dois
-convivem e respondem coisas diferentes.
+Então a linha do DRE vira **"Óleo comprado por Lucimar"** e é a **soma real
+das coletas dele no período** — não precisa lançar nada. A entrega do dinheiro
+continua existindo como **adiantamento**, que é o que ela é: transferência de
+caixa, que aparece no acompanhamento de caixa e não no DRE.
 
-**Qual você quer?**
-
----
-
-## ❓ Decisão 3 — a regra anti-dobra
-
-Um mesmo gasto pode aparecer em dois lugares por desenho: abastecimento com
-*"assinei a nota"* vira `abastecimento` **e** `conta_a_pagar`; manutenção a
-prazo idem; coleta paga pela sede idem.
-
-A boa notícia é que a ligação já existe: essas contas têm `origem_tipo`
-preenchido. Hoje há 2 contas assim, ambas de coleta.
-
-**Regra proposta, uma linha:**
-
-> Conta a pagar **com** `origem_tipo` é espelho de um lançamento operacional —
-> conta pro **fluxo de caixa**, nunca pro DRE. Conta **sem** `origem_tipo` é
-> gasto próprio e entra no DRE.
-
-Assim cada real é contado exatamente uma vez, e a máquina que faz isso já está
-no banco.
-
-**Ok?**
+**Ganho:** você passa a ver *"o Lucimar comprou R$ 4.200 de óleo e ainda tem
+R$ 800 na mão"* em vez de *"entreguei R$ 5.000"*.
 
 ---
 
-## ❓ Decisão 4 — quem são Valdecir e Fumaça?
+## Mudança 2 — a **Fonte** entra no modelo
 
-*Pro-Labore Valdecir* e *Fumaça — Dinheiro em mãos* aparecem na sua lista mas
-**não existem no sistema**. Os perfis cadastrados são Jean, Evaner, Luis,
-Lucimar, Lucinei, Suzana, Evanerteste e Teste 1.
+Eu não tinha isso e é o que sustenta seu *Acompanhamento de caixa*: de qual
+caixa o dinheiro saiu. Vira uma lista fixa (`especie`, `bb`, e o que mais
+existir), em todo lançamento.
 
-- **Fumaça** é apelido de um dos motoristas? De qual?
-- **Valdecir** é sócio? Precisa de perfil, ou é só uma linha de despesa?
+❓ **Além de `$$` e `BB`, tem outra conta?** (outro banco, cartão, conta PJ
+separada)
 
-Isso muda se a linha é "salário de um motorista cadastrado" (vem do Módulo 3)
-ou "conta a pagar recorrente" (vem de Contas a pagar).
+---
+
+## Mudança 3 — a tela de Lançamentos é o coração
+
+Uma tela de **lançar despesa** rápida, no ritmo do extrato: data, fonte,
+valor, categoria, obs. Com **filtro** por período, categoria, fonte e pessoa —
+e é ela que alimenta as abas da DRE.
+
+Tecnicamente ela grava em `contas_a_pagar` **já com status `paga`** (você está
+lançando o que já saiu). A mesma tabela continua guardando o que ainda vai
+vencer. Uma tabela só pra todo dinheiro que sai é o que torna o DRE possível
+sem dobrar.
+
+---
+
+## ❓ A proposta que eu quero que você avalie
+
+Você disse: *"ao criar um novo funcionário criaria uma categoria também"*.
+
+Isso funciona, mas faz a lista de categorias **crescer com as pessoas**. Hoje
+já tem 5 linhas que são pessoa e não gasto: *Pro-Labore Jean*, *Pro-Labore
+Valdecir*, *Lucimar/Nei/Fumaça — Dinheiro em mãos*. Contratou alguém, mexe na
+lista; alguém saiu, a categoria fica órfã pra sempre no histórico.
+
+**Proposta: separar o QUÊ do QUEM.** Todo lançamento tem `categoria` (o quê) e,
+opcionalmente, `pessoa` (quem):
+
+| Sua linha de hoje | Vira |
+|---|---|
+| Lucimar — Dinheiro em mãos | categoria **Óleo comprado** + pessoa **Lucimar** |
+| Nei — Dinheiro em mãos | categoria **Óleo comprado** + pessoa **Lucinei** |
+| Fumaça — Dinheiro em mãos | categoria **Óleo comprado** + pessoa **❓ quem é Fumaça?** |
+| Pro-Labore Jean | categoria **Transferência a sócio** + pessoa **Jean** |
+| Pro-Labore Valdecir | categoria **Transferência a sócio** + pessoa **Valdecir** |
+| Salário Lucimar | categoria **Salário** + pessoa **Lucimar** |
+
+**O que você ganha:** a lista de categorias para de crescer; contratar alguém
+não mexe em nada; o DRE mostra "Salários: R$ X" e você **clica e abre por
+pessoa**; e comparar mês a mês não quebra quando o time muda.
+
+**O que você perde:** dois campos no lançamento em vez de um. Mas o segundo só
+aparece nas categorias que são de pessoa.
+
+**Topa? Ou prefere uma categoria por pessoa, como hoje?**
 
 ---
 
 ## O DRE proposto
 
-Sua lista mais a receita, que faltava (sua planilha parece ser só de custo).
-
 ```
 RECEITA
-  Venda de óleo                            ← vendas.valor_total
+  Venda de óleo                            ← vendas
 
-(−) CUSTO DO ÓLEO VENDIDO
-  Óleo pago pelo motorista                 ← coletas.valor_pago (não sede)
+(−) CUSTO DO ÓLEO
+  Óleo comprado pelos motoristas           ← coletas (por motorista)
   Óleo pago pela sede                      ← coletas pago_pela_sede + compras_diretas
-  Comissão dos motoristas                  ← Módulo 3
+  Comissão                                 ← Módulo 3 (por vigência)
 
-= MARGEM BRUTA                             ← quanto sobra do óleo em si
+= MARGEM BRUTA
 
 (−) CUSTOS OPERACIONAIS
   Combustível                              ← abastecimentos
-  Troca de óleo                            ← manutencoes tipo troca_oleo
-  Pneus                                    ← manutencoes tipo pneu
-  Manutenção                               ← manutencoes (revisao/corretiva/outro)
-  Lavagem de caminhão                      ← conta a pagar
-  Equipamento veículo                      ← conta a pagar
-  Custos de viagem                         ← conta a pagar / despesas
-  Benfeitorias sede                        ← conta a pagar
+  Troca de óleo · Pneus · Manutenção       ← manutencoes (por tipo)
+  Lavagem · Equipamento veículo            ← lançamento
+  Custos de viagem                         ← lançamento + despesas do motorista
+  Benfeitorias sede                        ← lançamento
 
 (−) DESPESAS FIXAS
-  Pró-labore Jean                          ← conta a pagar (recorrente)
-  Pró-labore Valdecir                      ← ❓ decisão 4
+  Transferência a sócio (Jean, Valdecir)   ← lançamento + pessoa
   Salários (Lucimar, Lucinei, Luiz)        ← Módulo 3
-  Custo César advogado                     ← conta a pagar
-  Contabilidade                            ← conta a pagar (recorrente)
-  Luz, Internet e Telefone                 ← conta a pagar (recorrente)
-  Seguro Caminhão                          ← documentos tipo seguro
-  IPVA da frota                            ← documentos tipo ipva
-  Taxas e Licenças                         ← conta a pagar
-  Custos de contas bancárias               ← conta a pagar (recorrente)
-  Sistema                                  ← conta a pagar (recorrente)
+  Advogado · Contabilidade · Sistema       ← lançamento
+  Luz, Internet e Telefone                 ← lançamento
+  Seguro Caminhão · IPVA da frota          ← documentos
+  Taxas e Licenças · Custos bancários      ← lançamento
 
 = RESULTADO OPERACIONAL
 
 (−) FINANCEIRO
-  Empréstimos e financiamentos             ← conta a pagar
-  Dívidas PF                               ← conta a pagar
+  Empréstimos e financiamentos · Dívidas PF ← lançamento
 
-(−) IMPOSTOS
-  Impostos                                 ← conta a pagar
+(−) IMPOSTOS                                ← lançamento
 
 = RESULTADO DO PERÍODO
 ```
 
-**O que acrescentei ao seu:** a receita, a **margem bruta** e o **resultado
-operacional**. São duas linhas de corte que respondem perguntas diferentes:
-*"o óleo em si dá lucro?"* e *"a operação se paga antes de banco e imposto?"*.
-Se você achar que polui, tiro.
+---
+
+## A regra anti-dobra (decisão 3, minha)
+
+Cada real conta **uma vez**, na fonte natural dele:
+
+> Lançamento **com** `origem_tipo` preenchido é espelho de algo operacional
+> (abastecimento "assinei a nota", manutenção a prazo, coleta paga pela sede).
+> Conta pro **caixa**, nunca pro DRE — o DRE já contou pela fonte.
+> Lançamento **sem** `origem_tipo` é gasto próprio e entra no DRE.
+
+**Como eu provo:** um check no E2E que soma o DRE inteiro e compara com a soma
+crua de todas as fontes de dinheiro que sai. Se der diferente, ou dobrou ou
+sumiu — e o teste fica vermelho antes de você ver na tela.
 
 ---
 
 ## O que eu construiria
 
-1. **Plano de contas** (`src/lib/dre.ts`) — a lista acima virando código, cada
-   linha com seu grupo e sua fonte. Fixa, como os tipos de documento — nova
-   linha é deploy, não migration.
-2. **`contas_a_pagar.categoria` passa a usar essa lista** — hoje é texto livre
-   com uma convenção de 6 valores em comentário, o que não sustenta 30 linhas.
-   Precisa de migration pra reclassificar as contas que já existem (são 3).
-3. **Função `dre(inicio, fim)`** — soma cada linha da fonte natural, aplicando
-   a regra anti-dobra.
-4. **Tela `/admin/dre`** — as linhas acima, com o comparativo do período
-   anterior (mesma convenção do dashboard) e clique pra ver o que compõe.
+1. **Plano de contas** (`src/lib/dre.ts`) — categorias e grupos em código
+2. **Migration** — `fonte` e `pessoa_id` em `contas_a_pagar`, `categoria` passa
+   a usar a lista fixa, e reclassificação das 3 contas que já existem
+3. **Tela `/admin/lancamentos`** — lançar rápido no ritmo do extrato + filtros
+4. **Função `dre(inicio, fim)`** — cada linha da fonte natural, com a regra
+   anti-dobra
+5. **Tela `/admin/dre`** — o painel, com comparativo do período anterior e
+   clique pra abrir o que compõe cada linha
+6. **E2E** — o check de conferência acima
 
-**Fora de escopo:** rateio por caminhão, custo fixo vs variável por kg, margem
-por comprador. Dá pra fazer depois em cima disso; agora seria adivinhar.
+**Fora de escopo agora:** rateio por caminhão, margem por comprador, DRE
+gerencial vs contábil. Dá pra fazer em cima disso depois.
+
+## ❓ Aberto
+
+1. Além de `$$` e `BB`, **tem outra fonte de dinheiro?**
+2. **Quem é o Fumaça?** (apelido de qual motorista, ou pessoa não cadastrada)
+3. **Separar categoria de pessoa** (a proposta acima) ou **uma categoria por
+   pessoa** como hoje?
