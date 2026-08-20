@@ -563,6 +563,39 @@ cabeça.
 vales pendentes; em 20/08 fechou-se a ponta solta: apagar o pagamento devolve
 o vale pra lista de pendentes]`
 
+**R110-c.** ⚠️ **REGRA NOVA (20/08/2026) — a folha oficial passa pelo
+CONTADOR, e o holerite é a fonte do lançamento.** O holerite de cada
+motorista tem quatro linhas de ganho:
+- **Horas normais + Periculosidade 30%** — o fixo (hoje 2.528,64 + 758,59 =
+  R$ 3.287,23 brutos, igual pros três);
+- **Comissões** — o valor que NASCE na tela de Remuneração do sistema, vai
+  pro contador e volta impresso (o circuito fecha: sistema → contador →
+  holerite → conferência);
+- **DSR s/ comissões** — reflexo legal da comissão (comissão ÷ dias úteis ×
+  domingos/feriados, ~15%). O contador calcula; o custo REAL da comissão é
+  o valor negociado × ~1,15 + encargos.
+
+Os descontos do holerite (INSS, IRRF, sindicato, consignado) **não são
+custo extra**: são dinheiro do funcionário que a empresa retém e entrega
+nas guias do mês seguinte. O FGTS e o INSS patronal, que não aparecem no
+holerite, são custo da empresa e chegam pelas guias.
+`[CONFIRMADO — holerites reais de 07/2026 analisados em 20/08]`
+
+**R110-d.** ⚠️ **REGRA NOVA (20/08/2026) — como o pagamento entra no
+sistema.** Regra de ouro: cada lançamento = um débito real do extrato.
+- **Dia dos PIX**, por motorista: **Comissão = COMISSÕES + DSR** (bruta, no
+  custo do óleo) e **Salário = líquido − essa comissão** (é onde os vales
+  aparecem). A soma fecha com o PIX no centavo.
+- **Guias** (DAE/eSocial, FGTS, sindicato): um lançamento por boleto, valor
+  cheio, categoria **Encargos de funcionário**, como **"Empresa toda"** —
+  decisão do Evaner: **NÃO separar por funcionário** (a DAE não abre por
+  pessoa no holerite; ratear seria inventar número). Guia de UMA pessoa só
+  (rescisão etc.) leva a pessoa.
+- **Consignado** repassado ao banco: lança como **Salário** da pessoa, com
+  observação — é salário dele indo pro banco em vez do bolso.
+`[CONFIRMADO — decisão do Evaner em 20/08/2026; receita completa na seção
+4.6 do MANUAL-DO-SOFTWARE.md]`
+
 **R111.** Cada coleta usa a regra **do dia dela**. Mudança no meio do mês
 parte a conta na data certa.
 

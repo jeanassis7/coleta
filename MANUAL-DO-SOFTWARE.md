@@ -175,7 +175,7 @@ A tela mostra o saldo de cada conta, o card **"Na mão dos motoristas"** e o car
 
 ### Lançamentos (`/admin/lancamentos`)
 O que **já saiu**, no ritmo do extrato do banco. Formulário sempre aberto: **Quando** → **Saiu de** (qual conta) → **O que foi** (categoria do plano de contas) → **Valor** → observação. Categorias como Salário, Comissão, Encargos de funcionário e Transferência a sócio pedem **de quem**.
-- **Pagamento do mês dos funcionários**: pegue a folha do contador e lance **item a item** — Salário numa linha, Comissão noutra (a tela de Remuneração diz o valor), Encargos de funcionário (INSS, FGTS, 13º, férias) noutra. Fica separadinho e o DRE mostra cada custo no lugar certo.
+- **Pagamento do mês dos funcionários**: siga a receita da seção **4.6 — Como lançar pagamentos** (Comissão + Salário por pessoa no dia dos PIX; guias como Encargos "Empresa toda" quando chegarem). Fica separadinho e o DRE mostra cada custo no lugar certo.
 - Escolhendo **Salário** + uma pessoa que tem **vale** de acerto pendente, aparece o bloco "Esse pagamento quita algum vale?" — marque os vales que estão sendo descontados. É o sistema lembrando por você. (Se algum vale marcado ficar de fora — já quitado por outro pagamento, por exemplo — a tela **avisa**, não finge que descontou.)
 - O checkbox **"Paguei com um cheque da carteira"** é o jeito certo de **repassar** um cheque: a despesa nasce registrada e o cheque sai da carteira, amarrado a ela.
 - As categorias **automáticas** (venda, óleo, combustível, troca de óleo, pneus, manutenção) **não aparecem** aqui — o sistema calcula sozinho da origem; lançar na mão dobraria o número.
@@ -279,52 +279,99 @@ Nesta ordem:
 
 1. **Contas a pagar → Recorrentes → "Gerar contas do mês"**.
 2. Confirmar valores das previstas cujo boleto chegou (**"Confirmar valor"**).
-3. Pagar contas e lançar no extrato o que saiu (**Lançamentos**).
-4. Pagar o mês dos funcionários pela folha do contador, **item a item** em Lançamentos (a receita exata está logo abaixo).
-5. Ler o **DRE** do mês.
-6. A cada 2-3 meses: **inventário** do estoque.
+3. Pagar tudo seguindo a seção **4.6 — Como lançar pagamentos** (leia ela
+   uma vez com calma; depois vira automático).
+4. Ler o **DRE** do mês.
+5. A cada 2-3 meses: **inventário** do estoque.
 
-### Como lançar a folha (holerite) do contador — a receita exata
+## 4.6 COMO LANÇAR PAGAMENTOS ⭐ (leia antes de pagar qualquer coisa)
 
-O holerite de cada motorista tem quatro linhas de provento (Horas normais,
-Periculosidade, Comissões, DSR s/ comissões), os descontos (INSS, IRRF,
-sindicato, consignado) e o **Total Líquido** — que é o PIX que sai da conta.
-A regra do sistema é: **cada lançamento = um dinheiro que saiu de verdade.**
+> Esta é a parte com mais detalhe do sistema inteiro. A boa notícia: é UMA
+> regra + quatro receitas. Entendeu a regra, as receitas viram hábito.
 
-**No dia que pagar os PIX** — dois lançamentos por motorista, que juntos
-fecham exatamente com o líquido:
+### A regra de ouro (vale pra todo pagamento)
 
-1. **Comissão** (pessoa = o motorista) = **COMISSÕES + DSR S/COMISSÕES** do
-   holerite, somados. (O DSR é o descanso remunerado que a lei manda pagar
-   junto da comissão — anda com ela, então conta como comissão.)
-2. **Salário** (pessoa = o motorista) = **Total Líquido − o valor do item 1**.
-   É aqui que os vales pendentes aparecem pra marcar.
+**Cada lançamento = um dinheiro que saiu do banco de verdade, naquele dia,
+naquele valor.** Nunca lance um valor que não bata com um débito do extrato.
+É isso que faz o Caixa da tela fechar com o banco no centavo — e é assim que
+você descobre erro: se desencontrou, algum lançamento não corresponde a um
+débito real (ou um débito real ficou sem lançamento).
+
+### Receita 1 — A folha dos funcionários (a mais detalhada)
+
+O holerite de cada motorista tem 4 linhas de ganho: **Horas normais** e
+**Periculosidade** (o fixo), **Comissões** (o prêmio por litro — o número
+que nasce na sua tela de Remuneração) e **DSR s/ comissões** (descanso
+remunerado que a lei manda pagar junto da comissão — o contador calcula,
+você só soma). Os descontos (INSS, IRRF, sindicato, consignado) **não são
+dinheiro seu**: são dinheiro DELES que a empresa segura e entrega nas guias
+do mês seguinte. O **Total Líquido** é o PIX do dia.
+
+**No dia dos PIX — 2 lançamentos por motorista** (em Lançamentos):
+
+| # | Categoria | De quem | Valor |
+|---|---|---|---|
+| 1 | **Comissão dos motoristas** | o motorista | **COMISSÕES + DSR** do holerite, somados |
+| 2 | **Salário** | o motorista | **Total Líquido − o valor do item 1** (os vales pendentes aparecem aqui pra marcar) |
 
 *Exemplo real (folha 07/2026, Lucimar): Comissão = 2.555,56 + 378,60 =
 R$ 2.934,16; Salário = 4.975,10 − 2.934,16 = R$ 2.040,94. Soma = o PIX de
-R$ 4.975,10 — o caixa fecha no centavo.*
+R$ 4.975,10 — fecha no centavo.*
 
-**Nos dias em que as guias forem pagas** (mês seguinte) — um lançamento por
-guia, valor cheio do boleto:
+**Quando as guias chegarem (mês seguinte) — 1 lançamento por boleto, valor
+cheio, TUDO JUNTO** (decisão de 20/08/2026 — não separe por funcionário: a
+DAE não abre por pessoa no holerite, e ratear no chute é inventar número):
 
-3. **Encargos de funcionário** → a guia **DAE/eSocial** (INSS + IRRF) e o
-   **FGTS digital**: são da empresa toda, escolha **"Empresa toda (guia
-   coletiva)"** no campo De quem. A guia do **sindicato** idem.
-4. **Consignado** (desconto de empréstimo repassado ao banco, como o do
-   Luiz): lance como **Salário** com a pessoa dele e observação
-   "consignado" — é parte do salário dele que vai pro banco em vez do bolso.
+| Boleto | Categoria | De quem |
+|---|---|---|
+| DAE / eSocial (INSS + IRRF) | **Encargos de funcionário** | **Empresa toda (guia coletiva)** |
+| FGTS digital | **Encargos de funcionário** | Empresa toda |
+| Guia do sindicato | **Encargos de funcionário** | Empresa toda |
+| Consignado (empréstimo do funcionário repassado ao banco) | **Salário** | a pessoa, obs. "consignado" |
 
-**Por que assim:** a Comissão aparece **bruta** no Custo do Óleo (é o prêmio
-por litro, e é o número que tem que bater com a linha COMISSÕES que o
-contador imprimiu — que por sua vez veio da tela de Remuneração). Os
-encargos aparecem como o custo de empregar. E cada lançamento bate com um
-débito real do extrato — o caixa nunca desencontra da conta.
+**Por que assim:** a Comissão aparece bruta no Custo do Óleo (e tem que
+bater com a linha COMISSÕES do contador — que veio da sua tela de
+Remuneração: o circuito fecha). Os Encargos mostram o custo escondido de
+empregar. E cada lançamento bate com um débito real.
 
-**Dica**: cadastre as guias (DAE, FGTS, sindicato) como **despesas
-recorrentes estimadas** — elas aparecem no fluxo de caixa futuro como
-previsão e todo mês é só confirmar o valor do boleto.
+**Dica:** cadastre DAE, FGTS e sindicato como **despesas recorrentes
+estimadas** — todo mês aparecem como previsão, chegou o boleto é só
+"Confirmar valor" e pagar.
 
-## 4.6 Tarefas pontuais
+### Receita 2 — Boleto / conta de fornecedor (posto, manutenção, IPVA...)
+
+Se a dívida **já está** em Contas a pagar (nota assinada, manutenção a
+prazo, óleo da sede, documento, recorrente): **Contas a pagar → Pagar** →
+forma → de qual conta saiu → data. Pronto — ela entra no DRE sozinha.
+**Não lance de novo em Lançamentos** (dobraria).
+Se o gasto **não está** lá (pagou algo na hora, direto do extrato):
+**Lançamentos**, categoria certa, conta de onde saiu.
+
+### Receita 3 — Pagar com CHEQUE da carteira
+
+Nunca procure um botão "repassar". Pagar com cheque É o repasse:
+- dívida que já existe → **Contas a pagar → Pagar → Cheque** → escolhe o
+  cheque;
+- gasto na hora → **Lançamentos → "Paguei com um cheque da carteira"**.
+O cheque sai da carteira amarrado à despesa, e **não sai dinheiro de conta
+nenhuma** (quitou com o papel).
+
+### Receita 4 — Dinheiro pro motorista trabalhar (NÃO é Lançamentos!)
+
+Adiantamento e acerto têm tela própria: **Adiantamentos**. Enviar dinheiro
+= "+ R$" (valor, conta, forma). Fechar o ciclo = "Acerto" (devolvido / vale
+/ saldo). O pró-labore dos sócios é em **Lançamentos → Transferência a
+sócio** com a pessoa.
+
+### O que NUNCA lançar como pagamento
+
+- **Saque, depósito, PIX entre contas suas** → é Caixa → "⇄ Transferir"
+  (mesmo dinheiro mudando de bolso, não é despesa).
+- **Categorias automáticas** (venda, óleo, combustível, troca de óleo,
+  pneus, manutenção) → o sistema calcula da origem; nem aparecem no
+  dropdown. Se sentir falta delas, o lugar certo é a tela de origem.
+
+## 4.7 Tarefas pontuais
 
 | Quero... | Onde |
 |---|---|
