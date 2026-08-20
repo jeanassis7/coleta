@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
   // Valida TODAS antes de gravar qualquer uma: meio maço lançado é pior que
   // nenhum, porque ninguém sabe onde parou.
   const prontos: {
+    client_id: string | null;
     banco: string;
     emitente: string;
     numero: string | null;
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
     }
 
     prontos.push({
+      client_id: l.client_id ? String(l.client_id) : null,
       banco,
       emitente,
       numero: l.numero ? String(l.numero).trim() : null,
@@ -112,6 +114,7 @@ export async function POST(req: NextRequest) {
     .from("recebimentos")
     .insert(
       prontos.map((c) => ({
+        client_id: c.client_id,
         comprador_id,
         venda_id: null,
         forma: "cheque",
@@ -122,6 +125,60 @@ export async function POST(req: NextRequest) {
       }))
     )
     .select("id");
+
+  // 23505 no client_id = REENVIO: o maço já entrou numa tentativa anterior
+  // (internet piscou depois do servidor gravar, o gestor clicou de novo).
+  // O insert em lote é tudo-ou-nada, então a tentativa anterior gravou os N
+  // recebimentos. Só confere se os cheques também entraram — se o rollback
+  // compensatório da vez anterior tiver deixado recebimento sem cheque, os
+  // que faltam entram agora. Nada duplica.
+  if (errReceb?.code === "23505") {
+    const ids = prontos.map((c) => c.client_id).filter((x): x is string => !!x);
+    const { data: jaEntraram } = await client
+      .from("recebimentos")
+      .select("id, client_id")
+      .in("client_id", ids);
+    const recebPorClientId = new Map(
+      (jaEntraram ?? []).map((r) => [r.client_id as string, r.id as string])
+    );
+    const { data: chequesExistentes } = await client
+      .from("cheques")
+      .select("recebimento_id")
+      .in("recebimento_id", [...recebPorClientId.values()]);
+    const temCheque = new Set(
+      (chequesExistentes ?? []).map((c) => c.recebimento_id as string)
+    );
+    const faltantes = prontos.filter(
+      (c) =>
+        c.client_id &&
+        recebPorClientId.has(c.client_id) &&
+        !temCheque.has(recebPorClientId.get(c.client_id)!)
+    );
+    if (faltantes.length > 0) {
+      const { error: errCompleta } = await client.from("cheques").insert(
+        faltantes.map((c) => ({
+          recebimento_id: recebPorClientId.get(c.client_id!)!,
+          comprador_id,
+          banco: c.banco,
+          emitente: c.emitente,
+          numero: c.numero,
+          valor: c.valor,
+          bom_para: c.bom_para,
+          status: "em_carteira",
+          observacao: c.observacao,
+        }))
+      );
+      if (errCompleta) {
+        return NextResponse.json({ error: errCompleta.message }, { status: 400 });
+      }
+    }
+    return NextResponse.json({
+      ok: true,
+      quantidade: prontos.length,
+      total,
+      aviso: "esse maço já tinha sido lançado — nada foi duplicado",
+    });
+  }
 
   if (errReceb || !recebs || recebs.length !== prontos.length) {
     return NextResponse.json(

@@ -146,8 +146,18 @@ autorizou as correções, que foram TODAS aplicadas em 20/08, nas migrations
 - **D10**: senhas continuam no CLAUDE.md (decisão dele, projeto interno).
 - **Item 7 do relatório** (baixos/cosméticos): NÃO autorizado em lote — ele
   quer entender melhor antes. Detalhar em grupos pequenos quando pedir.
-- **M4** (reversão de devolução não-atômica) e **M22** (idempotência do
-  maço/payload do OCR): explicados de novo, aguardando ok.
+- **Debate das categorias do DRE**: proposta enviada em 20/08 (aluguel,
+  água, etc.) — aguardando as respostas dele. Categoria nova só entra
+  quando ele pedir. A RECEITA já abre em 3 (à vista / cheques compensados /
+  cheques repassados) — isso ele pediu explicitamente e foi feito.
+
+**Segunda rodada de 20/08 (depois das respostas dele):** M1 (Editar
+valor/vencimento de conta a_pagar — ação "editar" + modal), M4 (devolução
+de cheque virou tudo-ou-nada: se a reversão da conta falhar, o cheque volta
+pro status anterior e a tela explica), M22 (maço idempotente por client_id
+— migration 0041 — e OCR em levas de 3 fotos pra não estourar payload), D9
+(texto no cadastro de conta: informe o saldo de ANTES dos lançamentos do
+dia), e a abertura da Receita no DRE.
 
 ### Aberto sem causa raiz
 

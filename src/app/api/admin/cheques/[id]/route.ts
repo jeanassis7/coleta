@@ -76,6 +76,19 @@ export async function PATCH(
   }
 
   const client = getSupabaseAdmin(admin.id);
+
+  // Guarda o status ATUAL antes de devolver — se a reversão da conta falhar
+  // logo abaixo, é pra cá que o cheque volta (tudo-ou-nada).
+  let statusAnterior: string | null = null;
+  if (t.para === "devolvido") {
+    const { data: atual } = await client
+      .from("cheques")
+      .select("status")
+      .eq("id", id)
+      .maybeSingle();
+    statusAnterior = atual?.status ?? null;
+  }
+
   const { data, error } = await client
     .from("cheques")
     .update(updates)
@@ -99,7 +112,7 @@ export async function PATCH(
   // fiel ao caixa — melhor que registrar um pagamento que não aconteceu.
   let contaRevertida: string | null = null;
   if (t.para === "devolvido" && data && data.length > 0) {
-    const { data: contas } = await client
+    const { data: contas, error: eReversao } = await client
       .from("contas_a_pagar")
       .update({
         status: "a_pagar",
@@ -111,6 +124,25 @@ export async function PATCH(
       .eq("cheque_id", id)
       .eq("status", "paga")
       .select("descricao");
+    // TUDO OU NADA: se a reversão da conta falhar, o cheque VOLTA pro
+    // status anterior e o erro aparece — senão o estado ficava rachado
+    // (cheque devolvido + conta paga) com resposta "ok", sem retry possível
+    // (devolver de novo daria 409). Erro engolido aqui seria indiagnosticável.
+    if (eReversao) {
+      if (statusAnterior) {
+        await client
+          .from("cheques")
+          .update({ status: statusAnterior, [t.carimbo]: null })
+          .eq("id", id)
+          .eq("status", "devolvido");
+      }
+      return NextResponse.json(
+        {
+          error: `não consegui reverter a conta que esse cheque pagou (${eReversao.message}) — nada foi alterado, tenta de novo`,
+        },
+        { status: 500 }
+      );
+    }
     if (contas && contas.length > 0) {
       contaRevertida = contas[0].descricao as string;
     }

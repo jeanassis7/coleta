@@ -41,6 +41,46 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  // Corrigir valor/vencimento de uma conta AINDA NÃO PAGA é seguro por
+  // definição: o que gira pro DRE e pro caixa é o PAGAMENTO — enquanto a
+  // conta deve, ela é só uma promessa, e promessa se corrige. O caso real
+  // do Evaner: o óleo pago pela sede tem valor certo mas o vencimento é
+  // combinado depois (3, 15 ou 30 dias).
+  if (acao === "editar") {
+    const updates: Record<string, unknown> = {};
+    if (body.valor !== undefined) {
+      const valor = Number(body.valor);
+      if (!Number.isFinite(valor) || valor <= 0) {
+        return NextResponse.json({ error: "valor inválido" }, { status: 400 });
+      }
+      updates.valor = n2(valor);
+    }
+    if (body.vencimento !== undefined) {
+      const vencimento = String(body.vencimento || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) {
+        return NextResponse.json({ error: "vencimento inválido" }, { status: 400 });
+      }
+      updates.vencimento = vencimento;
+    }
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
+    }
+    const { data, error } = await client
+      .from("contas_a_pagar")
+      .update(updates)
+      .eq("id", id)
+      .in("status", ["prevista", "a_pagar"])
+      .select();
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!data?.length) {
+      return NextResponse.json(
+        { error: "essa conta já foi paga ou cancelada — recarregue a tela" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   if (acao === "confirmar") {
     const valor = Number(body.valor);
     const vencimento = String(body.vencimento || "").trim();

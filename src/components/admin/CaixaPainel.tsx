@@ -422,6 +422,15 @@ export function CaixaPainel({
             anterior a essa data é somado, porque já está embutido nesse valor.
             Sem isso o caixa nasce errado e nunca mais bate.
           </p>
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
+            <strong>Importante:</strong> informe quanto tinha{" "}
+            <strong>ANTES dos lançamentos desse dia</strong>. Pensa assim: é o
+            dinheiro que estava na gaveta quando o dia começou, antes de
+            entrar ou sair qualquer coisa. Se você contar o dinheiro no fim do
+            dia, o que entrou e saiu HOJE vai ser contado duas vezes — uma no
+            seu número, outra pelos lançamentos. Na dúvida, use o saldo de
+            ontem à noite com a data de hoje.
+          </div>
           <button type="submit" disabled={salvando} className="btn-primario">
             {salvando ? "Salvando…" : "Cadastrar conta"}
           </button>

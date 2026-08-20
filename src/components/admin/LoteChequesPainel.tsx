@@ -22,6 +22,9 @@ import { formatBRL } from "@/lib/format";
 
 interface Linha {
   id: string;
+  /** Idempotência (0041): se a internet piscar depois do servidor gravar e
+   *  o gestor clicar de novo, o reenvio com o MESMO client_id não duplica. */
+  clientId: string;
   conferido: boolean;
   /** null quando foi digitada na mão */
   imagemIndex: number | null;
@@ -37,6 +40,7 @@ interface Linha {
 let seq = 0;
 const novaLinha = (parcial: Partial<Linha> = {}): Linha => ({
   id: `l${seq++}`,
+  clientId: crypto.randomUUID(),
   conferido: false,
   imagemIndex: null,
   deuPraLer: true,
@@ -111,7 +115,11 @@ export function LoteChequesPainel({
         });
       }
       setFotos(novas);
-      await ler(novas);
+      // Em levas de 3: 10 fotos numa chamada só estouravam o limite de
+      // payload da função (4,5MB) com erro genérico antes de qualquer coisa.
+      for (let i = 0; i < novas.length; i += 3) {
+        await ler(novas.slice(i, i + 3), i);
+      }
     } catch (e) {
       setErro("Não consegui preparar as fotos: " + String(e));
     } finally {
@@ -119,7 +127,7 @@ export function LoteChequesPainel({
     }
   }
 
-  async function ler(imgs: { base64: string; tipo: string }[]) {
+  async function ler(imgs: { base64: string; tipo: string }[], offset = 0) {
     const res = await fetch("/api/admin/cheques/ocr", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -145,7 +153,7 @@ export function LoteChequesPainel({
     const lidas: Linha[] = (json.cheques as LidoApi[]).map((c) =>
       novaLinha({
         imagemIndex:
-          typeof c.imagem_index === "number" ? c.imagem_index : null,
+          typeof c.imagem_index === "number" ? c.imagem_index + offset : null,
         deuPraLer: c.deu_pra_ler !== false,
         banco: c.banco || "",
         emitente: c.emitente || "",
@@ -176,6 +184,7 @@ export function LoteChequesPainel({
           comprador_id: compradorId,
           data,
           cheques: conferidas.map((l) => ({
+            client_id: l.clientId,
             banco: l.banco,
             emitente: l.emitente,
             numero: l.numero,

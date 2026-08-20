@@ -406,6 +406,7 @@ function TabelaContas({
   const router = useRouter();
   const [pagando, setPagando] = useState<ContaAPagar | null>(null);
   const [confirmando, setConfirmando] = useState<ContaAPagar | null>(null);
+  const [editando, setEditando] = useState<ContaAPagar | null>(null);
   const [cancelando, setCancelando] = useState<ContaAPagar | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -512,6 +513,14 @@ function TabelaContas({
                         >
                           Pagar
                         </button>
+                        {aba === "a_pagar" && (
+                          <button
+                            onClick={() => setEditando(c)}
+                            className="text-verde hover:underline"
+                          >
+                            Editar
+                          </button>
+                        )}
                         <button
                           onClick={() => setCancelando(c)}
                           className="text-alerta hover:underline"
@@ -541,6 +550,9 @@ function TabelaContas({
           conta={confirmando}
           onFechar={() => setConfirmando(null)}
         />
+      )}
+      {editando && (
+        <ModalEditarConta conta={editando} onFechar={() => setEditando(null)} />
       )}
       {cancelando && (
         <ModalConfirmar
@@ -716,6 +728,109 @@ function ModalPagar({
             className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
           >
             {salvando ? "Salvando..." : "Marcar como paga"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Editar valor/vencimento de uma conta AINDA NÃO PAGA. Seguro por definição:
+ * o que gira pro DRE e pro caixa é o pagamento — enquanto deve, é promessa,
+ * e promessa se corrige. Caso real: o óleo da sede tem valor certo e
+ * vencimento combinado depois (3, 15, 30 dias).
+ */
+function ModalEditarConta({
+  conta,
+  onFechar,
+}: {
+  conta: ContaAPagar;
+  onFechar: () => void;
+}) {
+  const router = useRouter();
+  const [valorCentavos, setValorCentavos] = useState<number | null>(
+    reaisParaCentavos(conta.valor)
+  );
+  const [vencimento, setVencimento] = useState(conta.vencimento);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function salvar() {
+    if (!valorCentavos || valorCentavos <= 0) return setErro("Informe o valor");
+    setErro(null);
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/admin/contas/${conta.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acao: "editar",
+          valor: centavosParaReais(valorCentavos),
+          vencimento,
+        }),
+      });
+      const r = await res.json();
+      if (!res.ok) {
+        setErro(r.error || "erro");
+        return;
+      }
+      router.refresh();
+      onFechar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">Editar conta</h2>
+          <p className="text-sm text-cinza-suave mt-1">
+            {conta.descricao}. Vale enquanto ela ainda não foi paga — o
+            vencimento combinado mudou, ou o valor veio diferente.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Valor</label>
+          <InputDinheiro
+            centavos={valorCentavos}
+            onChange={setValorCentavos}
+            grande={false}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Vencimento</label>
+          <input
+            type="date"
+            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            value={vencimento}
+            onChange={(e) => setVencimento(e.target.value)}
+          />
+        </div>
+
+        {erro && (
+          <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+            {erro}
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onFechar}
+            disabled={salvando}
+            className="px-4 py-2 rounded-xl border border-cinza-borda"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
+          >
+            {salvando ? "Salvando..." : "Salvar"}
           </button>
         </div>
       </div>

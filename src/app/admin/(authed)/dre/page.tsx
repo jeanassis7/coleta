@@ -74,7 +74,9 @@ export default async function DrePage({
       <p className="text-xs text-cinza-suave mt-4">
         Linhas marcadas <strong>auto</strong> o sistema calcula sozinho da
         origem (coletas, abastecimentos, manutenções) — por isso elas não
-        aparecem pra lançar. A flecha ▸ abre a linha por pessoa.
+        aparecem pra lançar. A flecha ▸ abre o detalhe da linha: por pessoa
+        (Salário, Óleo dos motoristas) ou por origem do dinheiro (a Receita
+        abre em à vista, cheques compensados e cheques repassados).
       </p>
     </div>
   );

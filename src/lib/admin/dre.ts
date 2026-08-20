@@ -221,11 +221,22 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     (a) => a.pago_na_hora !== false && !jaTemConta.has(a.id)
   );
 
+  // As três bocas por onde a receita entra — separadas porque o Evaner quer
+  // ver DE ONDE o dinheiro está vindo (à vista × papel que compensou × papel
+  // que virou pagamento). A linha do DRE mostra o total e abre nas três.
+  const receitaAVista = soma(recebimentos as { valor: number }[], (r) => r.valor);
+  const receitaChequesCompensados = soma(
+    chequesCompensados as { valor: number }[],
+    (c) => c.valor
+  );
+  const receitaChequesRepassados = soma(
+    chequesRepassados as { valor: number }[],
+    (c) => c.valor
+  );
+
   const automatico: Record<string, number> = {
     venda_oleo:
-      soma(recebimentos as { valor: number }[], (r) => r.valor) +
-      soma(chequesCompensados as { valor: number }[], (c) => c.valor) +
-      soma(chequesRepassados as { valor: number }[], (c) => c.valor),
+      receitaAVista + receitaChequesCompensados + receitaChequesRepassados,
     oleo_motorista: soma(doMotorista, (c) => c.valor_pago),
     oleo_sede: soma(
       ((compras as { id: string; valor: number }[]) ?? []).filter(
@@ -267,6 +278,25 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
         porPessoa = [...oleoPorMotorista.entries()]
           .map(([id, v]) => ({ id, nome: nomePessoa.get(id) ?? "—", valor: v }))
           .sort((a, b) => b.valor - a.valor);
+      }
+      if (p.chave === "venda_oleo") {
+        porPessoa = [
+          {
+            id: "avista",
+            nome: "À vista (pix, dinheiro, transferência)",
+            valor: receitaAVista,
+          },
+          {
+            id: "cheques_compensados",
+            nome: "Cheques compensados",
+            valor: receitaChequesCompensados,
+          },
+          {
+            id: "cheques_repassados",
+            nome: "Cheques repassados (pagaram contas)",
+            valor: receitaChequesRepassados,
+          },
+        ].filter((l) => l.valor > 0);
       }
     } else {
       const daCategoria = porCategoria.get(p.chave) ?? [];
