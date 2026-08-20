@@ -1,6 +1,7 @@
 # MANUAL DO SOFTWARE — Sistema Coleta
 
-> Escrito em 20/08/2026, a partir do código em produção (https://coleta-inky.vercel.app).
+> Escrito em 20/08/2026 e atualizado no fim do mesmo dia, depois da onda de
+> correções da auditoria (código em produção: https://coleta-inky.vercel.app).
 > Feito pra quem nunca viu o sistema conseguir operar do zero.
 >
 > O manual tem 6 partes:
@@ -158,7 +159,7 @@ Entre em **/admin** com email e senha de admin. O menu lateral tem os grupos:
 
 De cima pra baixo:
 1. **Três cards de situação**: Estoque (kg e R$), A receber (dos compradores), Cheques em carteira. Clicou, vai pra tela.
-2. **⚠️ Alertas** — o sistema vigia sozinho e avisa aqui: carga parada 15 dias, caminhão acima da capacidade, peso da balança divergente, umidade não lançada, motorista que não confirma adiantamento, dinheiro parado na mão (mais de R$ 3.000 há 15 dias), coletas sem foto/GPS, preço fora da curva, documento vencendo, km da troca de óleo, cheque vencido na carteira, estoque negativo. Cada alerta explica **o que aconteceu, as causas prováveis e o que fazer**. O botão **"OK, VI"** dispensa aquele alerta (se acontecer de novo em outro registro, volta).
+2. **⚠️ Alertas** — o sistema vigia sozinho e avisa aqui: carga parada 15 dias, caminhão acima da capacidade, peso da balança divergente, umidade não lançada, motorista que não confirma adiantamento, dinheiro parado na mão (mais de R$ 3.000 há 15 dias), coletas sem foto/GPS, preço fora da curva, coleta de R$ 0 ("foi doação?" — doação é legítima, o aviso é só pra conferir), documento vencendo, km da troca de óleo, cheque vencido na carteira, estoque negativo. Cada alerta explica **o que aconteceu, as causas prováveis e o que fazer**. O botão **"OK, VI"** dispensa aquele alerta **só pra você** — cada admin tem a própria dispensa (se acontecer de novo em outro registro, volta pra todo mundo).
 3. **Cargas ativas** — quem está na rua, há quantos dias, quão cheio está o tanque, quanto dinheiro tem na mão.
 4. **Descargas recentes** — com atalho "Lançar umidade →".
 5. **Filtros** (Hoje / Semana / Mês / Customizado + motorista) e os **KPIs comparando com o período anterior**: coletas, litros, total pago, R$/litro, motoristas ativos, % com GPS.
@@ -168,22 +169,25 @@ De cima pra baixo:
 ## 3.2 Grupo OPERAÇÃO — o dinheiro
 
 ### Caixa (`/admin/caixa`)
-O ponto de partida do financeiro. **Cadastre as contas primeiro** (ex.: "Espécie" e "Banco do Brasil"): pra cada uma, **quanto tem hoje** e **de que dia é esse saldo** — esse é o corte; nada anterior é somado. A tela mostra o saldo de cada conta, o card **"Na mão dos motoristas"** e o total. O botão **⇄ Transferir entre contas** registra saque/depósito/PIX entre contas suas (não é despesa, não entra no DRE).
+O ponto de partida do financeiro. **Cadastre as contas primeiro** (ex.: "Espécie" e "Banco do Brasil"): pra cada uma, **quanto tinha no COMEÇO do dia** e de que dia é — esse é o corte; nada anterior é somado. (Regra de ouro: informe o saldo de **antes** dos lançamentos daquele dia — se contar no fim do dia, o que entrou e saiu hoje conta duas vezes. Na dúvida, use o saldo de ontem à noite com a data de hoje.)
+
+A tela mostra o saldo de cada conta, o card **"Na mão dos motoristas"** e o card **Patrimônio** — tudo que a empresa tem, em seis linhas: cada conta, dinheiro na mão dos motoristas, **valor em estoque**, **óleo nos caminhões** (coletado e ainda não pesado), **cheques em aberto** (carteira + depositados) e o **TOTAL**. O óleo é valorado pelo **preço de referência** (R$/litro, editável ali mesmo — um valor só pra fino e grosso; é régua de comparação mês a mês, não custo contábil). O botão **⇄ Transferir entre contas** registra saque/depósito/PIX entre contas suas (não é despesa, não entra no DRE).
 
 ### Lançamentos (`/admin/lancamentos`)
-O que **já saiu**, no ritmo do extrato do banco. Formulário sempre aberto: **Quando** → **Saiu de** (qual conta) → **O que foi** (categoria do plano de contas) → **Valor** → observação. Categorias como Salário e Transferência a sócio pedem **de quem**.
-- Escolhendo **Salário** + uma pessoa que tem **vale** de acerto pendente, aparece o bloco "Esse pagamento quita algum vale?" — marque os vales que estão sendo descontados. É o sistema lembrando por você.
+O que **já saiu**, no ritmo do extrato do banco. Formulário sempre aberto: **Quando** → **Saiu de** (qual conta) → **O que foi** (categoria do plano de contas) → **Valor** → observação. Categorias como Salário, Comissão, Encargos de funcionário e Transferência a sócio pedem **de quem**.
+- **Pagamento do mês dos funcionários**: pegue a folha do contador e lance **item a item** — Salário numa linha, Comissão noutra (a tela de Remuneração diz o valor), Encargos de funcionário (INSS, FGTS, 13º, férias) noutra. Fica separadinho e o DRE mostra cada custo no lugar certo.
+- Escolhendo **Salário** + uma pessoa que tem **vale** de acerto pendente, aparece o bloco "Esse pagamento quita algum vale?" — marque os vales que estão sendo descontados. É o sistema lembrando por você. (Se algum vale marcado ficar de fora — já quitado por outro pagamento, por exemplo — a tela **avisa**, não finge que descontou.)
 - O checkbox **"Paguei com um cheque da carteira"** é o jeito certo de **repassar** um cheque: a despesa nasce registrada e o cheque sai da carteira, amarrado a ela.
 - As categorias **automáticas** (venda, óleo, combustível, troca de óleo, pneus, manutenção) **não aparecem** aqui — o sistema calcula sozinho da origem; lançar na mão dobraria o número.
 
 ### DRE (`/admin/dre`)
-O resultado do período, **regime de caixa**: Receita → (−) Custo do óleo → **Margem bruta** → (−) Operacionais → (−) Fixas → **Resultado operacional** → (−) Financeiro → (−) Impostos → **Resultado**. Linhas com a marca **"auto"** o sistema calcula sozinho; a flecha ▸ abre por pessoa (ex.: salário por funcionário). Nada se edita aqui — o que muda é o lançamento de origem.
+O resultado do período, **regime de caixa**: Receita → (−) Custo do óleo → **Margem bruta** → (−) Operacionais → (−) Fixas → **Resultado operacional** → (−) Financeiro → (−) Impostos → **Resultado**. Linhas com a marca **"auto"** o sistema calcula sozinho; a flecha ▸ abre o detalhe — por pessoa (Salário, Óleo dos motoristas) ou por origem do dinheiro: a **Receita abre em três** (à vista, cheques compensados, cheques repassados), pra você ver de onde o dinheiro está vindo. Se algum dia aparecer uma linha **"Não classificado"**, é dinheiro pago numa categoria que saiu do plano — reclassifique o lançamento que ela some. Nada se edita aqui — o que muda é o lançamento de origem.
 
 ### Remuneração (`/admin/remuneracao`)
-Salário, comissão, bônus e pró-labore com **vigência**: um valor que vale **a partir de** uma data. Mudou o combinado? Não edite — crie uma vigência nova; o passado não recalcula. A comissão é **proporcional** (100 L numa base de 200 pagam metade) e a tela calcula o valor do período por motorista. **Esse número não entra no DRE sozinho**: quando pagar, lance em Lançamentos na categoria Comissão.
+Salário, comissão, bônus e pró-labore com **vigência**: um valor que vale **a partir de** uma data. Mudou o combinado? Não edite — crie uma vigência nova; o passado não recalcula. A comissão é **proporcional** (100 L numa base de 200 pagam metade), conta **pelos litros da descarga** (o peso da balança — absorve até coleta que o motorista esqueceu de lançar; carga sem descarga fica pendente até pesar), e hoje é **uma regra só pra todos** (vigência "Todos"). **Esse número não entra no DRE sozinho**: quando pagar, lance em Lançamentos na categoria Comissão.
 
 ### Estoque (`/admin/estoque`)
-Dois cards (fino e grosso) com kg, custo médio e valor. **A primeira ação da vida do estoque é "Abrir estoque"**: conte o tanque e informe **quanto custa o kg** — sem isso o custo médio nasce zero e contamina tudo. Depois, a cada 2-3 meses, **"Fazer inventário"**: digite o que contou; o sistema corrige a quantidade, **mantém o custo médio** e registra a diferença como perda/sobra em reais. Embaixo, o extrato de todos os movimentos.
+Dois cards (fino e grosso) com kg, custo médio e valor. **A primeira ação da vida do estoque é "Abrir estoque"**: conte o tanque e informe **quanto custa o kg** — sem isso o custo médio nasce zero e contamina tudo. Depois, a cada 2-3 meses, **"Fazer inventário"**: digite o que contou; o sistema corrige a quantidade, **mantém o custo médio** e registra a diferença como perda/sobra em reais. O inventário vale sempre **pro dia de hoje** (a data é travada — contou no domingo, lance no domingo). Embaixo, o extrato de todos os movimentos.
 
 ### Vendas (`/admin/vendas`)
 **+ Nova venda**: comprador → **peso da balança** (é o que ele paga) → quanto era **grosso** (o resto sai do fino) → preço por kg **ou** valor total (um recalcula o outro) → veículo que levou (ou "O comprador veio buscar") → pagamento: o que entrou agora (Pix/Dinheiro/Transferência + em qual conta) e/ou **+ Adicionar cheque** (banco, emitente, bom para, valor). O que não for pago **fica em aberto na conta do comprador**. Vender mais do que o estoque marca dá aviso — confirma no segundo toque e depois faça um inventário.
@@ -201,14 +205,15 @@ O botão **+ Lançar maço de cheques** deixa fotografar até 10 cheques e confe
 ### Contas a pagar (`/admin/contas`)
 Tudo que a empresa deve. Quatro abas: **A pagar** / **Previstas** (estimativas — não contam como dívida) / **Pagas** / **Recorrentes**.
 - **Prevista → a pagar**: quando o boleto chega, **"Confirmar valor"**.
+- **Editar**: conta ainda não paga pode ter valor e vencimento corrigidos (o caso clássico: o óleo da sede com vencimento combinado depois — 3, 15 ou 30 dias). O que já foi pago não se edita — se pagou errado, apaga o pagamento e refaz.
 - **Pagar**: escolha a forma (Pix/Dinheiro/Depósito/Boleto/**Cheque da carteira**) — pagando de conta, diga qual; pagando com cheque, ele sai da carteira e não sai de conta nenhuma.
 - **Parcelas**: criar uma conta em N parcelas gera N contas, uma por mês, cada uma se pagando sozinha.
 - **Recorrentes**: aluguel, energia, contador. Cadastre uma vez; todo mês o botão **"Gerar contas do mês"** cria as contas (apertar duas vezes não duplica). Valor que varia (energia) nasce como prevista.
 
 ### Cargas · Abastecimentos · Despesas · Compra direta · Adiantamentos
 - **Cargas**: a tabela de todas as viagens, com umidade (botão "lançar" em cada descarga). Clicando na data, o **detalhe da carga**: custos, mapa do trajeto, linha do tempo de tudo que aconteceu, e o botão **"+ Adicionar coleta"** (retroativa — pro motorista que coletou e esqueceu de lançar; desconta do saldo dele; funciona mesmo com a carga encerrada).
-- **Abastecimentos / Despesas**: listas completas com filtros, edição e exclusão (atenção: apagar um gasto **aumenta** o saldo do motorista — a tela avisa). O botão **"+ Lançar pelo painel"** serve pros gastos de veículo que não vieram de carga (carro da empresa, entrega do gestor) — inclusive com "Assinou a nota", que já cria a conta a pagar do posto.
-- **Compra direta**: óleo que o gestor comprou. Em kg (pesou) ou litros (estimou); fino ou grosso; e a pergunta-chave: **o caminhão estava vazio?** Se tinha óleo de motorista dentro, o peso vai contar na descarga dele — a compra registra só o custo, senão o óleo entraria duas vezes.
+- **Abastecimentos / Despesas**: listas completas com filtros, edição e exclusão (atenção: apagar um gasto **aumenta** o saldo do motorista — a tela avisa). Abastecimento de nota assinada aparece com o selo **"assinou a nota"** — a conta a pagar do posto nasceu sozinha e está em Contas a pagar; corrigir ou apagar o abastecimento corrige/apaga a dívida junto. O botão **"+ Lançar pelo painel"** serve pros gastos de veículo que não vieram de carga (carro da empresa, entrega do gestor) — inclusive com "Assinou a nota", que já cria a conta a pagar do posto.
+- **Compra direta**: óleo que o gestor comprou. Em kg (pesou) ou litros (estimou); fino ou grosso; **de qual conta o dinheiro saiu** (obrigatório — o caixa desconta na hora); e a pergunta-chave: **o caminhão estava vazio?** Se tinha óleo de motorista dentro, o peso vai contar na descarga dele — a compra registra só o custo, senão o óleo entraria duas vezes.
 - **Adiantamentos**: enviar dinheiro (valor + de qual conta + forma) e fazer **acerto** — a tela mostra o saldo e você divide em **Devolvido / Vale / Fica de saldo** (a soma tem que bater; o botão só habilita quando bate). Saldo negativo inverte os campos: **Pagar agora / Somar no salário / Levar pro próximo ciclo**. Cada motorista tem a página de histórico completa.
 
 ## 3.3 Grupo ANÁLISE
@@ -220,7 +225,7 @@ Tudo que a empresa deve. Quatro abas: **A pagar** / **Previstas** (estimativas �
 
 - **Motoristas**: **+ Adicionar motorista** (nome, email gerado sozinho, senha temporária, tipo). Na tabela: ativar/desativar, **exige foto** na coleta, **saldo no app**, **resetar senha** e — importante — a coluna **Senha** com o "👁 mostrar": é aqui que você vê a senha pra passar pro motorista. A ficha de cada um guarda os **documentos** (CNH, toxicológico, MOPP, cursos) com data de vencimento e arquivo.
 - **Locais (curadoria)**: as coletas chegam com o nome que o motorista digitou. Aqui você agrupa as parecidas e cria o **local oficial** — que vira sugestão de um toque pros motoristas nas próximas coletas ali. Dá pra separar um cluster em dois locais quando o GPS misturou vizinhos.
-- **Caminhões**: placa, marca, cor, **capacidade do tanque** e **tara** (o peso vazio — é ele que transforma o peso da balança em peso de óleo). A **ficha** de cada caminhão mostra a próxima troca de óleo por km (com semáforo), km/L e gasto do mês, o histórico de **manutenções** (a prazo vira conta a pagar sozinha; troca de óleo marca o km da próxima) e os **documentos** (IPVA, CIV, CIPP etc. — com valor preenchido, entra no caixa futuro como previsão).
+- **Caminhões**: placa, marca, cor, **capacidade do tanque** e **tara** (o peso vazio — é ele que transforma o peso da balança em peso de óleo). A **ficha** de cada caminhão mostra a próxima troca de óleo por km (com semáforo), km/L e gasto do mês, o histórico de **manutenções** (a prazo vira conta a pagar sozinha; troca de óleo marca o km da próxima) e os **documentos** (IPVA, CIV, CIPP etc. — com valor preenchido, entra no caixa futuro como previsão). Documento renovado? Botão **"Renovar"** na própria lista: muda o vencimento (e o valor/arquivo se quiser), mantém o histórico e ajusta a previsão sozinho.
 - **Compradores**: as fundições. Cadastro simples + a **ficha com a conta corrente**: saldo explicado linha a linha, botão **+ Registrar pagamento** (Pix/Dinheiro/Transferência/Cheque) e o extrato completo.
 
 ## 3.5 Grupo SISTEMA
@@ -237,7 +242,7 @@ Tudo que a empresa deve. Quatro abas: **A pagar** / **Previstas** (estimativas �
 
 Nesta ordem:
 
-1. **Caixa** → cadastrar as contas (Espécie e Banco), cada uma com o saldo de hoje e a data. *Sem isso, nada de dinheiro funciona.*
+1. **Caixa** → cadastrar as contas (Espécie e Banco), cada uma com o saldo **do começo do dia** e a data. *Sem isso, nada de dinheiro funciona.* Aproveite e defina o **preço de referência** do óleo (R$/litro) no card Patrimônio.
 2. **Caminhões** → cadastrar a frota real, com capacidade e tara.
 3. **Motoristas** → conferir os cadastros, definir senhas, decidir quem exige foto.
 4. **Compradores** → cadastrar as fundições.
@@ -275,7 +280,7 @@ Nesta ordem:
 1. **Contas a pagar → Recorrentes → "Gerar contas do mês"**.
 2. Confirmar valores das previstas cujo boleto chegou (**"Confirmar valor"**).
 3. Pagar contas e lançar no extrato o que saiu (**Lançamentos**).
-4. Pagar salários (com os vales) e a comissão (**Remuneração** calcula; **Lançamentos** registra o pagamento).
+4. Pagar o mês dos funcionários pela folha do contador, **item a item** em Lançamentos: Salário (com os vales), Comissão (**Remuneração** calcula o valor) e Encargos de funcionário — cada um na sua categoria.
 5. Ler o **DRE** do mês.
 6. A cada 2-3 meses: **inventário** do estoque.
 
