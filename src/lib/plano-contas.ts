@@ -49,7 +49,7 @@ export const PLANO_CONTAS: LinhaPlano[] = [
     label: "Venda de óleo",
     grupo: "receita",
     fonte: "automatico",
-    vemDe: "vendas lançadas",
+    vemDe: "recebimentos do período + cheques compensados",
   },
 
   // ---------------------------------------------------------- custo do óleo

@@ -873,6 +873,81 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ──────────────────────── 3i. DRE: a receita é caixa, e cheque não dobra
+console.log("\n🔬 RECEITA POR CAIXA (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role='admin' and ativo limit 1"
+  );
+  const { rows: [comp] } = await client.query(
+    "insert into public.compradores (nome,ativo) values ('Receita E2E',true) returning id"
+  );
+  const { rows: [conta] } = await client.query(
+    `insert into public.contas_financeiras (nome,tipo,saldo_inicial,saldo_inicial_em)
+     values ('E2E Receita','banco',0,current_date - 90) returning id`
+  );
+
+  // A receita do DRE é: recebimentos que NÃO são cheque + cheques COMPENSADOS.
+  // O recebimento em cheque fica de fora porque ele e o cheque compensado são
+  // o mesmo dinheiro — somar os dois dobraria a receita.
+  const receitaHoje = async () => {
+    const { rows: [r] } = await client.query(
+      `select
+         coalesce((select sum(valor) from public.recebimentos
+                   where forma <> 'cheque' and data = current_date), 0)
+       + coalesce((select sum(valor) from public.cheques
+                   where status = 'compensado' and compensado_em = current_date), 0) as v`
+    );
+    return Number(r.v);
+  };
+
+  const base = await receitaHoje();
+
+  // Venda de 10.000: metade PIX na hora, metade em cheque pra 30 dias.
+  await client.query(
+    `insert into public.vendas (comprador_id,data,peso_total_kg,kg_fino,kg_grosso,preco_kg,valor_total,registrado_por)
+     values ($1,current_date,2000,2000,0,5,10000,$2)`,
+    [comp.id, perfil.id]
+  );
+  await client.query(
+    `insert into public.recebimentos (comprador_id,forma,valor,data,conta_id,registrado_por)
+     values ($1,'pix',5000,current_date,$2,$3)`,
+    [comp.id, conta.id, perfil.id]
+  );
+  const { rows: [rec] } = await client.query(
+    `insert into public.recebimentos (comprador_id,forma,valor,data,registrado_por)
+     values ($1,'cheque',5000,current_date,$2) returning id`,
+    [comp.id, perfil.id]
+  );
+  const { rows: [ch] } = await client.query(
+    `insert into public.cheques (recebimento_id,comprador_id,banco,emitente,valor,bom_para,status)
+     values ($1,$2,'BB','Fulano E2E',5000,current_date+30,'em_carteira') returning id`,
+    [rec.id, comp.id]
+  );
+
+  checar(
+    "venda em cheque NÃO vira receita enquanto não compensa",
+    (await receitaHoje()) - base,
+    5000
+  );
+
+  await client.query(
+    `update public.cheques set status='compensado', compensado_em=current_date, conta_id=$2 where id=$1`,
+    [ch.id, conta.id]
+  );
+
+  // Se o recebimento em cheque também contasse, daria 15.000 — é este check
+  // que pega alguém reintroduzindo a dobra.
+  checar(
+    "compensou: a venda inteira entra, e SEM dobrar",
+    (await receitaHoje()) - base,
+    10000
+  );
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"

@@ -34,6 +34,23 @@ import { PLANO_CONTAS, type GrupoDre, type LinhaPlano } from "@/lib/plano-contas
  * A anti-dobra cai fora desses dois: se o fato virou conta, ele é ignorado
  * aqui e contado quando a conta for paga. Um `origem_id` aponta o fato, e é
  * ele que diz "esse já tem conta". Nada de lista de origens especiais.
+ *
+ * ---------------------------------------------------------------------------
+ * A RECEITA TAMBÉM É CAIXA
+ * ---------------------------------------------------------------------------
+ * A receita NÃO é a soma das vendas — é a soma do que **entrou**:
+ *
+ *   recebimentos que não são cheque  (o dinheiro caiu na hora)
+ * + cheques COMPENSADOS              (o papel virou dinheiro)
+ *
+ * O recebimento em cheque fica de fora de propósito: ele e o cheque
+ * compensado são **o mesmo dinheiro**, e somar os dois dobraria a receita.
+ * Enquanto o cheque não compensa, a venda existe (o estoque saiu, a dívida do
+ * comprador nasceu) mas o DRE ainda não a viu.
+ *
+ * O Evaner sabe e aceita: um mês bom pode aparecer como mês ruim se a venda
+ * foi feita e o dinheiro não entrou — e mais adiante um mês ruim vira bom.
+ * A ideia é manter o fluxo de caixa alinhado.
  */
 
 export interface LinhaDre {
@@ -77,7 +94,8 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const ate = fimBr(fim);
 
   const [
-    { data: vendas },
+    { data: recebimentos },
+    { data: chequesCompensados },
     { data: coletas },
     { data: compras },
     { data: abast },
@@ -87,7 +105,20 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     { data: origens },
     { data: perfis },
   ] = await Promise.all([
-    supabase.from("vendas").select("valor_total").gte("data", inicio).lte("data", fim),
+    // Receita = o que ENTROU. Cheque fica de fora aqui e entra pela
+    // compensação, na consulta seguinte — senão o mesmo dinheiro dobra.
+    supabase
+      .from("recebimentos")
+      .select("valor, forma")
+      .neq("forma", "cheque")
+      .gte("data", inicio)
+      .lte("data", fim),
+    supabase
+      .from("cheques")
+      .select("valor")
+      .eq("status", "compensado")
+      .gte("compensado_em", inicio)
+      .lte("compensado_em", fim),
     supabase
       .from("coletas")
       .select("id, valor_pago, pago_pela_sede, motorista_id")
@@ -170,7 +201,9 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   );
 
   const automatico: Record<string, number> = {
-    venda_oleo: soma(vendas as { valor_total: number }[], (v) => v.valor_total),
+    venda_oleo:
+      soma(recebimentos as { valor: number }[], (r) => r.valor) +
+      soma(chequesCompensados as { valor: number }[], (c) => c.valor),
     oleo_motorista: soma(doMotorista, (c) => c.valor_pago),
     oleo_sede: soma(
       ((compras as { id: string; valor: number }[]) ?? []).filter(
