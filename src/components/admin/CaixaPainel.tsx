@@ -9,6 +9,7 @@ import type {
   ContaFinanceira,
   SaldoConta,
   DinheiroNaMao,
+  Patrimonio,
 } from "@/lib/admin/caixa";
 
 type TransferenciaLista = {
@@ -25,11 +26,13 @@ export function CaixaPainel({
   saldos,
   naMao,
   transferencias,
+  patrimonio,
 }: {
   contas: ContaFinanceira[];
   saldos: SaldoConta[];
   naMao: DinheiroNaMao[];
   transferencias: TransferenciaLista[];
+  patrimonio: Patrimonio;
 }) {
   const router = useRouter();
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000)
@@ -157,16 +160,101 @@ export function CaixaPainel({
         )}
       </div>
 
+      {/* --------------------------------------------------- patrimônio (R87) */}
       <div className="card">
-        <div className="flex items-baseline justify-between gap-3 flex-wrap">
-          <span className="text-sm text-cinza-suave">
-            Total nas contas
-            {naMao.length > 0 && " + na mão dos motoristas"}
-          </span>
-          <span className="text-2xl font-bold">
-            {formatBRL(totalContas + totalNaMao)}
-          </span>
-        </div>
+        <h2 className="text-lg font-semibold mb-1">Patrimônio</h2>
+        <p className="text-sm text-cinza-suave mb-3">
+          Tudo que a empresa tem, num número só — dinheiro, óleo e papel.
+          O óleo vale o <strong>preço de referência</strong>: uma conta de
+          cabeça editável, sempre a mesma, pra dar pra ver se o patrimônio
+          sobe ou desce mês a mês sem o preço do mercado embaralhar a leitura.
+        </p>
+
+        {patrimonio.precoReferenciaLitro === null && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm mb-3">
+            <strong>Falta o preço de referência.</strong> Sem ele o óleo (em
+            estoque e nos caminhões) aparece sem valor. Defina abaixo — ex.:
+            R$ 2,80 por litro.
+          </div>
+        )}
+
+        <table className="w-full text-sm">
+          <tbody>
+            {saldos.map((c) => (
+              <tr key={c.conta_id} className="border-b border-cinza-borda">
+                <td className="py-2 pr-3">
+                  {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
+                </td>
+                <td className="py-2 text-right font-mono whitespace-nowrap">
+                  {formatBRL(c.saldo)}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-b border-cinza-borda">
+              <td className="py-2 pr-3">🚚 Em mãos de motoristas</td>
+              <td className="py-2 text-right font-mono whitespace-nowrap">
+                {formatBRL(totalNaMao)}
+              </td>
+            </tr>
+            <tr className="border-b border-cinza-borda">
+              <td className="py-2 pr-3">
+                🛢 Valor em estoque{" "}
+                <span className="text-cinza-suave text-xs">
+                  ({Math.round(patrimonio.estoqueLitros).toLocaleString("pt-BR")}{" "}
+                  L × preço de referência)
+                </span>
+              </td>
+              <td className="py-2 text-right font-mono whitespace-nowrap">
+                {patrimonio.precoReferenciaLitro !== null
+                  ? formatBRL(patrimonio.valorEstoque)
+                  : "—"}
+              </td>
+            </tr>
+            <tr className="border-b border-cinza-borda">
+              <td className="py-2 pr-3">
+                🚛 Óleo nos caminhões{" "}
+                <span className="text-cinza-suave text-xs">
+                  ({Math.round(patrimonio.oleoCaminhoesLitros).toLocaleString("pt-BR")}{" "}
+                  L coletados, ainda não pesados)
+                </span>
+              </td>
+              <td className="py-2 text-right font-mono whitespace-nowrap">
+                {patrimonio.precoReferenciaLitro !== null
+                  ? formatBRL(patrimonio.valorOleoCaminhoes)
+                  : "—"}
+              </td>
+            </tr>
+            <tr className="border-b border-cinza-borda">
+              <td className="py-2 pr-3">
+                🧾 Cheques em aberto{" "}
+                <span className="text-cinza-suave text-xs">
+                  (carteira + depositados; devolvido fica fora — a dívida do
+                  comprador já voltou)
+                </span>
+              </td>
+              <td className="py-2 text-right font-mono whitespace-nowrap">
+                {formatBRL(patrimonio.chequesAbertos)}
+              </td>
+            </tr>
+            <tr>
+              <td className="py-3 pr-3 font-semibold">TOTAL</td>
+              <td className="py-3 text-right font-bold text-xl whitespace-nowrap">
+                {formatBRL(
+                  totalContas +
+                    totalNaMao +
+                    patrimonio.valorEstoque +
+                    patrimonio.valorOleoCaminhoes +
+                    patrimonio.chequesAbertos
+                )}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <PrecoReferencia
+          atual={patrimonio.precoReferenciaLitro}
+          onSalvo={() => router.refresh()}
+        />
       </div>
 
       {/* --------------------------------------------------- ações */}
@@ -404,6 +492,108 @@ export function CaixaPainel({
           onFechar={() => setApagarTransf(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * O preço de referência do óleo, em R$/litro — editável na própria tela.
+ * Um valor só pra fino e grosso (decisão do Evaner): é régua de comparação
+ * mês a mês, não precisão contábil.
+ */
+function PrecoReferencia({
+  atual,
+  onSalvo,
+}: {
+  atual: number | null;
+  onSalvo: () => void;
+}) {
+  const [editando, setEditando] = useState(atual === null);
+  const [centavos, setCentavos] = useState<number | null>(
+    atual !== null ? reaisParaCentavos(atual) : null
+  );
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function salvar() {
+    if (!centavos || centavos <= 0) {
+      setErro("Diga o preço por litro (ex.: R$ 2,80).");
+      return;
+    }
+    setErro(null);
+    setSalvando(true);
+    try {
+      const res = await fetch("/api/admin/configuracoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "preco_referencia_litro",
+          valor: centavosParaReais(centavos),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || "Falha ao salvar.");
+        return;
+      }
+      setEditando(false);
+      onSalvo();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (!editando && atual !== null) {
+    return (
+      <div className="mt-3 text-sm text-cinza-suave flex items-center gap-2 flex-wrap">
+        <span>
+          Preço de referência: <strong>{formatBRL(atual)}/litro</strong> (um só
+          pra fino e grosso)
+        </span>
+        <button
+          onClick={() => setEditando(true)}
+          className="text-verde hover:underline font-medium"
+        >
+          mudar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      {erro && (
+        <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+          {erro}
+        </div>
+      )}
+      <div className="flex items-end gap-2 flex-wrap">
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Preço de referência (R$ por litro)
+          </label>
+          <InputDinheiro centavos={centavos} onChange={setCentavos} grande={false} />
+        </div>
+        <button onClick={salvar} disabled={salvando} className="btn-primario">
+          {salvando ? "Salvando…" : "Salvar preço"}
+        </button>
+        {atual !== null && (
+          <button
+            onClick={() => {
+              setEditando(false);
+              setCentavos(reaisParaCentavos(atual));
+              setErro(null);
+            }}
+            className="px-4 py-2 rounded-xl border border-cinza-borda text-sm"
+          >
+            Cancelar
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-cinza-suave">
+        Mudar o preço muda o valor das duas linhas de óleo daqui pra frente —
+        o histórico de movimentos não é tocado.
+      </p>
     </div>
   );
 }

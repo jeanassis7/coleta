@@ -3,17 +3,19 @@ import {
   buscarSaldoContas,
   buscarDinheiroNaMao,
   buscarTransferencias,
+  buscarPatrimonio,
 } from "@/lib/admin/caixa";
 import { CaixaPainel } from "@/components/admin/CaixaPainel";
 
 export const dynamic = "force-dynamic";
 
 export default async function CaixaPage() {
-  const [contas, saldos, naMao, transferencias] = await Promise.all([
+  const [contas, saldos, naMao, transferencias, patrimonio] = await Promise.all([
     buscarContasFinanceiras(),
     buscarSaldoContas(),
     buscarDinheiroNaMao(),
     buscarTransferencias(50),
+    buscarPatrimonio(),
   ]);
 
   return (
@@ -40,6 +42,7 @@ export default async function CaixaPage() {
             saldos={saldos}
             naMao={naMao}
             transferencias={transferencias}
+            patrimonio={patrimonio}
           />
         </div>
       ) : (
@@ -48,6 +51,7 @@ export default async function CaixaPage() {
           saldos={saldos}
           naMao={naMao}
           transferencias={transferencias}
+          patrimonio={patrimonio}
         />
       )}
     </div>

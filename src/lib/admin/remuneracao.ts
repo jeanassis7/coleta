@@ -81,11 +81,19 @@ export function vigenciaEm(
 /**
  * Quanto de comissão cada motorista acumulou num período.
  *
+ * A BASE SÃO OS LITROS DA DESCARGA (R108) — o peso da balança convertido em
+ * litros, não a soma do que foi declarado nas coletas. O argumento decisivo:
+ * a balança pesa o que tem no caminhão, inclusive a coleta que o motorista
+ * esqueceu de lançar e o admin digitou depois — o retroativo é absorvido
+ * sozinho, sem regra especial nenhuma.
+ *
+ * Casos de borda, resolvidos pela própria consulta:
+ *  - carga CANCELADA não tem descarga → não entra;
+ *  - carga ABERTA ainda não pesou → fica pendente até descarregar;
+ *  - a vigência que vale é a DO DIA DA DESCARGA (a pesagem é o fato gerador).
+ *
  * PROPORCIONAL: `litros ÷ litros_base × valor`. 100 L numa base de 200 paga
  * metade — decisão do Evaner, não é bloco fechado.
- *
- * Cada coleta usa a vigência do DIA DELA. Uma mudança de comissão no meio do
- * mês parte a conta na data certa sozinha, sem ninguém precisar lembrar.
  */
 export async function calcularComissao(
   inicio: string,
@@ -95,15 +103,22 @@ export async function calcularComissao(
   const de = new Date(`${inicio}T00:00:00.000-03:00`).toISOString();
   const ate = new Date(`${fim}T23:59:59.999-03:00`).toISOString();
 
-  const [{ data: coletas }, { data: perfis }, vigencias] = await Promise.all([
-    supabase
-      .from("coletas")
-      .select("motorista_id, litros, criado_em")
-      .gte("criado_em", de)
-      .lte("criado_em", ate),
-    supabase.from("profiles").select("id, nome").eq("role", "motorista"),
-    buscarVigencias(),
-  ]);
+  const [{ data: descargas, error: eDesc }, { data: perfis }, vigencias] =
+    await Promise.all([
+      // descargas não tem motorista_id — o dono vem da carga. Só carga
+      // ENCERRADA: a descarga é o que encerra, e cancelada nunca pesa.
+      supabase
+        .from("descargas")
+        .select(
+          "litros_estimados, peso_liquido_kg, criado_em, cargas!inner(motorista_id, status)"
+        )
+        .eq("cargas.status", "encerrada")
+        .gte("criado_em", de)
+        .lte("criado_em", ate),
+      supabase.from("profiles").select("id, nome").eq("role", "motorista"),
+      buscarVigencias(),
+    ]);
+  if (eDesc) throw eDesc;
 
   const nome = new Map(
     ((perfis as { id: string; nome: string }[]) ?? []).map((p) => [p.id, p.nome])
@@ -114,24 +129,35 @@ export async function calcularComissao(
     { litros: number; valor: number; regra: ComissaoMotorista["regra"] }
   >();
 
-  for (const c of ((coletas as {
-    motorista_id: string;
-    litros: number;
+  type DescargaRow = {
+    litros_estimados: number | null;
+    peso_liquido_kg: number | null;
     criado_em: string;
-  }[]) ?? [])) {
-    // Data BR da coleta — a vigência é por dia, e o fuso muda o dia.
-    const dia = new Date(new Date(c.criado_em).getTime() - 3 * 60 * 60 * 1000)
+    cargas: { motorista_id: string; status: string } | null;
+  };
+  for (const d of ((descargas as unknown as DescargaRow[]) ?? [])) {
+    const motoristaId = d.cargas?.motorista_id;
+    if (!motoristaId) continue;
+    // litros_estimados é anulável no schema — o fallback é o próprio peso
+    // pela densidade oficial (0,9 kg/L), a mesma conta que gera a coluna.
+    const litros =
+      Number(d.litros_estimados ?? 0) ||
+      Number(d.peso_liquido_kg ?? 0) / 0.9;
+    if (!litros) continue;
+
+    // Data BR da descarga — a vigência é por dia, e o fuso muda o dia.
+    const dia = new Date(new Date(d.criado_em).getTime() - 3 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
-    const v = vigenciaEm(vigencias, "comissao", c.motorista_id, dia);
+    const v = vigenciaEm(vigencias, "comissao", motoristaId, dia);
 
-    const atual = acc.get(c.motorista_id) ?? { litros: 0, valor: 0, regra: null };
-    atual.litros += Number(c.litros || 0);
+    const atual = acc.get(motoristaId) ?? { litros: 0, valor: 0, regra: null };
+    atual.litros += litros;
     if (v && v.litros_base) {
-      atual.valor += (Number(c.litros || 0) / v.litros_base) * v.valor;
+      atual.valor += (litros / v.litros_base) * v.valor;
       atual.regra = { valor: v.valor, litros_base: v.litros_base };
     }
-    acc.set(c.motorista_id, atual);
+    acc.set(motoristaId, atual);
   }
 
   return [...acc.entries()]

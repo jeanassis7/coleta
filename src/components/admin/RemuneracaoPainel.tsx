@@ -116,10 +116,12 @@ export function RemuneracaoPainel({
           <span className="text-2xl font-bold">{formatBRL(totalComissao)}</span>
         </div>
         <p className="text-sm text-cinza-suave mb-4">
-          {formatData(periodo.inicio)} a {formatData(periodo.fim)}. Cada coleta
-          usa a regra <strong>do dia dela</strong> — mudar a comissão no meio do
-          mês parte a conta na data certa sozinha. É{" "}
-          <strong>proporcional</strong>: 100 L numa base de 200 paga metade.
+          {formatData(periodo.inicio)} a {formatData(periodo.fim)}. A base são
+          os <strong>litros da descarga</strong> — o peso da balança, não a
+          soma das coletas: a balança pesa o que tem no caminhão, inclusive a
+          coleta que ele esqueceu de lançar. Carga sem descarga fica pendente
+          até pesar. Cada descarga usa a regra <strong>do dia dela</strong>, e
+          é <strong>proporcional</strong>: 100 L numa base de 200 paga metade.
         </p>
 
         {semRegra.length > 0 && (
@@ -132,7 +134,8 @@ export function RemuneracaoPainel({
 
         {comissao.length === 0 ? (
           <p className="text-cinza-suave text-sm">
-            Nenhuma coleta no período.
+            Nenhuma descarga no período. A comissão nasce quando o peso existe
+            — carga ainda aberta conta na descarga dela.
           </p>
         ) : (
           <div className="overflow-x-auto">

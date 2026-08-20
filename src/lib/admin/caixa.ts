@@ -128,6 +128,85 @@ export async function buscarDinheiroNaMao(): Promise<DinheiroNaMao[]> {
     }));
 }
 
+// ============================================================================
+// PATRIMÔNIO (R87) — o caixa mostra o patrimônio INTEIRO, não só as contas
+// ============================================================================
+
+export interface Patrimonio {
+  /** R$/litro editável — conta de cabeça, um valor só pra fino e grosso. */
+  precoReferenciaLitro: number | null;
+  /** kg em estoque (fino + grosso) e o equivalente em litros. */
+  estoqueKg: number;
+  estoqueLitros: number;
+  /** Litros declarados nas coletas de cargas ainda ABERTAS (coletado, não pesado). */
+  oleoCaminhoesLitros: number;
+  /** Cheques em carteira + depositados. Devolvido fica FORA (a dívida do
+   *  comprador já renasceu — contar o papel seria contar duas vezes). */
+  chequesAbertos: number;
+  /** As duas linhas de óleo valoradas pelo preço de referência (0 sem preço). */
+  valorEstoque: number;
+  valorOleoCaminhoes: number;
+}
+
+export async function buscarPatrimonio(): Promise<Patrimonio> {
+  const supabase = await getSupabaseServer();
+  const [
+    { data: cfg },
+    { data: estoque, error: eEstoque },
+    { data: coletasAbertas, error: eColetas },
+    { data: cheques, error: eCheques },
+  ] = await Promise.all([
+    supabase
+      .from("configuracoes")
+      .select("valor")
+      .eq("chave", "preco_referencia_litro")
+      .maybeSingle(),
+    supabase.rpc("estoque_atual"),
+    // Óleo nos caminhões: coletas de cargas AINDA ATIVAS (o join limita o
+    // volume — nunca passa de umas centenas de linhas, é 1 carga por
+    // motorista).
+    supabase
+      .from("coletas")
+      .select("litros, cargas!inner(status)")
+      .eq("cargas.status", "ativa"),
+    // ⚠️ status é 'em_carteira' (com em_) — filtro errado nunca casa e
+    // pareceria "não tem cheque nenhum".
+    supabase
+      .from("cheques")
+      .select("valor")
+      .in("status", ["em_carteira", "depositado"]),
+  ]);
+  if (eEstoque) throw eEstoque;
+  if (eColetas) throw eColetas;
+  if (eCheques) throw eCheques;
+
+  const preco = cfg?.valor != null ? Number(cfg.valor) : null;
+  const estoqueKg = ((estoque as { saldo_kg: number }[]) ?? []).reduce(
+    (s, l) => s + Number(l.saldo_kg || 0),
+    0
+  );
+  const estoqueLitros = estoqueKg / 0.9;
+  const oleoCaminhoesLitros = ((coletasAbertas as { litros: number }[]) ?? []).reduce(
+    (s, c) => s + Number(c.litros || 0),
+    0
+  );
+  const chequesAbertos = ((cheques as { valor: number }[]) ?? []).reduce(
+    (s, c) => s + Number(c.valor || 0),
+    0
+  );
+
+  const n2 = (v: number) => Math.round(v * 100) / 100;
+  return {
+    precoReferenciaLitro: preco,
+    estoqueKg: n2(estoqueKg),
+    estoqueLitros: n2(estoqueLitros),
+    oleoCaminhoesLitros: n2(oleoCaminhoesLitros),
+    chequesAbertos: n2(chequesAbertos),
+    valorEstoque: preco ? n2(estoqueLitros * preco) : 0,
+    valorOleoCaminhoes: preco ? n2(oleoCaminhoesLitros * preco) : 0,
+  };
+}
+
 export interface Lancamento {
   id: string;
   descricao: string;
