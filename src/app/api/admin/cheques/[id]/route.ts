@@ -123,7 +123,7 @@ export async function PATCH(
       })
       .eq("cheque_id", id)
       .eq("status", "paga")
-      .select("descricao");
+      .select("id, descricao");
     // TUDO OU NADA: se a reversão da conta falhar, o cheque VOLTA pro
     // status anterior e o erro aparece — senão o estado ficava rachado
     // (cheque devolvido + conta paga) com resposta "ok", sem retry possível
@@ -145,6 +145,16 @@ export async function PATCH(
     }
     if (contas && contas.length > 0) {
       contaRevertida = contas[0].descricao as string;
+      // Se era um pagamento de salário, os vales que ele tinha quitado
+      // voltam a pendentes — o desconto não aconteceu de verdade (o cheque
+      // voltou). Quando a conta for paga de novo, o gestor marca de novo.
+      await client
+        .from("acertos")
+        .update({ vale_quitado_em: null, vale_quitado_por: null })
+        .in(
+          "vale_quitado_por",
+          contas.map((c) => c.id as string)
+        );
     }
   }
 

@@ -185,6 +185,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0039_alerta_visto_por_admin.sql` — PK de `alertas_vistos` vira (chave, visto_por): cada admin tem a própria dispensa
 - `0040_desempate_movimentos_estoque.sql` — `sub_prioridade` na view: entrada antes de saída no mesmo dia, ordem 100% determinística
 - `0041_lote_cheques_idempotente.sql` — `recebimentos.client_id` unique: reenvio do maço de cheques não duplica
+- `0042_corte_do_caixa_em_dia_br.sql` — braço dos adiantamentos do `saldo_contas()` corta pelo dia BR (janela de 3h na véspera do corte)
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
 

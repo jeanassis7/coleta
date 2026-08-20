@@ -129,16 +129,36 @@ export async function POST(req: NextRequest) {
   // Marca os vales que este pagamento quitou. Só os que ainda estão
   // pendentes — se dois pagamentos tentarem quitar o mesmo, o segundo mexe
   // em zero linhas e ninguém desconta duas vezes.
+  //
+  // GUARDAS (a tela já limita, mas a tela não é garantia):
+  //  - só pagamento de SALÁRIO quita vale — a categoria certa é validada
+  //    aqui, senão marcar vales e depois trocar a categoria quitava igual;
+  //  - só vale DO PRÓPRIO motorista — o `.eq("motorista_id")` impede quitar
+  //    vale de outra pessoa por engano;
+  //  - e quitação PARCIAL deixa de ser silenciosa: se algum vale marcado
+  //    ficou de fora (já quitado por outro pagamento, ou de outra pessoa),
+  //    a resposta avisa em vez de fingir que descontou.
   let valesQuitados = 0;
+  let avisoVales: string | null = null;
   if (vales_quitados.length > 0) {
-    const { data: mexidos } = await client
-      .from("acertos")
-      .update({ vale_quitado_em: data, vale_quitado_por: criado.id })
-      .in("id", vales_quitados)
-      .is("vale_quitado_em", null)
-      .select("id");
-    valesQuitados = mexidos?.length ?? 0;
+    if (categoria !== "salario" || !pessoa_id) {
+      avisoVales =
+        "os vales marcados NÃO foram quitados — vale só desconta em pagamento de Salário com a pessoa escolhida";
+    } else {
+      const { data: mexidos } = await client
+        .from("acertos")
+        .update({ vale_quitado_em: data, vale_quitado_por: criado.id })
+        .in("id", vales_quitados)
+        .eq("motorista_id", pessoa_id)
+        .is("vale_quitado_em", null)
+        .select("id");
+      valesQuitados = mexidos?.length ?? 0;
+      if (valesQuitados < vales_quitados.length) {
+        const deFora = vales_quitados.length - valesQuitados;
+        avisoVales = `${deFora} vale(s) marcado(s) ficou(aram) DE FORA — ou já tinha(m) sido quitado(s) por outro pagamento, ou não é(são) dessa pessoa. Confira na tela de adiantamentos.`;
+      }
+    }
   }
 
-  return NextResponse.json({ ok: true, id: criado.id, valesQuitados });
+  return NextResponse.json({ ok: true, id: criado.id, valesQuitados, avisoVales });
 }

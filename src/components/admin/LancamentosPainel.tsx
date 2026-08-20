@@ -121,6 +121,11 @@ export function LancamentosPainel({
             `${a ?? ""} ${json.valesQuitados} vale${json.valesQuitados === 1 ? "" : "s"} quitado${json.valesQuitados === 1 ? "" : "s"}.`
         );
       }
+      // Quitação parcial NÃO pode ser silenciosa — o gestor acharia que
+      // descontou um vale que continua pendente.
+      if (json.avisoVales) {
+        setErro(json.avisoVales);
+      }
       router.refresh();
     } finally {
       setSalvando(false);

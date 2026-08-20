@@ -30,6 +30,15 @@ function fromBrParts(y: number, m: number, d: number, h = 0, mi = 0, s = 0, ms =
 }
 
 /**
+ * "aaaa-mm-dd" DO DIA BRASILEIRO de um instante — pra comparar com coluna
+ * DATE. `toISOString().slice(0,10)` puro devolve o dia UTC, que das 21h à
+ * meia-noite BR já é amanhã.
+ */
+function diaBrIso(instante: Date): string {
+  return new Date(instante.getTime() + BR_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
  * Períodos alinhados ao calendário brasileiro:
  *  - hoje: 00:00 a 23:59 do dia atual em Brasília
  *  - semana: domingo 00:00 a sábado 23:59 da semana atual em Brasília
@@ -545,10 +554,10 @@ export async function buscarComprasDiretas(
 
   const intervalo = resolveIntervaloOperacao(opts);
   if (intervalo) {
-    // coluna `data` é DATE — compara em aaaa-mm-dd
-    q = q
-      .gte("data", intervalo.inicio.toISOString().slice(0, 10))
-      .lte("data", intervalo.fim.toISOString().slice(0, 10));
+    // coluna `data` é DATE — compara em aaaa-mm-dd DO DIA BRASILEIRO.
+    // toISOString() puro pega o dia UTC: um fim de período às 23:59 BR já é
+    // o dia seguinte em UTC, e o filtro engolia +1 dia de compras.
+    q = q.gte("data", diaBrIso(intervalo.inicio)).lte("data", diaBrIso(intervalo.fim));
   }
 
   const { data, error } = await q;
@@ -574,8 +583,8 @@ export async function resumoComprasDiretas(
   const { data } = await supabase
     .from("compras_diretas")
     .select("valor, peso_kg")
-    .gte("data", inicio.toISOString().slice(0, 10))
-    .lte("data", fim.toISOString().slice(0, 10));
+    .gte("data", diaBrIso(inicio))
+    .lte("data", diaBrIso(fim));
   const valor = (data || []).reduce((s, c) => s + Number(c.valor), 0);
   const kg = (data || []).reduce((s, c) => s + Number(c.peso_kg), 0);
   return { valor: Math.round(valor * 100) / 100, kg: Math.round(kg * 100) / 100 };

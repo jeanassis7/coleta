@@ -159,6 +159,25 @@ pro status anterior e a tela explica), M22 (maço idempotente por client_id
 (texto no cadastro de conta: informe o saldo de ANTES dos lançamentos do
 dia), e a abertura da Receita no DRE.
 
+**Terceira rodada de 20/08 (fechamento do debate):**
+- Categorias decididas: SEM outras-receitas (só óleo entra), SEM aluguel
+  (sede própria); "Luz, água, internet e telefone"; **Encargos de
+  funcionário** (fixa, por pessoa); **Documentos dos caminhões** (nova,
+  absorveu a IPVA-da-frota) + Seguro + Taxas e Licenças como os 3 baldes de
+  documento (`categoriaDeDocumento` agora recebe o dono).
+- **Comissão FICA SEPARADA do Salário** (decisão do Evaner): Jean lança da
+  folha do contador item a item — Salário, Comissão e Encargos, cada um na
+  sua categoria. Não juntar.
+- **Item 7 do relatório: regra do Evaner** = só corrigir o que influencia
+  número gerencial/relatório; o resto ele valida usando. Corrigidos por
+  essa régua: fuso do corte do caixa (0042), +1 dia no comparativo de
+  compras (diaBrIso), quitação parcial de vale deixou de ser silenciosa
+  (+ guardas de categoria/pessoa no servidor), cheque devolvido desmarca os
+  vales da conta revertida. O resto do item 7 fica dormindo — NÃO mexer.
+- **Teste offline no navegador: RECUSADO pelo Evaner** ("não precisa") em
+  20/08. Não insistir; o teste manual dele com o celular segue sendo a
+  verificação do fluxo offline.
+
 ### Aberto sem causa raiz
 
 **O painel travou de forma intermitente em 19/08** — telas presas no esqueleto
