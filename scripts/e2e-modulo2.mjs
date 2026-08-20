@@ -49,6 +49,10 @@ async function simular(linhas) {
         `'${l.momento || l.dia + " 12:00"}'::timestamp,${l.prioridade})`
     )
     .join(",");
+  // A lista de colunas TEM que bater com a view de produção (0040 incluiu
+  // sub_prioridade no fim) — `create or replace view` não pode tirar coluna.
+  // A sub_prioridade segue a mesma regra da view real: saída processa
+  // depois da entrada dentro do mesmo dia.
   await client.query(`
     create or replace view public.movimentos_estoque as
       select
@@ -56,7 +60,8 @@ async function simular(linhas) {
         'fino'::text as tipo_oleo, especie,
         kg::numeric, custo::numeric,
         momento::timestamptz as momento, dia::date as dia,
-        prioridade, ''::text as descricao
+        prioridade, ''::text as descricao,
+        case when especie = 'saida' then 1 else 0 end as sub_prioridade
       from (values ${values})
         as t(origem, especie, kg, custo, dia, momento, prioridade)
   `);
