@@ -131,10 +131,16 @@ export function LancamentosPainel({
     setSalvando(true);
     try {
       const res = await fetch(`/api/admin/contas/${l.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const json = await res.json();
         setErro(json.error || "Falha ao apagar.");
       } else {
+        // O servidor desfaz o que o pagamento tinha feito (cheque volta pra
+        // carteira, vale volta a pendente) e conta aqui o que desfez —
+        // desfazer calado é pior que não desfazer.
+        if (Array.isArray(json.desfeito) && json.desfeito.length > 0) {
+          setOk(`Apagado. Junto: ${json.desfeito.join("; ")}.`);
+        }
         router.refresh();
       }
     } finally {

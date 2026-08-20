@@ -50,6 +50,15 @@ export async function POST(req: NextRequest) {
   if (!["kg", "litros"].includes(unidade)) {
     return NextResponse.json({ error: "unidade deve ser kg ou litros" }, { status: 400 });
   }
+  // Dinheiro não aparece nem some (R83): compra direta sai de uma conta,
+  // sempre. Sem isso o card "Em espécie" ficava acima da gaveta em silêncio.
+  const conta_id = body.conta_id ? String(body.conta_id) : null;
+  if (!conta_id) {
+    return NextResponse.json(
+      { error: "diga de qual conta saiu o dinheiro" },
+      { status: 400 }
+    );
+  }
 
   const client = getSupabaseAdmin(admin.id);
   const { data: criada, error } = await client
@@ -69,6 +78,7 @@ export async function POST(req: NextRequest) {
             ? Math.round(quantidade * 100) / 100
             : Math.round((quantidade / 0.9) * 100) / 100
           : litros_certificado,
+      conta_id,
       foto_path,
       observacao,
       registrado_por: admin.id,

@@ -150,6 +150,37 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // ANTES de destruir qualquer coisa: se o motorista tem movimento em outra
+  // tabela (carga, despesa, adiantamento...), o delete do profile vai falhar
+  // por FK LÁ NO FIM — depois de coletas e fotos já terem sido apagadas.
+  // Destruição parcial é o pior resultado possível: nem apaga, nem preserva.
+  // Então a checagem vem primeiro e recusa com a lista do que existe.
+  const dependencias: Array<[string, string]> = [
+    ["cargas", "cargas"],
+    ["despesas", "despesas"],
+    ["abastecimentos", "abastecimentos"],
+    ["adiantamentos", "adiantamentos"],
+    ["acertos", "acertos"],
+    ["contas_a_pagar", "contas a pagar registradas por ele"],
+  ];
+  const travas: string[] = [];
+  for (const [tabela, rotulo] of dependencias) {
+    const coluna = tabela === "contas_a_pagar" ? "registrado_por" : "motorista_id";
+    const { count } = await adminClient
+      .from(tabela)
+      .select("id", { count: "exact", head: true })
+      .eq(coluna, id);
+    if ((count ?? 0) > 0) travas.push(`${count} ${rotulo}`);
+  }
+  if (travas.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Esse motorista tem movimento além de coletas (${travas.join(", ")}) — deletar apagaria histórico de dinheiro e de carga. O certo é DESATIVAR o cadastro; deletar é só pra perfil criado por engano.`,
+      },
+      { status: 409 }
+    );
+  }
+
   // Conta coletas do motorista
   const { count: numColetas } = await adminClient
     .from("coletas")
@@ -188,10 +219,23 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   }
 
   // Deleta app_events relacionados
-  await adminClient.from("app_events").delete().eq("motorista_id", id);
+  const { error: errEventos } = await adminClient
+    .from("app_events")
+    .delete()
+    .eq("motorista_id", id);
+  if (errEventos) {
+    return NextResponse.json({ error: errEventos.message }, { status: 400 });
+  }
 
-  // Deleta profile
-  await adminClient.from("profiles").delete().eq("id", id);
+  // Deleta profile — ERRO AQUI TEM QUE PARAR TUDO (o bug histórico do
+  // Valdecir era exatamente um update/delete falhando calado).
+  const { error: errProfile } = await adminClient
+    .from("profiles")
+    .delete()
+    .eq("id", id);
+  if (errProfile) {
+    return NextResponse.json({ error: errProfile.message }, { status: 400 });
+  }
 
   // Deleta auth.user (cascade pega o resto)
   const { error: errAuth } = await adminClient.auth.admin.deleteUser(id);

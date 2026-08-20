@@ -127,5 +127,69 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
   }
 
+  // DESMARCAR "paga pela sede": a coleta volta a descontar do motorista, e a
+  // dívida com o fornecedor tem que morrer junto — senão o mesmo óleo sai
+  // duas vezes (do saldo do motorista E da conta que continuava de pé).
+  // Se a conta JÁ FOI PAGA, o dinheiro da empresa saiu de verdade: aí
+  // desmarcar é que seria o erro, e o pedido é recusado com explicação.
+  const desmarcandoAgora =
+    updates.pago_pela_sede === false && antes?.pago_pela_sede === true;
+  if (desmarcandoAgora) {
+    const { data: contaPagaSede } = await adminClient
+      .from("contas_a_pagar")
+      .select("id")
+      .eq("origem_tipo", "coleta")
+      .eq("origem_id", id)
+      .eq("status", "paga")
+      .maybeSingle();
+    if (contaPagaSede) {
+      // Reverte o flag: a coleta continua marcada como paga pela sede.
+      await adminClient
+        .from("coletas")
+        .update({ pago_pela_sede: true })
+        .eq("id", id);
+      return NextResponse.json(
+        {
+          error:
+            "a conta dessa coleta JÁ FOI PAGA pela empresa — desmarcar agora descontaria do motorista um óleo que a sede pagou. Se o pagamento foi lançado errado, apague o pagamento primeiro (em Lançamentos).",
+        },
+        { status: 409 }
+      );
+    }
+    const { error: eCancela } = await adminClient
+      .from("contas_a_pagar")
+      .delete()
+      .eq("origem_tipo", "coleta")
+      .eq("origem_id", id)
+      .in("status", ["prevista", "a_pagar"]);
+    if (eCancela) {
+      return NextResponse.json({
+        ok: true,
+        aviso: `coleta salva, mas a conta do fornecedor não foi desfeita: ${eCancela.message}`,
+      });
+    }
+  }
+
+  // Corrigir o VALOR de uma coleta já marcada como paga pela sede corrige a
+  // dívida com o fornecedor junto (só enquanto não foi paga).
+  if (
+    updates.valor_pago !== undefined &&
+    antes?.pago_pela_sede === true &&
+    updates.pago_pela_sede !== false
+  ) {
+    const { error: eAjuste } = await adminClient
+      .from("contas_a_pagar")
+      .update({ valor: Number(updates.valor_pago) })
+      .eq("origem_tipo", "coleta")
+      .eq("origem_id", id)
+      .in("status", ["prevista", "a_pagar"]);
+    if (eAjuste) {
+      return NextResponse.json({
+        ok: true,
+        aviso: `coleta salva, mas a conta do fornecedor não acompanhou o valor: ${eAjuste.message}`,
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

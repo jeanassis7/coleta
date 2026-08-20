@@ -49,6 +49,31 @@ export async function PATCH(
   const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("abastecimentos").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Nota assinada tem conta a pagar amarrada (trigger 0034). Corrigir o
+  // valor ou o posto do abastecimento corrige a dívida junto — senão o
+  // motorista lançou R$ 800, você corrige pra 680, e a dívida com o posto
+  // continuava R$ 800. Conta já PAGA fica quieta: é história.
+  if (updates.valor !== undefined || updates.posto_nome !== undefined) {
+    const ajusteConta: Record<string, unknown> = {};
+    if (updates.valor !== undefined) ajusteConta.valor = updates.valor;
+    if (updates.posto_nome !== undefined) {
+      ajusteConta.fornecedor = updates.posto_nome;
+      ajusteConta.descricao = `Diesel (nota assinada) — ${updates.posto_nome}`;
+    }
+    const { error: eConta } = await client
+      .from("contas_a_pagar")
+      .update(ajusteConta)
+      .eq("origem_tipo", "abastecimento")
+      .eq("origem_id", id)
+      .in("status", ["prevista", "a_pagar"]);
+    if (eConta) {
+      return NextResponse.json({
+        ok: true,
+        aviso: `abastecimento corrigido, mas a conta a pagar amarrada não acompanhou: ${eConta.message}`,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -72,11 +97,37 @@ export async function DELETE(
     .eq("id", id)
     .maybeSingle();
 
+  // A conta a pagar da nota assinada morre junto com o fato — se ainda não
+  // foi paga. Se JÁ FOI, o dinheiro saiu de verdade: a conta fica (vira
+  // histórico), e quem apagou fica sabendo.
+  const { data: contaPaga } = await client
+    .from("contas_a_pagar")
+    .select("id")
+    .eq("origem_tipo", "abastecimento")
+    .eq("origem_id", id)
+    .eq("status", "paga")
+    .maybeSingle();
+  const { error: eConta } = await client
+    .from("contas_a_pagar")
+    .delete()
+    .eq("origem_tipo", "abastecimento")
+    .eq("origem_id", id)
+    .in("status", ["prevista", "a_pagar"]);
+  if (eConta) return NextResponse.json({ error: eConta.message }, { status: 400 });
+
   const { error } = await client.from("abastecimentos").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   if (abast?.foto_path) {
     await client.storage.from("fotos-coletas").remove([abast.foto_path]);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    ...(contaPaga
+      ? {
+          aviso:
+            "a conta dessa nota JÁ FOI PAGA — o pagamento continua no histórico e no DRE; confira se o estorno com o posto aconteceu de verdade",
+        }
+      : {}),
+  });
 }

@@ -154,7 +154,48 @@ export async function DELETE(
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
   const client = getSupabaseAdmin(admin.id);
+
+  // Apagar um pagamento desfaz TUDO que ele fez — senão fica ponta solta:
+  //  - o cheque que pagou a conta ficava 'repassado' pra sempre (fora da
+  //    carteira, sem despesa correspondente);
+  //  - o vale marcado como quitado sumia da lista de pendentes sem nunca
+  //    ter sido descontado de salário nenhum (o FK só limpava o ponteiro).
+  const { data: conta } = await client
+    .from("contas_a_pagar")
+    .select("cheque_id, status")
+    .eq("id", id)
+    .maybeSingle();
+
+  const desfeito: string[] = [];
+
+  if (conta?.cheque_id) {
+    const { data: ch, error: eCh } = await client
+      .from("cheques")
+      .update({ status: "em_carteira", repassado_em: null, repassado_para: null })
+      .eq("id", conta.cheque_id)
+      .eq("status", "repassado")
+      .select("banco, valor");
+    if (eCh) return NextResponse.json({ error: eCh.message }, { status: 400 });
+    if (ch?.length) {
+      desfeito.push(
+        `o cheque ${ch[0].banco} de R$ ${Number(ch[0].valor).toFixed(2).replace(".", ",")} voltou pra carteira`
+      );
+    }
+  }
+
+  const { data: vales, error: eVales } = await client
+    .from("acertos")
+    .update({ vale_quitado_em: null, vale_quitado_por: null })
+    .eq("vale_quitado_por", id)
+    .select("id");
+  if (eVales) return NextResponse.json({ error: eVales.message }, { status: 400 });
+  if (vales?.length) {
+    desfeito.push(
+      `${vales.length} vale(s) voltou(aram) a ficar pendente(s) — o desconto não aconteceu`
+    );
+  }
+
   const { error } = await client.from("contas_a_pagar").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, desfeito });
 }

@@ -1,4 +1,5 @@
 import { buscarComprasDiretas } from "@/lib/admin/queries";
+import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { CompraDiretaPainel } from "@/components/admin/CompraDiretaPainel";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
 import { ExportCsv } from "@/components/admin/ExportCsv";
@@ -13,11 +14,14 @@ export default async function ComprasPage({
 }) {
   const params = await searchParams;
 
-  const compras = await buscarComprasDiretas({
-    periodo: params.periodo,
-    inicio: params.inicio,
-    fim: params.fim,
-  });
+  const [compras, contas] = await Promise.all([
+    buscarComprasDiretas({
+      periodo: params.periodo,
+      inicio: params.inicio,
+      fim: params.fim,
+    }),
+    buscarContasFinanceiras(),
+  ]);
 
   const totalValor = compras.reduce((s, c) => s + c.valor, 0);
   const totalKg = compras.reduce((s, c) => s + c.peso_kg, 0);
@@ -57,7 +61,7 @@ export default async function ComprasPage({
 
       <FiltrosOperacao motoristas={[]} resumo={resumo} />
 
-      <CompraDiretaPainel compras={compras} />
+      <CompraDiretaPainel compras={compras} contas={contas} />
     </div>
   );
 }

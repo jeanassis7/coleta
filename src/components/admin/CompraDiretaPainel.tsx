@@ -11,6 +11,7 @@ import {
 } from "@/components/InputDinheiro";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import { ModalConfirmar } from "@/components/admin/Modais";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { compressPhoto } from "@/lib/image/compress";
 import type { CompraDireta } from "@/lib/admin/queries";
 
@@ -18,7 +19,13 @@ function hojeBr(): string {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-export function CompraDiretaPainel({ compras }: { compras: CompraDireta[] }) {
+export function CompraDiretaPainel({
+  compras,
+  contas,
+}: {
+  compras: CompraDireta[];
+  contas: ContaOpcao[];
+}) {
   const [formAberto, setFormAberto] = useState(false);
   const [editando, setEditando] = useState<CompraDireta | null>(null);
 
@@ -38,6 +45,7 @@ export function CompraDiretaPainel({ compras }: { compras: CompraDireta[] }) {
       {(formAberto || editando) && (
         <FormCompra
           editando={editando}
+          contas={contas}
           onFim={() => {
             setFormAberto(false);
             setEditando(null);
@@ -52,9 +60,11 @@ export function CompraDiretaPainel({ compras }: { compras: CompraDireta[] }) {
 
 function FormCompra({
   editando,
+  contas,
   onFim,
 }: {
   editando: CompraDireta | null;
+  contas: ContaOpcao[];
   onFim: () => void;
 }) {
   const router = useRouter();
@@ -85,6 +95,7 @@ function FormCompra({
       : ""
   );
   const [observacao, setObservacao] = useState(editando?.observacao || "");
+  const [contaId, setContaId] = useState(editando?.conta_id || "");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [nomeFoto, setNomeFoto] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -110,6 +121,9 @@ function FormCompra({
     const litrosCertNum = Number(litrosCert.trim().replace(",", "."));
     if (certTipo === "parcial" && (!Number.isFinite(litrosCertNum) || litrosCertNum <= 0)) {
       return setErro("Quantos litros foram no certificado parcial?");
+    }
+    if (!contaId) {
+      return setErro("Diga de qual conta o dinheiro saiu — sem isso o caixa não fecha");
     }
     setErro(null);
     setSalvando(true);
@@ -138,6 +152,7 @@ function FormCompra({
         entra_no_estoque: caminhaoVazio,
         certificado_tipo: certTipo,
         litros_certificado: certTipo === "parcial" ? litrosCertNum : null,
+        conta_id: contaId,
         observacao: observacao.trim() || null,
         ...(foto_path ? { foto_path } : {}),
       };
@@ -199,6 +214,15 @@ function FormCompra({
           />
         </div>
       </div>
+
+      {/* Dinheiro não aparece nem some (R83): a compra direta saiu de algum
+          lugar, e sem dizer de onde o caixa ficava maior que a gaveta. */}
+      <SelectConta
+        contas={contas}
+        valor={contaId}
+        onChange={setContaId}
+        label="De qual conta saiu o dinheiro"
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>

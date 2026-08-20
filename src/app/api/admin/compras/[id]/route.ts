@@ -48,6 +48,29 @@ export async function PATCH(
   if (typeof body.entra_no_estoque === "boolean") {
     updates.entra_no_estoque = body.entra_no_estoque;
   }
+  // O certificado É editável — o caso real: acertou os litros do óleo, errou
+  // o certificado, volta e corrige. O PATCH descartava esses campos em
+  // silêncio (a tela dizia salvo, o banco não mudava).
+  if (body.certificado_tipo !== undefined) {
+    if (!["integral", "parcial", "nao"].includes(body.certificado_tipo)) {
+      return NextResponse.json({ error: "certificado inválido" }, { status: 400 });
+    }
+    updates.certificado_tipo = body.certificado_tipo;
+    if (body.certificado_tipo === "parcial") {
+      const lc = Number(body.litros_certificado);
+      if (!Number.isFinite(lc) || lc <= 0) {
+        return NextResponse.json(
+          { error: "quantos litros no certificado parcial?" },
+          { status: 400 }
+        );
+      }
+      updates.litros_certificado = Math.round(lc * 100) / 100;
+    }
+    if (body.certificado_tipo === "nao") updates.litros_certificado = null;
+  }
+  if (body.conta_id !== undefined) {
+    updates.conta_id = body.conta_id ? String(body.conta_id) : null;
+  }
   if (body.observacao !== undefined) {
     updates.observacao = body.observacao?.trim() || null;
   }
@@ -57,8 +80,30 @@ export async function PATCH(
   }
 
   const client = getSupabaseAdmin(admin.id);
-  const { error } = await client.from("compras_diretas").update(updates).eq("id", id);
+  const { data: depois, error } = await client
+    .from("compras_diretas")
+    .update(updates)
+    .eq("id", id)
+    .select("quantidade, unidade, certificado_tipo")
+    .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Certificado INTEGRAL cobre a compra inteira: se quantidade, unidade ou o
+  // próprio tipo mudaram, os litros do certificado se recalculam — senão
+  // editar a compra deixava o certificado com os litros antigos.
+  if (depois?.certificado_tipo === "integral") {
+    const qtd = Number(depois.quantidade);
+    const litros =
+      depois.unidade === "litros"
+        ? Math.round(qtd * 100) / 100
+        : Math.round((qtd / 0.9) * 100) / 100;
+    const { error: eCert } = await client
+      .from("compras_diretas")
+      .update({ litros_certificado: litros })
+      .eq("id", id);
+    if (eCert) return NextResponse.json({ error: eCert.message }, { status: 400 });
+  }
+
   return NextResponse.json({ ok: true });
 }
 

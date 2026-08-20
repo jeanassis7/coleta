@@ -521,6 +521,8 @@ export interface CompraDireta {
   entra_no_estoque: boolean;
   certificado_tipo: "integral" | "parcial" | "nao";
   litros_certificado: number | null;
+  /** De qual conta o dinheiro saiu (0035). Nula só em compra antiga. */
+  conta_id: string | null;
   foto_path: string | null;
   observacao: string | null;
   criado_em: string;
