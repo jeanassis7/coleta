@@ -29,7 +29,17 @@ const TRANSICOES: Record<
     para: "devolvido",
     carimbo: "devolvido_em",
   },
-  repassar: { de: ["em_carteira"], para: "repassado", carimbo: "repassado_em" },
+  // ⚠️ `repassar` NÃO existe mais como ação solta.
+  //
+  // Repassar um cheque é pagar alguma coisa com ele — e todo pagamento tem
+  // um motivo, que é um lançamento. Antes existia um botão que só gravava
+  // "pra quem foi" em texto livre: o dinheiro saía do patrimônio e o gasto
+  // não aparecia no DRE em lugar nenhum.
+  //
+  // Agora o repasse é CONSEQUÊNCIA de pagar algo. Dois caminhos, os dois
+  // criando a despesa:
+  //   • conta que já existe  → /admin/contas, pagar com forma = cheque
+  //   • gasto na hora        → /admin/lancamentos, "paguei com cheque"
 };
 
 export async function PATCH(
@@ -49,17 +59,6 @@ export async function PATCH(
     status: t.para,
     [t.carimbo]: body.data && /^\d{4}-\d{2}-\d{2}$/.test(body.data) ? body.data : hoje,
   };
-
-  if (t.para === "repassado") {
-    const para = String(body.repassado_para || "").trim();
-    if (para.length < 2) {
-      return NextResponse.json(
-        { error: "diga pra quem o cheque foi" },
-        { status: 400 }
-      );
-    }
-    updates.repassado_para = para;
-  }
 
   // COMPENSAR é o único momento em que o cheque vira dinheiro na conta.
   // Em carteira ou depositado o valor ainda não é seu; repassado nem passa
@@ -85,11 +84,49 @@ export async function PATCH(
     .select();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // -------------------------------------------------------------------
+  // Cheque devolvido: TUDO volta
+  // -------------------------------------------------------------------
+  // A dívida do comprador volta sozinha (a saldo_compradores() já exclui
+  // recebimento de cheque devolvido). Mas a conta a pagar que ESTE cheque
+  // quitou continuava marcada como paga — no papel você deixava de dever
+  // pro posto, e na vida voltava a dever.
+  //
+  // Sob regime de caixa a despesa tinha contado no dia do repasse; ao
+  // reverter ela sai do DRE daquele dia e volta a contar quando for paga de
+  // verdade. Um mês fechado pode mudar por causa disso, e é o preço de ser
+  // fiel ao caixa — melhor que registrar um pagamento que não aconteceu.
+  let contaRevertida: string | null = null;
+  if (t.para === "devolvido" && data && data.length > 0) {
+    const { data: contas } = await client
+      .from("contas_a_pagar")
+      .update({
+        status: "a_pagar",
+        pago_em: null,
+        forma_pagamento: null,
+        conta_id: null,
+        cheque_id: null,
+      })
+      .eq("cheque_id", id)
+      .eq("status", "paga")
+      .select("descricao");
+    if (contas && contas.length > 0) {
+      contaRevertida = contas[0].descricao as string;
+    }
+  }
+
   if (!data || data.length === 0) {
     return NextResponse.json(
       { error: "esse cheque já mudou de situação — recarregue a tela" },
       { status: 409 }
     );
   }
-  return NextResponse.json({ ok: true, cheque: data[0] });
+  return NextResponse.json({
+    ok: true,
+    cheque: data[0],
+    // A tela avisa o que foi desfeito — desfazer calado é pior que não
+    // desfazer.
+    contaRevertida,
+  });
 }

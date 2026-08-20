@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatBRL, formatData } from "@/lib/format";
-import { ModalConfirmar, ModalInputTexto } from "@/components/admin/Modais";
+import { ModalConfirmar } from "@/components/admin/Modais";
 import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import type { Cheque, StatusCheque } from "@/lib/admin/queries";
 
@@ -84,7 +84,7 @@ export function ChequesPainel({
           </div>
         </div>
         <div className="card">
-          <div className="text-xs text-cinza-suave">Devolvidos sem resolver</div>
+          <div className="text-xs text-cinza-suave">Devolvidos</div>
           <div
             className={`text-2xl font-bold font-mono ${
               devolvidos.length > 0 ? "text-alerta" : ""
@@ -127,42 +127,39 @@ export function ChequesPainel({
 function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }) {
   const router = useRouter();
   const [acao, setAcao] = useState<{ cheque: Cheque; tipo: string } | null>(null);
-  const [repassando, setRepassando] = useState<Cheque | null>(null);
   // Compensar tem modal próprio: é o único momento em que o cheque vira
   // dinheiro numa conta, e precisa dizer em QUAL.
   const [compensando, setCompensando] = useState<Cheque | null>(null);
   const [contaCompensou, setContaCompensou] = useState("");
+  // A devolução desfaz a conta que o cheque pagou. Avisar é obrigatório:
+  // desfazer calado é pior que não desfazer.
+  const [aviso, setAviso] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  async function executar(
-    cheque: Cheque,
-    tipo: string,
-    repassadoPara?: string,
-    contaId?: string
-  ) {
+  async function executar(cheque: Cheque, tipo: string, contaId?: string) {
     setLoading(true);
     setErro(null);
     try {
       const res = await fetch(`/api/admin/cheques/${cheque.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          acao: tipo,
-          repassado_para: repassadoPara,
-          conta_id: contaId,
-        }),
+        body: JSON.stringify({ acao: tipo, conta_id: contaId }),
       });
       const resposta = await res.json();
       if (!res.ok) {
         setErro(resposta.error || "erro");
         return;
       }
+      if (resposta.contaRevertida) {
+        setAviso(
+          `A conta "${resposta.contaRevertida}" voltou para "a pagar" — o cheque que a quitava voltou.`
+        );
+      }
       router.refresh();
     } finally {
       setLoading(false);
       setAcao(null);
-      setRepassando(null);
       setCompensando(null);
     }
   }
@@ -183,6 +180,11 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
       {erro && (
         <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm mb-3">
           {erro}
+        </div>
+      )}
+      {aviso && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm mb-3">
+          {aviso}
         </div>
       )}
       <table className="w-full text-sm">
@@ -248,12 +250,12 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
                       </button>
                     )}
                     {c.status === "em_carteira" && (
-                      <button
-                        onClick={() => setRepassando(c)}
-                        className="text-verde hover:underline"
+                      <span
+                        className="text-cinza-suave text-xs"
+                        title="Repassar é pagar alguma coisa com o cheque. Vá em Contas a pagar (pagar com cheque) ou em Lançamentos (paguei com cheque) — assim a despesa fica registrada e entra no DRE."
                       >
-                        Repassar
-                      </button>
+                        pra repassar, pague algo com ele
+                      </span>
                     )}
                     {c.status === "depositado" && (
                       <button
@@ -343,7 +345,7 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
               </button>
               <button
                 onClick={() =>
-                  executar(compensando, "compensar", undefined, contaCompensou)
+                  executar(compensando, "compensar", contaCompensou)
                 }
                 disabled={loading || !contaCompensou}
                 className="btn-primario disabled:opacity-40"
@@ -355,18 +357,6 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
         </div>
       )}
 
-      {repassando && (
-        <ModalInputTexto
-          titulo="Repassar o cheque"
-          descricao={`${repassando.banco} · ${formatBRL(repassando.valor)}. Ele sai da carteira e fica registrado pra onde foi. Se voltar depois, você vê os dois lados aqui.`}
-          placeholder="Pra quem foi (oficina, posto, fornecedor)"
-          confirmarLabel="Repassar"
-          carregando={loading}
-          validar={(v) => (v.trim().length < 2 ? "Diga pra quem o cheque foi" : null)}
-          onConfirmar={(v) => executar(repassando, "repassar", v.trim())}
-          onFechar={() => setRepassando(null)}
-        />
-      )}
     </div>
   );
 }

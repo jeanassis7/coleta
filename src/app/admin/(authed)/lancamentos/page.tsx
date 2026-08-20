@@ -1,5 +1,5 @@
 import { buscarLancamentos, buscarContasFinanceiras } from "@/lib/admin/caixa";
-import { buscarMotoristas } from "@/lib/admin/queries";
+import { buscarMotoristas, buscarCheques } from "@/lib/admin/queries";
 import { LancamentosPainel } from "@/components/admin/LancamentosPainel";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ export default async function LancamentosPage({
     conta_id: params.conta_id || "",
   };
 
-  const [lancamentos, contas, perfis] = await Promise.all([
+  const [lancamentos, contas, perfis, chequesCarteira] = await Promise.all([
     buscarLancamentos({
       inicio: filtros.inicio,
       fim: filtros.fim,
@@ -39,6 +39,9 @@ export default async function LancamentosPage({
     }),
     buscarContasFinanceiras(),
     buscarMotoristas(),
+    // Pagar com cheque tira o papel da carteira — é o caminho que substituiu
+    // o antigo botão "Repassar" solto.
+    buscarCheques({ status: ["em_carteira"] }),
   ]);
 
   return (
@@ -59,6 +62,11 @@ export default async function LancamentosPage({
         // Inclui inativos: quem saiu da empresa continua tendo histórico, e
         // o Valdecir é cadastro contábil que nunca fica ativo.
         pessoas={perfis.map((p) => ({ id: p.id, nome: p.nome }))}
+        cheques={chequesCarteira.map((c) => ({
+          id: c.id,
+          rotulo: `${c.banco} · ${c.emitente} · R$ ${c.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} · bom para ${c.bom_para.slice(8, 10)}/${c.bom_para.slice(5, 7)}`,
+          valor: c.valor,
+        }))}
         filtros={filtros}
       />
     </div>

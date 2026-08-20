@@ -25,6 +25,9 @@ export async function POST(req: NextRequest) {
   const valor = Number(body.valor);
   const data = String(body.data || "").trim();
   const conta_id = body.conta_id ? String(body.conta_id) : null;
+  // Pagar com cheque da carteira: o dinheiro não sai de conta nenhuma —
+  // sai do papel. É o caminho que substitui o antigo botão "Repassar".
+  const cheque_id = body.cheque_id ? String(body.cheque_id) : null;
   const pessoa_id = body.pessoa_id ? String(body.pessoa_id) : null;
   const descricao = String(body.descricao || "").trim();
   const forma_pagamento = body.forma_pagamento
@@ -51,9 +54,9 @@ export async function POST(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
     return NextResponse.json({ error: "data inválida" }, { status: 400 });
   }
-  if (!conta_id) {
+  if (!conta_id && !cheque_id) {
     return NextResponse.json(
-      { error: "diga de qual conta saiu o dinheiro" },
+      { error: "diga de qual conta saiu o dinheiro (ou qual cheque pagou)" },
       { status: 400 }
     );
   }
@@ -76,8 +79,10 @@ export async function POST(req: NextRequest) {
       vencimento: data,
       pago_em: data,
       status: "paga",
-      forma_pagamento,
-      conta_id,
+      forma_pagamento: cheque_id ? "cheque" : forma_pagamento,
+      // Com cheque, conta_id fica NULO de propósito: nada saiu de conta.
+      conta_id: cheque_id ? null : conta_id,
+      cheque_id,
       pessoa_id: pedePessoa(categoria) ? pessoa_id : null,
       observacao: body.observacao ? String(body.observacao).trim() : null,
       registrado_por: admin.id,
@@ -86,5 +91,36 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // O repasse é CONSEQUÊNCIA de pagar algo — nunca uma ação solta.
+  if (cheque_id) {
+    const { data: mexeu, error: errCh } = await client
+      .from("cheques")
+      .update({
+        status: "repassado",
+        repassado_em: data,
+        repassado_para: (body.fornecedor
+          ? String(body.fornecedor).trim()
+          : descricao) || linha.label,
+      })
+      .eq("id", cheque_id)
+      .eq("status", "em_carteira")
+      .select("id");
+
+    if (errCh || !mexeu || mexeu.length === 0) {
+      // Sem o cheque saindo da carteira, o lançamento seria uma despesa que
+      // nada pagou — e o cheque continuaria contado como ativo.
+      await client.from("contas_a_pagar").delete().eq("id", criado.id);
+      return NextResponse.json(
+        {
+          error:
+            errCh?.message ||
+            "esse cheque não está mais na carteira — recarregue a tela",
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   return NextResponse.json({ ok: true, id: criado.id });
 }

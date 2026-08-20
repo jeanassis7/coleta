@@ -948,6 +948,89 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ─────────────────── 3j. cheque repassado: com despesa, e revertendo tudo
+console.log("\n🔬 CHEQUE REPASSADO (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role='admin' and ativo limit 1"
+  );
+  const { rows: [comp] } = await client.query(
+    "insert into public.compradores (nome,ativo) values ('Repasse E2E',true) returning id"
+  );
+
+  // Comprador paga 3.000 em cheque: a dívida dele quita, o dinheiro fica no papel.
+  await client.query(
+    `insert into public.vendas (comprador_id,data,peso_total_kg,kg_fino,kg_grosso,preco_kg,valor_total,registrado_por)
+     values ($1,current_date,600,600,0,5,3000,$2)`,
+    [comp.id, perfil.id]
+  );
+  const { rows: [rec] } = await client.query(
+    `insert into public.recebimentos (comprador_id,forma,valor,data,registrado_por)
+     values ($1,'cheque',3000,current_date,$2) returning id`,
+    [comp.id, perfil.id]
+  );
+  const { rows: [ch] } = await client.query(
+    `insert into public.cheques (recebimento_id,comprador_id,banco,emitente,valor,bom_para,status)
+     values ($1,$2,'BB','Fulano E2E',3000,current_date+30,'em_carteira') returning id`,
+    [rec.id, comp.id]
+  );
+
+  const dividaDoComprador = async () => Number((await client.query(
+    "select saldo from public.saldo_compradores() where comprador_id = $1", [comp.id]
+  )).rows[0].saldo);
+
+  checar("cheque na carteira quita a dívida do comprador", await dividaDoComprador(), 0);
+
+  // Repassar = pagar uma despesa com ele. A despesa nasce PAGA, sem conta
+  // financeira (o dinheiro saiu do papel), e amarrada ao cheque.
+  const { rows: [conta] } = await client.query(
+    `insert into public.contas_a_pagar
+       (descricao, categoria, valor, vencimento, pago_em, status, forma_pagamento, cheque_id, registrado_por)
+     values ('Posto E2E','combustivel',3000,current_date,current_date,'paga','cheque',$1,$2)
+     returning id`,
+    [ch.id, perfil.id]
+  );
+  await client.query(
+    `update public.cheques set status='repassado', repassado_em=current_date, repassado_para='Posto E2E' where id=$1`,
+    [ch.id]
+  );
+
+  const { rows: [semConta] } = await client.query(
+    "select count(*)::int n from public.contas_a_pagar where id=$1 and conta_id is null", [conta.id]
+  );
+  afirmar("despesa paga com cheque não sai de conta financeira", semConta.n === 1);
+
+  // Agora o cheque VOLTA. Tudo tem que desfazer.
+  await client.query(
+    `update public.cheques set status='devolvido', devolvido_em=current_date where id=$1`,
+    [ch.id]
+  );
+  await client.query(
+    `update public.contas_a_pagar
+       set status='a_pagar', pago_em=null, forma_pagamento=null, conta_id=null, cheque_id=null
+     where cheque_id=$1 and status='paga'`,
+    [ch.id]
+  );
+
+  checar("cheque devolvido faz a dívida do comprador VOLTAR", await dividaDoComprador(), 3000);
+
+  const { rows: [voltou] } = await client.query(
+    "select status from public.contas_a_pagar where id=$1", [conta.id]
+  );
+  afirmar("a conta que o cheque quitava volta pra 'a pagar'", voltou.status === "a_pagar");
+
+  // E some do DRE: a receita é caixa, e só conta paga entra.
+  const { rows: [noDre] } = await client.query(
+    `select count(*)::int n from public.contas_a_pagar
+      where id=$1 and status='paga' and pago_em = current_date`,
+    [conta.id]
+  );
+  afirmar("a despesa sai do DRE do dia (conta não está mais paga)", noDre.n === 0);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"

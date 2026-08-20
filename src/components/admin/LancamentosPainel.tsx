@@ -30,15 +30,24 @@ export interface PessoaOpcao {
   nome: string;
 }
 
+export interface ChequeOpcao {
+  id: string;
+  rotulo: string;
+  valor: number;
+}
+
 export function LancamentosPainel({
   lancamentos,
   contas,
   pessoas,
+  cheques,
   filtros,
 }: {
   lancamentos: Lancamento[];
   contas: ContaOpcao[];
   pessoas: PessoaOpcao[];
+  /** Cheques na carteira — pagar com um deles é o que o repassa. */
+  cheques: ChequeOpcao[];
   filtros: { inicio: string; fim: string; categoria: string; conta_id: string };
 }) {
   const router = useRouter();
@@ -52,6 +61,10 @@ export function LancamentosPainel({
   const [pessoaId, setPessoaId] = useState("");
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [descricao, setDescricao] = useState("");
+  // Pagar com cheque: o dinheiro não sai de conta nenhuma, sai do papel.
+  // Marcar isto repassa o cheque — e é o único jeito de repassar.
+  const [comCheque, setComCheque] = useState(false);
+  const [chequeId, setChequeId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -64,6 +77,7 @@ export function LancamentosPainel({
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!valorCentavos) return setErro("Quanto foi?");
+    if (comCheque && !chequeId) return setErro("Escolha qual cheque pagou.");
     setErro(null);
     setOk(null);
     setSalvando(true);
@@ -75,7 +89,8 @@ export function LancamentosPainel({
           categoria,
           valor: centavosParaReais(valorCentavos),
           data,
-          conta_id: contaId,
+          conta_id: comCheque ? null : contaId,
+          cheque_id: comCheque ? chequeId : null,
           pessoa_id: pedePessoa(categoria) ? pessoaId : null,
           descricao: descricao.trim() || null,
         }),
@@ -90,6 +105,9 @@ export function LancamentosPainel({
       setOk(`${labelCategoria(categoria)} · ${formatBRL(centavosParaReais(valorCentavos))} lançado.`);
       setValorCentavos(null);
       setDescricao("");
+      // O cheque saiu da carteira: não dá pra usar de novo.
+      setChequeId("");
+      setComCheque(false);
       router.refresh();
     } finally {
       setSalvando(false);
@@ -140,12 +158,32 @@ export function LancamentosPainel({
             />
           </div>
 
-          <SelectConta
-            contas={contas}
-            valor={contaId}
-            onChange={setContaId}
-            label="Saiu de"
-          />
+          {comCheque ? (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Pagou com qual cheque
+              </label>
+              <select
+                value={chequeId}
+                onChange={(e) => setChequeId(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              >
+                <option value="">Escolha da carteira…</option>
+                {cheques.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.rotulo}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <SelectConta
+              contas={contas}
+              valor={contaId}
+              onChange={setContaId}
+              label="Saiu de"
+            />
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">O que foi</label>
@@ -212,6 +250,24 @@ export function LancamentosPainel({
             />
           </div>
         </div>
+
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={comCheque}
+            disabled={cheques.length === 0}
+            onChange={(e) => setComCheque(e.target.checked)}
+            className="w-5 h-5 cursor-pointer disabled:opacity-40"
+          />
+          <span className="text-sm">
+            Paguei com um cheque da carteira
+            <span className="text-cinza-suave block text-xs">
+              {cheques.length === 0
+                ? "Nenhum cheque na carteira agora."
+                : "O cheque sai da carteira e fica registrado que pagou isto. É assim que se repassa um cheque — sempre com a despesa junto."}
+            </span>
+          </span>
+        </label>
 
         <button type="submit" disabled={salvando} className="btn-primario">
           {salvando ? "Lançando…" : "Lançar"}
