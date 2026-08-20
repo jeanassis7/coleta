@@ -178,6 +178,41 @@ dia), e a abertura da Receita no DRE.
   20/08. Não insistir; o teste manual dele com o celular segue sendo a
   verificação do fluxo offline.
 
+### Quarta rodada de 20/08 (noite) — folha, virada e os 9 da revisão dele
+
+- **Holerites reais analisados** (07/2026): receita da folha na seção 4.6 do
+  manual (Comissão = COMISSÕES+DSR bruta; Salário = líquido − comissão;
+  guias como Encargos "Empresa toda" — decisão dele: NÃO ratear; consignado
+  como Salário da pessoa). NEGOCIOv3 ganhou R110-c/R110-d.
+- **Plano de contas fechado no debate**: + Encargos de funcionário
+  (pessoaOpcional — guia coletiva aceita "Empresa toda"), + Documentos dos
+  caminhões (absorveu ipva_frota), Luz ganhou água. Comissão FICA separada
+  do Salário. Receita do DRE abre em 3 (à vista/compensados/repassados).
+- **A virada do regime antigo**: os −66k do card são adiantamentos mandados
+  por fora antes do módulo. Regularização = adiantamento retroativo (campo
+  "Quando foi", datado antes do corte das contas → não mexe no caixa) +
+  motorista aceita no app. Cronograma dele: Lucimar na descarga de amanhã
+  (21/08), Luis nesta semana (roda semana que vem), Lucinei na semana dele.
+  Regras de ouro: carga só liga com caminhão VAZIO; abertura do estoque =
+  depois da ÚLTIMA descarga do regime antigo e antes da 1ª venda/descarga
+  do sistema.
+- **Os 9 da revisão dele (migrations 0043-0046)**: apagar perfil de teste
+  COM TUDO (forcado total) + DELETE de carga com cascade; manutenção à
+  vista exige conta (nasce conta paga de origem); troca de óleo por km E/OU
+  data; compra direta vinculada à carga aberta (não-vazio) e pagável com
+  CHEQUE da carteira (conta paga origem compra_direta); coleta da sede com
+  "sede JÁ PAGOU" (conta nasce paga); ARLA no abastecimento (fora do km/L);
+  litros com máscara de dinheiro (InputLitros); placas por motorista
+  (motorista_caminhoes — vazio = todas).
+- **e2e-modulo2 do estoque virou DELTA** (o CI quebrou quando o Evaner pôs
+  dado real com o perfil "teste" — o bloco afirmava totais absolutos).
+
+**Aguardando resposta do Evaner:** a frase cortada sobre a VENDA ("no saldo
+tem a entrada... ou até mesmo em alguns" — pediu-se o resto); régua da
+comissão em litros (atual) ou kg (só rótulo); D3 (gestor); D6 (foto do
+painel). Pra reunião: combinar o número da regularização com cada motorista
+ANTES, e alinhar com o contador se o vale vira linha de desconto na folha.
+
 ### Aberto sem causa raiz
 
 **O painel travou de forma intermitente em 19/08** — telas presas no esqueleto
