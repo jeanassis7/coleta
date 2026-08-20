@@ -1,12 +1,12 @@
 # As regras deste negócio
 
-> **Versão 2** — 19/08/2026. Reescrito depois da conferência do Evaner regra
-> por regra. O que era pergunta virou resposta; o que era inferência minha e
-> ele corrigiu está corrigido.
+> **Versão 3** — 19/08/2026. Segunda rodada de conferência com o Evaner.
+> **Não sobrou pergunta em aberto** sobre regra de negócio: tudo que estava
+> marcado como dúvida foi respondido por ele e está incorporado.
 >
 > Regras extraídas do **código em produção**. `[CONFIRMADO]` = ele conferiu.
-> `[A CORRIGIR]` = o software não faz o que a regra diz — está na lista da
-> Parte XII.
+> `[A CORRIGIR]` = o software não faz o que a regra diz — está na Parte XII,
+> que é a lista de trabalho.
 
 ---
 
@@ -296,9 +296,22 @@ motivo é um lançamento.
 tem um botão "Repassar" solto que só grava um texto livre de "pra quem foi",
 sem criar despesa nenhuma. Ver Parte XII, item 5]`
 
-**R68.** **Devolvido faz a dívida do comprador voltar automaticamente.** Se já
-tinha sido repassado, o trâmite passa a ser direto entre o emitente e quem
-recebeu — a empresa sai do meio.
+**R68.** **Cheque devolvido: TUDO volta.** `[CONFIRMADO]`
+
+Quando um cheque volta — tenha sido depositado ou repassado — o sistema
+desfaz a cadeia inteira:
+
+| O que | Volta para |
+|---|---|
+| O cheque | status **devolvido**, de volta ao rol |
+| A dívida do comprador que o entregou | **aumenta de novo** |
+| A conta a pagar que ele quitou (se foi repassado) | volta a ser **a pagar** |
+
+Na prática, o que costuma acontecer depois: **a despesa é paga por PIX da
+conta bancária**, e **o comprador que deu o cheque também paga por PIX** na
+conta. Ou seja, o cheque some da cadeia e os dois lados viram dinheiro.
+`[A CORRIGIR — hoje o cheque volta e a dívida do comprador volta, mas a conta
+a pagar que ele quitou CONTINUA PAGA. Ver Parte XII, item 5]`
 
 **R69.** **Reapresentação de cheque é automática no banco** e **não precisa
 ser tratada no sistema**. `[CONFIRMADO]`
@@ -375,10 +388,39 @@ Cheques em aberto                   R$
 TOTAL                               R$
 ```
 
-O **preço de referência** é um valor fixo aproximado (ex.: **R$ 2,80 por
-litro**), não o custo médio. É "quanto isso vale", não "quanto custou".
-`[CONFIRMADO — regra do Evaner]` · `[A CORRIGIR — hoje a tela só mostra as
-contas e o dinheiro dos motoristas. Ver Parte XII, item 4]`
+### O preço de referência
+
+É uma **conta de cabeça** para fixar o valor do estoque num número estável.
+A ideia não é precisão contábil — é que, **usando sempre o mesmo preço**, dá
+para saber se o patrimônio está subindo ou descendo mês a mês. Se o número
+oscilasse junto com o custo médio, a variação do preço se misturaria com a
+variação do volume e nenhum dos dois seria legível.
+
+Regras dele:
+- É informado em **R$ por litro** (ex.: R$ 2,80) — é como o Evaner pensa. O
+  estoque é guardado em kg; o sistema converte pela mesma densidade de 0,9.
+- É **um valor só**, o mesmo para fino e grosso. `[CONFIRMADO]`
+- É **editável numa tela**, não fixo no código — ele muda quando o mercado
+  mudar.
+- **Não tem liquidez imediata**, e isso é sabido: o estoque vale isso se for
+  vendido, não é dinheiro em conta.
+
+### As linhas, em detalhe
+
+- **Em espécie / Na conta** — saldo das contas financeiras.
+- **Em mãos de motoristas** — a soma dos saldos deles.
+- **Valor em estoque** — kg em estoque, convertido em litros, × preço de
+  referência.
+- **Óleo nos caminhões** — os **litros declarados nas coletas de cargas ainda
+  abertas** (coletado, ainda não pesado), × preço de referência.
+  `[CONFIRMADO]`
+- **Cheques em aberto** — cheques **em carteira** e **depositados**.
+  `[CONFIRMADO]` Depositado ainda não é dinheiro (não compensou), mas é seu.
+  **Devolvido fica de fora**: a dívida do comprador já voltou, e contá-lo
+  seria contar duas vezes.
+
+`[A CORRIGIR — hoje a tela só mostra as contas e o dinheiro dos motoristas.
+Ver Parte XII, item 4]`
 
 **R88.** Entra no caixa: recebimento, transferência recebida, acerto
 devolvido, **cheque compensado**.
@@ -391,6 +433,11 @@ conta financeira** — é lido da função que já calcula o saldo dele.
 
 **R90.** **Regime de caixa dos dois lados — despesa E receita.** O gasto pesa
 no dia em que saiu; a receita pesa no dia em que **entrou**.
+
+Consequência direta, e confirmada: **venda paga em cheque só vira receita
+quando o cheque COMPENSA** — o que pode ser 60 dias depois da venda. Entre um
+e outro, a venda existe (o estoque saiu, a dívida do comprador nasceu) mas o
+DRE não a viu ainda.
 `[CONFIRMADO]` · `[A CORRIGIR — hoje a receita entra pela data da VENDA. Ver
 Parte XII, item 3]`
 
@@ -462,16 +509,37 @@ data. Mudar hoje **não recalcula o passado**.
 **R107.** A comissão é **proporcional**: `litros ÷ base × valor`. 100 L numa
 base de 200 pagam **metade**.
 
-**R108.** ⚠️ **A base da comissão são os LITROS DA DESCARGA** — os litros que
-o motorista lançou ao descarregar, derivados do peso da balança. **Não** a
-soma dos litros declarados nas coletas.
-`[CONFIRMADO — regra do Evaner]` · `[A CORRIGIR — hoje calculo sobre
-coletas.litros. Ver Parte XII, item 2]`
+**R108.** ⚠️ **A base da comissão são os LITROS DA DESCARGA** — os litros
+derivados do peso da balança (`peso líquido ÷ 0,9`), não a soma dos litros
+declarados nas coletas. `[CONFIRMADO]`
+
+Os três casos de borda, resolvidos:
+
+| Caso | Regra |
+|---|---|
+| **Carga cancelada** | **não gera comissão** — o óleo não foi pesado |
+| **Carga aberta, ainda sem descarga** | fica pendente até descarregar. Sem problema — a comissão nasce quando o peso existir |
+| **Coleta retroativa** (ele coletou e esqueceu de lançar) | **conta** — e sem regra especial nenhuma |
+
+O terceiro caso se resolve sozinho, e vale entender por quê: **o óleo dela já
+estava no caminhão quando pesou.** A balança não sabe quais coletas foram
+lançadas — ela pesa o que tem. Cobrar a comissão do peso faz o retroativo ser
+absorvido automaticamente, independente de quando a coleta foi digitada.
+
+É o argumento mais forte a favor de medir pelo peso em vez de pela declaração.
+
+`[A CORRIGIR — hoje calculo sobre coletas.litros. Ver Parte XII, item 2]`
 
 **R109.** É **por motorista**, conforme a coleta de cada um. Como uma carga
 tem um motorista só, a descarga daquela carga é dele.
 
 **R110.** **Paga junto com o salário, no pagamento mensal.** `[CONFIRMADO]`
+
+**R110-b.** O **vale** do acerto (R36) desconta do salário — e **o sistema
+deve lembrar** disso na hora de pagar. Não é o gestor que tem que guardar de
+cabeça.
+`[CONFIRMADO]` · `[A CORRIGIR — hoje o vale fica registrado no acerto e nada
+o liga ao pagamento. Ver Parte XII, item 7]`
 
 **R111.** Cada coleta usa a regra **do dia dela**. Mudança no meio do mês
 parte a conta na data certa.
@@ -522,11 +590,23 @@ semana" e "cheque devolvido sem resolver".
 |---|---|
 | **Jean** | Gestor. Painel no computador. Compra direta, vendas, dinheiro. |
 | **Evaner** | Irmão do Jean. Construiu o sistema. Também administra. |
-| **Valdecir** | "Faz-tudo" da empresa. Sem caminhão, recebe transferência. |
+| **Valdecir** | "Faz-tudo" da empresa. Sem caminhão, recebe pró-labore. |
 | **Luis** (apelido **"Fumaça"**) | Motorista |
 | **Lucimar** | Motorista |
 | **Lucinei** (apelido **"Nei"**) | Motorista |
-| **Suzana** | Cadastrada como motorista. Papel não documentado. |
+| **Suzana** | **Não é pessoa da operação** — foi um teste criado com esse nome. Será apagada. `[CONFIRMADO]` |
+
+**R130-b.** **Pró-labore não é valor fixo mensal.** Hoje é depositado um valor
+a cada **3 a 5 dias**, variável — e tende a se organizar com o tempo. Por isso
+ele **não usa vigência**: é lançado como despesa quando acontece, com a
+categoria dizendo de quem é (**Pró-labore Jean** / **Pró-labore Valdecir**).
+`[CONFIRMADO]`
+
+*Nota de modelagem:* no software isso é a categoria **Transferência a sócio**
+mais o campo **pessoa** — o efeito é idêntico e a lista de categorias não
+cresce quando entrar um sócio novo. A tela e o DRE mostram
+"Pró-labore — Valdecir". Se preferir duas categorias separadas de verdade,
+é uma linha de mudança.
 
 **R131.** A regra de ouro do app do motorista:
 > **Se exige mais de 3 toques e um pensamento, está complexo demais.**
@@ -555,41 +635,46 @@ revelar se estão certos quando passar dinheiro de verdade por eles.
 
 # PARTE XII — O QUE O SOFTWARE PRECISA MUDAR
 
-Cada item saiu da conferência. Nenhum é opinião minha.
+Sete itens. Cada um saiu da conferência — nenhum é opinião minha.
 
 ### 1. Coleta com valor zero
 **Regra:** R2 — óleo doado lança com valor zero.
 **Hoje:** o banco tem `check (valor_pago > 0)` e **recusa**.
-**Correção:** migration mudando para `>= 0`, e o app deixando salvar zero.
+**Correção:** migration mudando para `>= 0`.
 **Tamanho:** pequeno.
 
 ### 2. Comissão sobre os litros da descarga
-**Regra:** R108 — a base são os litros lançados ao descarregar (derivados do
-peso da balança), não a soma das coletas.
+**Regra:** R108 — a base é `descargas.litros_estimados`, não a soma das
+coletas.
 **Hoje:** calculo sobre `coletas.litros`.
-**Correção:** `calcularComissao()` passa a ler `descargas.litros_estimados`,
-atribuindo à carga (e portanto ao motorista dela). A vigência continua sendo
-a do dia — mas agora o dia é o **da descarga**.
-**Tamanho:** médio. Muda quanto cada motorista recebe.
+**Correção:** `calcularComissao()` passa a ler a descarga e atribuir ao
+motorista da carga. A vigência que vale é a **do dia da descarga**. Carga
+cancelada não entra; carga sem descarga fica pendente até pesar.
+**Tamanho:** médio. **Muda quanto cada motorista recebe.**
 
 ### 3. Receita do DRE por recebimento
-**Regra:** R90 — regime de caixa dos dois lados.
-**Hoje:** a receita entra pela **data da venda**.
-**Correção:** a linha de receita passa a somar **recebimentos** no período, e
-não vendas. Cheque entra quando **compensa**.
+**Regra:** R90 — caixa dos dois lados. Cheque entra quando **compensa**.
+**Hoje:** a receita entra pela data da **venda**.
+**Correção:** a linha de receita soma **recebimentos** do período mais os
+**cheques compensados**, em vez de vendas.
 **Tamanho:** pequeno no código, grande no significado.
 
 ### 4. Painel de caixa com o patrimônio inteiro
 **Regra:** R87 — seis linhas mais o total.
 **Hoje:** só contas + dinheiro dos motoristas.
-**Falta:** valor do estoque, óleo nos caminhões (coletas de cargas ainda não
-descarregadas), cheques em aberto, e um **preço de referência configurável**
-(ex.: R$ 2,80/L).
-**Tamanho:** médio. Precisa de um lugar pra guardar o preço de referência.
+**Falta:** valor do estoque, óleo nos caminhões (coletas de cargas abertas),
+cheques em aberto (**em carteira + depositado**), e um **preço de referência
+em R$/litro, editável, um só para fino e grosso**.
+**Tamanho:** médio.
 
-### 5. Repassar cheque exige despesa
-**Regra:** R67 — todo repasse tem um motivo, e o motivo é um lançamento.
-**Hoje:** existe um botão "Repassar" solto que só grava texto livre.
+### 5. O cheque, nos dois sentidos
+**Regra:** R67 (repassar exige despesa) e R68 (devolvido reverte tudo).
+**Hoje:**
+- existe um botão "Repassar" solto que grava um texto livre e **não cria
+  despesa nenhuma** — o gasto some do DRE;
+- quando um cheque repassado volta, a conta que ele quitou **continua paga**,
+  quando deveria voltar a ser dívida.
+
 **Correção:** ver o debate na Parte XIII.
 **Tamanho:** médio.
 
@@ -599,12 +684,19 @@ descarregadas), cheques em aberto, e um **preço de referência configurável**
 resolver"; mudar "dinheiro parado" de 7 para **15 dias**.
 **Tamanho:** pequeno.
 
-### 7. Backlog declarado
+### 7. O sistema lembra do vale
+**Regra:** R110-b — o vale do acerto desconta do salário, e é o sistema que
+avisa, não a memória do gestor.
+**Hoje:** o vale fica registrado no acerto e nada o liga ao pagamento.
+**Correção:** ao lançar Salário para alguém, a tela mostra os vales pendentes
+dele e permite marcar quais estão sendo descontados naquele pagamento.
+**Tamanho:** médio.
+
+### Backlog declarado (não é para agora)
 - Checklist ao iniciar carga (R82)
 - Kit de emergência (R82)
-- Umidade descontando algo (R11), quando existir a máquina
-
----
+- Umidade descontando algo (R11), quando existir a máquina de medir
+- Apagar a Suzana e o caminhão de teste AAA-0000
 
 # PARTE XIII — O DEBATE DO CHEQUE REPASSADO
 
@@ -665,14 +757,58 @@ também só vira caixa quando compensa, do seu lado).
 Fazer as duas partes juntas. Só a parte 1 tornaria o repasse burocrático e
 você acabaria não usando; só a parte 2 deixaria o buraco aberto.
 
-**Uma pergunta que sobra:** e o cheque repassado que **volta**? Hoje o
-software permite (repassado → devolvido) e a regra R68 diz que o trâmite
-passa a ser direto entre o emitente e quem recebeu. Mas a **despesa que ele
-pagou continua paga** — e provavelmente deveria voltar a ser dívida sua com o
-posto. Isso precisa de decisão: quando um cheque repassado volta, a conta que
-ele pagou volta a ser "a pagar"?
+---
+
+## Parte 3 — quando o cheque repassado volta
+
+Você respondeu: **tudo volta.** `[CONFIRMADO]`
+
+| O que | Volta para |
+|---|---|
+| O cheque | status **devolvido**, de volta ao rol |
+| A dívida do comprador que o entregou | **aumenta de novo** |
+| A conta a pagar que ele quitou | volta a ser **a pagar** |
+
+E o que costuma acontecer depois, na prática: **a despesa é paga por PIX da
+conta bancária**, e o **comprador que deu o cheque também paga por PIX**. O
+cheque sai da cadeia e os dois lados viram dinheiro de verdade.
+
+### O que isso exige do software
+
+Hoje só metade acontece: o cheque volta e a dívida do comprador volta — mas
+**a conta a pagar continua marcada como paga**. Ou seja, você deixou de dever
+para o posto no papel, e voltou a dever na vida.
+
+A correção é direta, porque o elo já existe: a conta guarda `cheque_id`. Ao
+marcar o cheque como devolvido, o sistema:
+
+1. acha a conta que ele pagou (`cheque_id = este cheque`)
+2. volta ela para **a pagar**, limpando `pago_em`, `forma_pagamento` e
+   `conta_id`
+3. avisa na tela o que foi desfeito — porque desfazer calado é pior que não
+   desfazer
+
+### O efeito no DRE
+
+Sob regime de caixa, a despesa tinha contado **no dia do repasse**. Ao
+reverter, ela **sai do DRE daquele dia** e volta a contar **quando for paga
+de verdade** (o PIX). Isso é coerente: o gasto acontece quando o dinheiro
+sai, e o dinheiro não saiu — o cheque voltou.
+
+Um efeito colateral honesto: **o resultado de um mês fechado pode mudar** se
+um cheque repassado em janeiro voltar em março. É o preço de ser fiel ao
+caixa, e é preferível a um DRE que registra um pagamento que não aconteceu.
 
 ---
 
-*Documento revisado em 19/08/2026 com a conferência do Evaner. Cada regra
-marcada `[A CORRIGIR]` é trabalho pendente listado na Parte XII.*
+## Resumo do que fazer no cheque
+
+1. **Remover** o botão "Repassar" solto do painel de cheques.
+2. **Lançamentos ganha "paguei com cheque"** — escolhe da carteira, o
+   lançamento nasce pago, o cheque vira repassado, tudo amarrado.
+3. **Devolver reverte a conta**: volta a ser a pagar, e avisa.
+
+---
+
+*Documento revisado em 19/08/2026, versão 3. Não há pergunta de negócio em
+aberto — o que resta é o trabalho da Parte XII.*
