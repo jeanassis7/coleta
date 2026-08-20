@@ -262,6 +262,26 @@ Apagar o que é teste: o perfil **Suzana**, o caminhão **AAA-0000** e o
 2. No card **Patrimônio**, definir o **preço de referência** do óleo
    (R$/litro — ex.: 2,80).
 
+### Fase 1½ — A REGULARIZAÇÃO (zerar o saldo fantasma dos motoristas)
+
+Se os motoristas já lançavam coleta antes do módulo de dinheiro, o saldo
+deles está **negativo e fictício** (o sistema viu o dinheiro sair pelas
+coletas, mas nunca viu os PIX que chegaram por fora). Conserta-se com **um
+adiantamento de regularização** por motorista, na virada de cada um:
+
+1. Decida qual é o **saldo REAL na mão dele hoje** (ex.: R$ 0, ou R$ 500).
+2. **Adiantamentos → + R$** → valor = *o negativo que aparece* + *o saldo
+   real* (ex.: aparece −40.470 e ele tem 500 na mão → 40.970) → campo
+   **"Quando foi" = uma data ANTES do corte das contas** → observação
+   "regularização — dinheiro enviado por fora antes do sistema".
+3. Ligar **features "saldo"** pro motorista → ele **aceita** no app (é
+   verdade — ele recebeu esse dinheiro ao longo do tempo) → o saldo dele
+   passa a ser o real. De quebra, ele aprende o aceite.
+
+Por que a data no passado: datado antes do corte da conta financeira, o
+adiantamento conserta o saldo do motorista **sem descontar o caixa** —
+aquele dinheiro já está embutido no saldo de partida do banco.
+
 ### Fase 2 — Os cadastros (15 min)
 3. **Caminhões** reais: placa, capacidade do tanque, **tara** (é ela que
    transforma o peso da balança em peso de óleo — capricho).

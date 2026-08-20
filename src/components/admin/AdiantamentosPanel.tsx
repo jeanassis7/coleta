@@ -220,6 +220,9 @@ function ModalNovoAdiantamento({
   const [forma, setForma] = useState<"dinheiro" | "pix">("dinheiro");
   const [obs, setObs] = useState("");
   const [contaId, setContaId] = useState("");
+  // Vazio = agora. Data no passado é pra regularização: dinheiro mandado
+  // por fora do sistema antes do módulo de saldo existir.
+  const [quandoFoi, setQuandoFoi] = useState("");
 
   const nome = motoristas.find((m) => m.id === motoristaId)?.nome || "—";
 
@@ -244,6 +247,7 @@ function ModalNovoAdiantamento({
           forma_pagamento: forma,
           conta_id: contaId,
           observacao: obs.trim() || null,
+          ...(quandoFoi ? { data_envio: quandoFoi } : {}),
         }),
       });
       const data = await res.json();
@@ -303,6 +307,24 @@ function ModalNovoAdiantamento({
               PIX
             </button>
           </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Quando foi <span className="text-cinza-suave">(vazio = agora)</span>
+          </label>
+          <input
+            type="date"
+            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            value={quandoFoi}
+            onChange={(e) => setQuandoFoi(e.target.value)}
+          />
+          <p className="text-xs text-cinza-suave mt-1">
+            Data no passado é pra <strong>regularização</strong> — dinheiro que
+            foi mandado por fora antes do sistema controlar. Datado antes do
+            corte da conta, ele conserta o saldo do motorista{" "}
+            <strong>sem descontar o caixa de novo</strong> (aquele dinheiro já
+            está embutido no saldo de partida).
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">

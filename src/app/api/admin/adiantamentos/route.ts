@@ -28,6 +28,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Data retroativa OPCIONAL — o caso de uso é a REGULARIZAÇÃO da largada:
+  // dinheiro que foi mandado por fora do sistema (PIX/WhatsApp) antes do
+  // módulo de saldo existir. Datado ANTES do corte da conta financeira, ele
+  // conserta o saldo do motorista sem descontar o caixa de novo (aquele
+  // dinheiro já está embutido no saldo de partida da conta). Futuro não:
+  // adiantamento que ainda não aconteceu não existe.
+  let data_envio: string | null = null;
+  if (body.data_envio) {
+    const d = String(body.data_envio).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      return NextResponse.json({ error: "data inválida" }, { status: 400 });
+    }
+    const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    if (d > hojeBr) {
+      return NextResponse.json(
+        { error: "a data do envio não pode ser no futuro" },
+        { status: 400 }
+      );
+    }
+    // Meio-dia BR pra data não escorregar de dia em nenhum fuso.
+    data_envio = new Date(`${d}T12:00:00-03:00`).toISOString();
+  }
+
   const client = getSupabaseAdmin(admin.id);
   const { data, error } = await client
     .from("adiantamentos")
@@ -39,6 +64,7 @@ export async function POST(req: NextRequest) {
       conta_id,
       observacao,
       registrado_por: admin.id,
+      ...(data_envio ? { data_envio } : {}),
     })
     .select()
     .maybeSingle();
