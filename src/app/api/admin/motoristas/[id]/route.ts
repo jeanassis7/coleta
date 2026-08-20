@@ -150,73 +150,94 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  // ANTES de destruir qualquer coisa: se o motorista tem movimento em outra
-  // tabela (carga, despesa, adiantamento...), o delete do profile vai falhar
-  // por FK LÁ NO FIM — depois de coletas e fotos já terem sido apagadas.
-  // Destruição parcial é o pior resultado possível: nem apaga, nem preserva.
-  // Então a checagem vem primeiro e recusa com a lista do que existe.
-  const dependencias: Array<[string, string]> = [
-    ["cargas", "cargas"],
-    ["despesas", "despesas"],
-    ["abastecimentos", "abastecimentos"],
-    ["adiantamentos", "adiantamentos"],
-    ["acertos", "acertos"],
-    ["contas_a_pagar", "contas a pagar registradas por ele"],
-  ];
-  const travas: string[] = [];
-  for (const [tabela, rotulo] of dependencias) {
-    const coluna = tabela === "contas_a_pagar" ? "registrado_por" : "motorista_id";
-    const { count } = await adminClient
-      .from(tabela)
-      .select("id", { count: "exact", head: true })
-      .eq(coluna, id);
-    if ((count ?? 0) > 0) travas.push(`${count} ${rotulo}`);
-  }
-  if (travas.length > 0) {
+  // ANTES de destruir qualquer coisa, levanta TUDO que é dele. Sem o
+  // forcado, recusa com a lista (motorista real se DESATIVA, não se
+  // deleta). COM forcado, apaga tudo na ordem certa das FKs — é o fluxo do
+  // perfil de teste (decisão do Evaner: testa-se com perfil normal e
+  // apaga-se depois, com carga, dinheiro e tudo).
+  const [
+    { data: cargasDele },
+    { data: coletasDele },
+    { data: despesasDele },
+    { data: abastDele },
+    { count: nAdiant },
+    { count: nAcertos },
+  ] = await Promise.all([
+    adminClient.from("cargas").select("id, foto_painel_path").eq("motorista_id", id),
+    adminClient.from("coletas").select("id, foto_path").eq("motorista_id", id),
+    adminClient.from("despesas").select("id, foto_path").eq("motorista_id", id),
+    adminClient.from("abastecimentos").select("id, foto_path").eq("motorista_id", id),
+    adminClient.from("adiantamentos").select("id", { count: "exact", head: true }).eq("motorista_id", id),
+    adminClient.from("acertos").select("id", { count: "exact", head: true }).eq("motorista_id", id),
+  ]);
+  const cargaIds = (cargasDele ?? []).map((c) => c.id);
+  const coletaIds = (coletasDele ?? []).map((c) => c.id);
+  const abastIds = (abastDele ?? []).map((a) => a.id);
+
+  const resumo: string[] = [];
+  if (cargaIds.length) resumo.push(`${cargaIds.length} carga(s)`);
+  if (coletaIds.length) resumo.push(`${coletaIds.length} coleta(s)`);
+  if ((despesasDele ?? []).length) resumo.push(`${despesasDele!.length} despesa(s)`);
+  if (abastIds.length) resumo.push(`${abastIds.length} abastecimento(s)`);
+  if (nAdiant) resumo.push(`${nAdiant} adiantamento(s)`);
+  if (nAcertos) resumo.push(`${nAcertos} acerto(s)`);
+
+  if (resumo.length > 0 && !forcado) {
     return NextResponse.json(
       {
-        error: `Esse motorista tem movimento além de coletas (${travas.join(", ")}) — deletar apagaria histórico de dinheiro e de carga. O certo é DESATIVAR o cadastro; deletar é só pra perfil criado por engano.`,
+        error: "tem_movimento",
+        mensagem: `Esse usuário tem ${resumo.join(", ")}. Motorista de verdade se DESATIVA (o histórico fica). Apagar TUDO de vez é só pra perfil de teste — e não tem volta.`,
       },
       { status: 409 }
     );
   }
 
-  // Conta coletas do motorista
-  const { count: numColetas } = await adminClient
-    .from("coletas")
-    .select("id", { count: "exact", head: true })
-    .eq("motorista_id", id);
+  if (forcado && resumo.length > 0) {
+    // Contas a pagar amarradas ao que é dele (nota assinada por trigger,
+    // coleta paga pela sede) ou registradas por ele — morrem primeiro.
+    const orConta = [
+      `registrado_por.eq.${id}`,
+      abastIds.length
+        ? `and(origem_tipo.eq.abastecimento,origem_id.in.(${abastIds.join(",")}))`
+        : null,
+      coletaIds.length
+        ? `and(origem_tipo.eq.coleta,origem_id.in.(${coletaIds.join(",")}))`
+        : null,
+    ].filter(Boolean) as string[];
+    const { error: eContas } = await adminClient
+      .from("contas_a_pagar")
+      .delete()
+      .or(orConta.join(","));
+    if (eContas) return NextResponse.json({ error: eContas.message }, { status: 400 });
 
-  if ((numColetas ?? 0) > 0 && !forcado) {
-    return NextResponse.json(
-      {
-        error: "tem_coletas",
-        coletas: numColetas,
-        mensagem: `Esse usuário tem ${numColetas} coleta(s). Pra deletar mesmo assim, confirma com forcado=1.`,
-      },
-      { status: 409 }
-    );
-  }
+    // Ordem das FKs: filhos da carga primeiro, a carga depois.
+    const passos: Array<() => PromiseLike<{ error: { message: string } | null }>> = [
+      () => adminClient.from("descargas").delete().in("carga_id", cargaIds.length ? cargaIds : ["00000000-0000-0000-0000-000000000000"]),
+      () => adminClient.from("coletas").delete().eq("motorista_id", id),
+      () => adminClient.from("despesas").delete().eq("motorista_id", id),
+      () => adminClient.from("abastecimentos").delete().eq("motorista_id", id),
+      () => adminClient.from("cargas").delete().eq("motorista_id", id),
+      () => adminClient.from("acertos").delete().eq("motorista_id", id),
+      () => adminClient.from("adiantamentos").delete().eq("motorista_id", id),
+    ];
+    for (const passo of passos) {
+      const { error } = await passo();
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
-  // Se forcado: deleta fotos do storage
-  if (forcado && (numColetas ?? 0) > 0) {
-    const { data: fotos } = await adminClient
-      .from("coletas")
-      .select("foto_path")
-      .eq("motorista_id", id)
-      .not("foto_path", "is", null);
-
-    const paths = (fotos || [])
-      .map((f) => f.foto_path)
-      .filter((p): p is string => !!p);
-
+    // Fotos por último (dado primeiro, blob depois — blob órfão é inócuo,
+    // dado órfão não).
+    const paths = [
+      ...(coletasDele ?? []).map((c) => c.foto_path),
+      ...(despesasDele ?? []).map((d) => d.foto_path),
+      ...(abastDele ?? []).map((a) => a.foto_path),
+      ...(cargasDele ?? []).map((c) => c.foto_painel_path),
+    ].filter((p): p is string => !!p);
     if (paths.length > 0) {
       await adminClient.storage.from("fotos-coletas").remove(paths);
     }
-
-    // Deleta coletas
-    await adminClient.from("coletas").delete().eq("motorista_id", id);
   }
+  const numColetas = coletaIds.length;
 
   // Documentos morrem por cascade junto com o profile — mas a conta
   // PREVISTA de cada um e o arquivo no bucket não. Limpa antes (mesma

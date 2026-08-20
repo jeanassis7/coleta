@@ -26,6 +26,10 @@ export async function POST(req: NextRequest) {
     body.proxima_km == null || body.proxima_km === ""
       ? null
       : Number(body.proxima_km);
+  const proxima_data =
+    body.proxima_data && /^\d{4}-\d{2}-\d{2}$/.test(String(body.proxima_data))
+      ? String(body.proxima_data)
+      : null;
   const fornecedor = body.fornecedor ? String(body.fornecedor).trim() : null;
   const foto_path = body.foto_path ? String(body.foto_path) : null;
   const observacao = body.observacao ? String(body.observacao).trim() : null;
@@ -34,6 +38,15 @@ export async function POST(req: NextRequest) {
   const forma_pagamento = body.forma_pagamento
     ? String(body.forma_pagamento)
     : null;
+  // À VISTA o dinheiro saiu de uma conta AGORA — sem ela o DRE via o gasto
+  // mas o caixa não via a saída (o mesmo furo da compra direta).
+  const conta_id = body.conta_id ? String(body.conta_id) : null;
+  if (!vencimento && !conta_id) {
+    return NextResponse.json(
+      { error: "pagou na hora? diga de qual conta o dinheiro saiu" },
+      { status: 400 }
+    );
+  }
 
   if (!caminhao_id) {
     return NextResponse.json({ error: "escolha o caminhão" }, { status: 400 });
@@ -87,8 +100,9 @@ export async function POST(req: NextRequest) {
       descricao,
       valor: Math.round(valor * 100) / 100,
       fornecedor,
-      // proxima_km só faz sentido em troca de óleo
+      // proxima_km/proxima_data só fazem sentido em troca de óleo
       proxima_km: tipo === "troca_oleo" ? proxima_km : null,
+      proxima_data: tipo === "troca_oleo" ? proxima_data : null,
       foto_path,
       observacao,
       registrado_por: admin.id,
@@ -100,12 +114,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
+  // A categoria da conta segue o TIPO da manutenção — o valor cai na mesma
+  // linha do DRE em que a manutenção cairia (troca de óleo / pneus /
+  // manutenção).
+  const categoriaConta =
+    tipo === "troca_oleo" ? "troca_oleo" : tipo === "pneu" ? "pneus" : "manutencao";
+
   if (vencimento) {
-    // A categoria da conta segue o TIPO da manutenção — assim, quando a
-    // conta for paga, o valor cai na mesma linha do DRE em que a manutenção
-    // à vista cairia (troca de óleo / pneus / manutenção).
-    const categoriaConta =
-      tipo === "troca_oleo" ? "troca_oleo" : tipo === "pneu" ? "pneus" : "manutencao";
+    // A PRAZO: nasce a dívida.
     const { error: errConta } = await client.from("contas_a_pagar").insert({
       descricao: `Manutenção — ${descricao}`,
       fornecedor,
@@ -122,6 +138,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: `Manutenção salva, mas a conta a pagar falhou: ${errConta.message}`,
+        },
+        { status: 400 }
+      );
+    }
+  } else {
+    // À VISTA: nasce a conta JÁ PAGA, com a conta de onde o dinheiro saiu.
+    // É o que faz o caixa descontar E o DRE contar pela linha certa (o fato
+    // fica excluído do automático via origem_id — anti-dobra da R92).
+    const { error: errConta } = await client.from("contas_a_pagar").insert({
+      descricao: `Manutenção — ${descricao}`,
+      fornecedor,
+      categoria: categoriaConta,
+      valor: Math.round(valor * 100) / 100,
+      vencimento: data,
+      pago_em: data,
+      status: "paga",
+      forma_pagamento: forma_pagamento || "pix",
+      conta_id,
+      origem_tipo: "manutencao",
+      origem_id: criada.id,
+      registrado_por: admin.id,
+    });
+    if (errConta) {
+      return NextResponse.json(
+        {
+          error: `Manutenção salva, mas o registro do pagamento falhou: ${errConta.message}`,
         },
         { status: 400 }
       );

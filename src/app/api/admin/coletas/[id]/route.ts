@@ -28,6 +28,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // "pagamento pela sede" pra datar a conta a pagar que nasce dela.
   const body = (await req.json()) as Partial<Record<CampoEditavel, unknown>> & {
     vencimento?: string;
+    /** "a sede já pagou à vista": a conta nasce PAGA com forma+conta+data. */
+    pagamento_sede?: { forma?: string; conta_id?: string; pago_em?: string };
   };
 
   // Valida e monta updates
@@ -105,6 +107,21 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       vencimento = prox.toISOString().slice(0, 10);
     }
 
+    // A sede pode JÁ TER PAGO na hora (PIX no ato): a conta nasce PAGA, com
+    // forma + conta + data — desconta o caixa e entra no DRE no dia do
+    // pagamento. Senão, nasce a pagar com o vencimento.
+    const ps = body.pagamento_sede as
+      | { forma?: string; conta_id?: string; pago_em?: string }
+      | undefined;
+    const jaPagou =
+      !!ps &&
+      !!ps.conta_id &&
+      ["pix", "dinheiro", "deposito"].includes(String(ps.forma));
+    const pagoEmSede =
+      ps?.pago_em && /^\d{4}-\d{2}-\d{2}$/.test(String(ps.pago_em))
+        ? String(ps.pago_em)
+        : vencimento;
+
     if (valor > 0) {
       const { error: eConta } = await adminClient.from("contas_a_pagar").insert({
         descricao: `Óleo — ${fornecedor || "fornecedor"}`,
@@ -114,8 +131,15 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         // paga cair no "Não classificado".
         categoria: "oleo_sede",
         valor,
-        vencimento,
-        status: "a_pagar",
+        vencimento: jaPagou ? pagoEmSede : vencimento,
+        status: jaPagou ? "paga" : "a_pagar",
+        ...(jaPagou
+          ? {
+              pago_em: pagoEmSede,
+              forma_pagamento: String(ps!.forma),
+              conta_id: String(ps!.conta_id),
+            }
+          : {}),
         origem_tipo: "coleta",
         origem_id: id,
         registrado_por: admin.id,

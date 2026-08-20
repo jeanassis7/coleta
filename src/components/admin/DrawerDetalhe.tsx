@@ -65,6 +65,31 @@ export function DrawerDetalhe({
   // do óleo mas NÃO desconta do saldo do motorista, porque ele não pagou.
   const [pagoPelaSede, setPagoPelaSede] = useState(!!coleta.pago_pela_sede);
   const [vencimento, setVencimento] = useState("");
+  // "Já paguei à vista": a conta nasce PAGA (forma + conta + data) em vez
+  // de a pagar. As contas financeiras são buscadas na hora, só se precisar.
+  const [sedeJaPagou, setSedeJaPagou] = useState(false);
+  const [sedeForma, setSedeForma] = useState<"pix" | "dinheiro" | "deposito">("pix");
+  const [sedePagoEm, setSedePagoEm] = useState(
+    new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  );
+  const [sedeContaId, setSedeContaId] = useState("");
+  const [contasSede, setContasSede] = useState<
+    { id: string; nome: string; tipo: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!(pagoPelaSede && !coleta.pago_pela_sede && sedeJaPagou)) return;
+    if (contasSede.length > 0) return;
+    (async () => {
+      const supabase = getSupabaseBrowser();
+      const { data } = await supabase
+        .from("contas_financeiras")
+        .select("id, nome, tipo")
+        .eq("ativa", true)
+        .order("nome");
+      setContasSede((data as { id: string; nome: string; tipo: string }[]) ?? []);
+    })();
+  }, [pagoPelaSede, sedeJaPagou, coleta.pago_pela_sede, contasSede.length]);
 
   useEffect(() => {
     if (!coleta.foto_path) return;
@@ -128,6 +153,11 @@ export function DrawerDetalhe({
       litros_certificado = lc;
     }
 
+    if (pagoPelaSede && !coleta.pago_pela_sede && sedeJaPagou && !sedeContaId) {
+      setErro("A sede já pagou? Diga de qual conta o dinheiro saiu.");
+      return;
+    }
+
     setErro(null);
     setSalvando(true);
     const res = await fetch(`/api/admin/coletas/${coleta.id}`, {
@@ -142,6 +172,15 @@ export function DrawerDetalhe({
         observacao: observacao.trim() || null,
         pago_pela_sede: pagoPelaSede,
         ...(pagoPelaSede && vencimento ? { vencimento } : {}),
+        ...(pagoPelaSede && sedeJaPagou
+          ? {
+              pagamento_sede: {
+                forma: sedeForma,
+                conta_id: sedeContaId,
+                pago_em: sedePagoEm,
+              },
+            }
+          : {}),
       }),
     });
     const data = await res.json();
@@ -312,19 +351,89 @@ export function DrawerDetalhe({
                   </span>
                 </label>
                 {pagoPelaSede && !coleta.pago_pela_sede && (
-                  <div>
-                    <label className="block text-xs text-cinza-suave mb-1">
-                      Quando vence (em branco = dia 1 do mês que vem)
+                  <div className="space-y-2">
+                    {/* A sede pode já ter pagado na hora (PIX pro fornecedor
+                        no ato) ou pagar depois — pergunta do Evaner, 20/08. */}
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="checkbox"
+                        checked={sedeJaPagou}
+                        onChange={(e) => setSedeJaPagou(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      A sede JÁ PAGOU o fornecedor
                     </label>
-                    <input
-                      type="date"
-                      className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-                      value={vencimento}
-                      onChange={(e) => setVencimento(e.target.value)}
-                    />
-                    <p className="text-xs text-cinza-suave mt-1">
-                      Ao salvar, nasce a conta a pagar do fornecedor.
-                    </p>
+                    {sedeJaPagou ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-cinza-suave mb-1">
+                              Como pagou
+                            </label>
+                            <select
+                              value={sedeForma}
+                              onChange={(e) =>
+                                setSedeForma(e.target.value as "pix" | "dinheiro" | "deposito")
+                              }
+                              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                            >
+                              <option value="pix">Pix</option>
+                              <option value="dinheiro">Dinheiro</option>
+                              <option value="deposito">Depósito</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-cinza-suave mb-1">
+                              Quando pagou
+                            </label>
+                            <input
+                              type="date"
+                              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                              value={sedePagoEm}
+                              onChange={(e) => setSedePagoEm(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-cinza-suave mb-1">
+                            De qual conta saiu
+                          </label>
+                          <select
+                            value={sedeContaId}
+                            onChange={(e) => setSedeContaId(e.target.value)}
+                            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                          >
+                            <option value="">Escolha a conta…</option>
+                            {contasSede.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <p className="text-xs text-cinza-suave">
+                          Nasce a conta já PAGA — desconta do caixa e entra no
+                          DRE no dia do pagamento.
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs text-cinza-suave mb-1">
+                          Quando vence (em branco = dia 1 do mês que vem)
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                          value={vencimento}
+                          onChange={(e) => setVencimento(e.target.value)}
+                        />
+                        <p className="text-xs text-cinza-suave mt-1">
+                          Ao salvar, nasce a conta a pagar do fornecedor —
+                          valor e vencimento seguem editáveis em Contas a
+                          pagar (botão Editar) até ela ser paga.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

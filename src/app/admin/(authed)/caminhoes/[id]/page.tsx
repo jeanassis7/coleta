@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { formatData } from "@/lib/format";
 import { buscarCaminhoes, resolvePeriodo } from "@/lib/admin/queries";
 import {
   buscarManutencoes,
@@ -7,6 +8,7 @@ import {
   kmAtualPorCaminhao,
   resumoCaminhao,
 } from "@/lib/admin/frota";
+import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { HistoricoManutencao } from "@/components/admin/HistoricoManutencao";
 import { ListaDocumentos } from "@/components/admin/ListaDocumentos";
 
@@ -23,13 +25,14 @@ export default async function FichaCaminhaoPage({
   const { id } = await params;
   const { inicio, fim } = resolvePeriodo({ periodo: "mes" });
 
-  const [caminhoes, manutencoes, documentos, kmPorCaminhao, resumo] =
+  const [caminhoes, manutencoes, documentos, kmPorCaminhao, resumo, contas] =
     await Promise.all([
       buscarCaminhoes(),
       buscarManutencoes({ caminhao_id: id }),
       buscarDocumentos({ caminhao_id: id }),
       kmAtualPorCaminhao(),
       resumoCaminhao(id, inicio, fim),
+      buscarContasFinanceiras(),
     ]);
 
   const caminhao = caminhoes.find((c) => c.id === id);
@@ -37,14 +40,15 @@ export default async function FichaCaminhaoPage({
 
   const kmAtual = kmPorCaminhao.get(id) ?? null;
 
-  // A troca de óleo que vale é a da MAIOR próxima_km: se houve três, a
-  // última é a que manda.
-  const proximaTroca = manutencoes
-    .filter((m) => m.tipo === "troca_oleo" && m.proxima_km != null)
-    .reduce<number | null>(
-      (maior, m) => (maior == null || m.proxima_km! > maior ? m.proxima_km! : maior),
-      null
-    );
+  // A troca de óleo que vale é a MAIS RECENTE lançada — é ela que carrega o
+  // alvo atual, por km e/ou por data (o que vencer primeiro manda).
+  const ultimaTroca = manutencoes
+    .filter(
+      (m) => m.tipo === "troca_oleo" && (m.proxima_km != null || m.proxima_data != null)
+    )
+    .sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1))[0];
+  const proximaTroca = ultimaTroca?.proxima_km ?? null;
+  const proximaTrocaData = ultimaTroca?.proxima_data ?? null;
   const faltaKm =
     proximaTroca != null && kmAtual != null ? proximaTroca - kmAtual : null;
 
@@ -76,36 +80,56 @@ export default async function FichaCaminhaoPage({
         </p>
       </div>
 
-      {/* Próxima troca de óleo — o número que muda decisão */}
-      {proximaTroca != null && (
-        <div
-          className={`card ${
-            faltaKm != null && faltaKm < 0
-              ? "border-alerta bg-alerta/5"
-              : faltaKm != null && faltaKm <= 1000
-                ? "border-amber-300 bg-amber-50"
-                : ""
-          }`}
-        >
-          <h2 className="text-lg font-semibold mb-1">Próxima troca de óleo</h2>
-          <p className="text-sm">
-            Marcada pra <strong>{proximaTroca.toLocaleString("pt-BR")} km</strong>
-            {kmAtual == null ? (
-              <span className="text-cinza-suave">
-                {" "}
-                — ainda não há km registrado pra este caminhão.
-              </span>
-            ) : faltaKm! < 0 ? (
-              <span className="text-alerta font-bold">
-                {" "}
-                — já passou {Math.abs(faltaKm!).toLocaleString("pt-BR")} km.
-              </span>
-            ) : (
-              <span> — faltam {faltaKm!.toLocaleString("pt-BR")} km.</span>
-            )}
-          </p>
-        </div>
-      )}
+      {/* Próxima troca de óleo — o número que muda decisão. Vence pelo que
+          vier primeiro: km OU data (0043). */}
+      {(proximaTroca != null || proximaTrocaData != null) && (() => {
+        const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10);
+        const passouData = proximaTrocaData != null && hojeBr > proximaTrocaData;
+        const vencida = (faltaKm != null && faltaKm < 0) || passouData;
+        const quase = !vencida && faltaKm != null && faltaKm <= 1000;
+        return (
+          <div
+            className={`card ${
+              vencida ? "border-alerta bg-alerta/5" : quase ? "border-amber-300 bg-amber-50" : ""
+            }`}
+          >
+            <h2 className="text-lg font-semibold mb-1">Próxima troca de óleo</h2>
+            <p className="text-sm">
+              {proximaTroca != null && (
+                <>
+                  Marcada pra <strong>{proximaTroca.toLocaleString("pt-BR")} km</strong>
+                  {kmAtual == null ? (
+                    <span className="text-cinza-suave">
+                      {" "}
+                      — ainda não há km registrado pra este caminhão
+                    </span>
+                  ) : faltaKm! < 0 ? (
+                    <span className="text-alerta font-bold">
+                      {" "}
+                      — já passou {Math.abs(faltaKm!).toLocaleString("pt-BR")} km
+                    </span>
+                  ) : (
+                    <span> — faltam {faltaKm!.toLocaleString("pt-BR")} km</span>
+                  )}
+                </>
+              )}
+              {proximaTroca != null && proximaTrocaData != null && " · "}
+              {proximaTrocaData != null && (
+                <>
+                  {proximaTroca != null ? "ou até " : "Marcada pra até "}
+                  <strong>{formatData(proximaTrocaData)}</strong>
+                  {passouData && (
+                    <span className="text-alerta font-bold"> — já passou</span>
+                  )}
+                </>
+              )}
+              .
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Consumo e gasto no mês */}
       <div className="card">
@@ -148,6 +172,7 @@ export default async function FichaCaminhaoPage({
         manutencoes={manutencoes}
         caminhaoId={id}
         kmAtual={kmAtual}
+        contas={contas}
       />
 
       <ListaDocumentos

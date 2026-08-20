@@ -71,6 +71,9 @@ export async function PATCH(
   if (body.conta_id !== undefined) {
     updates.conta_id = body.conta_id ? String(body.conta_id) : null;
   }
+  if (body.carga_id !== undefined) {
+    updates.carga_id = body.carga_id ? String(body.carga_id) : null;
+  }
   if (body.observacao !== undefined) {
     updates.observacao = body.observacao?.trim() || null;
   }

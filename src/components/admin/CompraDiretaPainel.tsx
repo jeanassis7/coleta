@@ -19,12 +19,21 @@ function hojeBr(): string {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+export interface OpcaoRotulada {
+  id: string;
+  rotulo: string;
+}
+
 export function CompraDiretaPainel({
   compras,
   contas,
+  cargasAtivas,
+  chequesCarteira,
 }: {
   compras: CompraDireta[];
   contas: ContaOpcao[];
+  cargasAtivas: OpcaoRotulada[];
+  chequesCarteira: OpcaoRotulada[];
 }) {
   const [formAberto, setFormAberto] = useState(false);
   const [editando, setEditando] = useState<CompraDireta | null>(null);
@@ -46,6 +55,8 @@ export function CompraDiretaPainel({
         <FormCompra
           editando={editando}
           contas={contas}
+          cargasAtivas={cargasAtivas}
+          chequesCarteira={chequesCarteira}
           onFim={() => {
             setFormAberto(false);
             setEditando(null);
@@ -61,10 +72,14 @@ export function CompraDiretaPainel({
 function FormCompra({
   editando,
   contas,
+  cargasAtivas,
+  chequesCarteira,
   onFim,
 }: {
   editando: CompraDireta | null;
   contas: ContaOpcao[];
+  cargasAtivas: OpcaoRotulada[];
+  chequesCarteira: OpcaoRotulada[];
   onFim: () => void;
 }) {
   const router = useRouter();
@@ -96,6 +111,13 @@ function FormCompra({
   );
   const [observacao, setObservacao] = useState(editando?.observacao || "");
   const [contaId, setContaId] = useState(editando?.conta_id || "");
+  // Pagou de conta (o comum) ou com CHEQUE da carteira (repasse — R66/R67:
+  // o cheque sai amarrado a uma conta a pagar já paga, igual aos outros
+  // caminhos de repasse). Edição não mexe na forma de pagamento.
+  const [formaCompra, setFormaCompra] = useState<"conta" | "cheque">("conta");
+  const [chequeId, setChequeId] = useState("");
+  // Caminhão NÃO estava vazio → em qual carga aberta o óleo foi junto
+  const [cargaId, setCargaId] = useState(editando?.carga_id || "");
   const [foto, setFoto] = useState<Blob | null>(null);
   const [nomeFoto, setNomeFoto] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -122,8 +144,14 @@ function FormCompra({
     if (certTipo === "parcial" && (!Number.isFinite(litrosCertNum) || litrosCertNum <= 0)) {
       return setErro("Quantos litros foram no certificado parcial?");
     }
-    if (!contaId) {
+    if (!editando && formaCompra === "conta" && !contaId) {
       return setErro("Diga de qual conta o dinheiro saiu — sem isso o caixa não fecha");
+    }
+    if (!editando && formaCompra === "cheque" && !chequeId) {
+      return setErro("Escolha qual cheque da carteira pagou essa compra");
+    }
+    if (!caminhaoVazio && !cargaId) {
+      return setErro("O óleo foi junto em qual carga aberta? Escolha a carga");
     }
     setErro(null);
     setSalvando(true);
@@ -150,9 +178,11 @@ function FormCompra({
         unidade,
         tipo_oleo: tipoOleo,
         entra_no_estoque: caminhaoVazio,
+        carga_id: caminhaoVazio ? null : cargaId || null,
         certificado_tipo: certTipo,
         litros_certificado: certTipo === "parcial" ? litrosCertNum : null,
-        conta_id: contaId,
+        conta_id: formaCompra === "conta" ? contaId : null,
+        cheque_id: formaCompra === "cheque" ? chequeId : null,
         observacao: observacao.trim() || null,
         ...(foto_path ? { foto_path } : {}),
       };
@@ -215,14 +245,69 @@ function FormCompra({
         </div>
       </div>
 
-      {/* Dinheiro não aparece nem some (R83): a compra direta saiu de algum
-          lugar, e sem dizer de onde o caixa ficava maior que a gaveta. */}
-      <SelectConta
-        contas={contas}
-        valor={contaId}
-        onChange={setContaId}
-        label="De qual conta saiu o dinheiro"
-      />
+      {/* Dinheiro não aparece nem some (R83): a compra saiu de uma conta OU
+          do papel de um cheque da carteira (repasse). Edição não mexe na
+          forma — corrija apagando e relançando se pagou diferente. */}
+      {!editando && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Como pagou?</label>
+            <div className="flex rounded-xl overflow-hidden border border-cinza-borda max-w-md">
+              {(
+                [
+                  ["conta", "De uma conta"],
+                  ["cheque", "Com cheque da carteira"],
+                ] as const
+              ).map(([v, r]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setFormaCompra(v)}
+                  className={`flex-1 px-3 py-2 text-sm ${
+                    formaCompra === v ? "bg-verde text-white" : "bg-white"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          {formaCompra === "conta" ? (
+            <SelectConta
+              contas={contas}
+              valor={contaId}
+              onChange={setContaId}
+              label="De qual conta saiu o dinheiro"
+            />
+          ) : chequesCarteira.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
+              Nenhum cheque na carteira agora.
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Qual cheque da carteira
+              </label>
+              <select
+                value={chequeId}
+                onChange={(e) => setChequeId(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              >
+                <option value="">Escolha da carteira…</option>
+                {chequesCarteira.map((ch) => (
+                  <option key={ch.id} value={ch.id}>
+                    {ch.rotulo}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-cinza-suave mt-1">
+                O cheque sai da carteira amarrado a esta compra (repasse) —
+                não sai dinheiro de conta nenhuma.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
@@ -348,6 +433,36 @@ function FormCompra({
             </span>
           </span>
         </label>
+        {!caminhaoVazio && (
+          <div className="pl-6">
+            <label className="block text-sm font-medium mb-1">
+              Em qual carga aberta o óleo foi junto
+            </label>
+            {cargasAtivas.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-300 rounded-xl p-2 text-sm">
+                Nenhuma carga aberta agora — confira se o motorista já iniciou
+                a carga no app.
+              </div>
+            ) : (
+              <select
+                value={cargaId}
+                onChange={(e) => setCargaId(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              >
+                <option value="">Escolha a carga…</option>
+                {cargasAtivas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.rotulo}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="text-xs text-cinza-suave mt-1">
+              É o rastro da auditoria: a descarga DESSA carga vai conter este
+              óleo.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

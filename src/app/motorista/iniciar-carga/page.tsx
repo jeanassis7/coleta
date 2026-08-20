@@ -73,19 +73,34 @@ export default function IniciarCargaPage() {
         return;
       }
 
-      // 3. Lista de caminhões ativos
+      // 3. Lista de caminhões ativos — filtrada pelas placas DELE, se o
+      // gestor atribuiu (0046). Sem atribuição, vê todos (como sempre).
       const supabase = getSupabaseBrowser();
-      const { data, error } = await supabase
-        .from("caminhoes")
-        .select("id, placa, marca, modelo, cor, capacidade_l, tara_kg")
-        .eq("ativo", true)
-        .order("placa");
+      const [{ data, error }, { data: minhasPlacas }] = await Promise.all([
+        supabase
+          .from("caminhoes")
+          .select("id, placa, marca, modelo, cor, capacidade_l, tara_kg")
+          .eq("ativo", true)
+          .order("placa"),
+        supabase
+          .from("motorista_caminhoes")
+          .select("caminhao_id")
+          .eq("motorista_id", id),
+      ]);
       if (error) {
         // Rede caiu no meio — trata como offline, não como "sem caminhões"
         setEstado("offline");
         return;
       }
-      const lista = (data || []) as CaminhaoAtivo[];
+      let lista = (data || []) as CaminhaoAtivo[];
+      const permitidos = new Set(
+        ((minhasPlacas as { caminhao_id: string }[]) ?? []).map(
+          (p) => p.caminhao_id
+        )
+      );
+      if (permitidos.size > 0) {
+        lista = lista.filter((c) => permitidos.has(c.id));
+      }
       if (lista.length === 0) {
         setEstado("sem_caminhoes");
         return;

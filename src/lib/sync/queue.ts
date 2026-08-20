@@ -330,6 +330,8 @@ async function sincronizarAbastecimentos(
       // campo. O default do banco é true, mas mandar explícito evita que um
       // undefined vire null e quebre o NOT NULL.
       pago_na_hora: a.pago_na_hora !== false,
+      // PWA antigo não manda tipo — o default do banco é diesel (0044).
+      tipo: a.tipo ?? "diesel",
       litros: a.litros,
       valor: a.valor,
       km_atual: a.km_atual,

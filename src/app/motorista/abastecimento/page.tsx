@@ -11,7 +11,7 @@ import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { SugestaoLocal } from "@/components/motorista/SugestaoLocal";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
-import { parseLitros } from "@/lib/format";
+import { InputLitros, centilitrosParaLitros } from "@/components/InputLitros";
 import type { CargaAtivaCache, AbastecimentoLocal } from "@/lib/types";
 
 const LAST_KM_KEY_PREFIX = "coleta_ultimo_km_";
@@ -31,7 +31,14 @@ export default function AbastecimentoPage() {
   // Assinar a nota NÃO tira do bolso dele: vira dívida da empresa com o
   // posto e some do saldo (0018). Nasce em true porque é o caso comum.
   const [pagoNaHora, setPagoNaHora] = useState(true);
-  const [litrosTexto, setLitrosTexto] = useState("");
+  // DIESEL x ARLA — ARLA abastece no mesmo posto mas não é combustível:
+  // separado, ele não derruba o km/L calculado do caminhão.
+  const [tipoAbastecimento, setTipoAbastecimento] = useState<"diesel" | "arla">(
+    "diesel"
+  );
+  // Litros com a mesma máscara do dinheiro: digita algarismos e preenche da
+  // direita com duas casas (12345 → 123,45 L). Trafega em centilitros.
+  const [litrosCentilitros, setLitrosCentilitros] = useState<number | null>(null);
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [kmTexto, setKmTexto] = useState("");
   // Antiburro do km — erro duro e avisos de segundo toque, tudo no app
@@ -75,7 +82,8 @@ export default function AbastecimentoPage() {
     };
   }, [motoristaId]);
 
-  const litros = parseLitros(litrosTexto);
+  const litros =
+    litrosCentilitros !== null ? centilitrosParaLitros(litrosCentilitros) : null;
   const km = Number(kmTexto);
   const podeSalvar =
     !!motoristaId &&
@@ -171,6 +179,7 @@ export default function AbastecimentoPage() {
       posto_nome: postoNome.trim(),
       local_id: postoLocalId,
       pago_na_hora: pagoNaHora,
+      tipo: tipoAbastecimento,
       litros,
       valor,
       km_atual: Math.round(km),
@@ -200,6 +209,7 @@ export default function AbastecimentoPage() {
       valor,
       km_atual: abastecimento.km_atual,
       pago_na_hora: pagoNaHora,
+      tipo: tipoAbastecimento,
       gps_ja_resolvido: gpsJa !== null,
     });
 
@@ -291,16 +301,44 @@ export default function AbastecimentoPage() {
           </div>
         </div>
 
+        {/* Diesel é o caso de sempre — ARLA fica de lado, sem atrapalhar */}
+        <div>
+          <label className="block text-xl font-semibold mb-3">
+            ⛽ O que abasteceu?
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setTipoAbastecimento("diesel")}
+              className={`rounded-2xl py-6 px-2 border-2 text-center transition-colors ${
+                tipoAbastecimento === "diesel"
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <span className="block text-lg font-bold leading-tight">DIESEL</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTipoAbastecimento("arla")}
+              className={`rounded-2xl py-6 px-2 border-2 text-center transition-colors ${
+                tipoAbastecimento === "arla"
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <span className="block text-lg font-bold leading-tight">ARLA</span>
+            </button>
+          </div>
+        </div>
+
         <div>
           <label className="block text-xl font-semibold mb-3">
             💧 Litros
           </label>
-          <input
-            type="text"
-            inputMode="decimal"
-            className="input-grande text-2xl"
-            value={litrosTexto}
-            onChange={(e) => setLitrosTexto(e.target.value)}
+          <InputLitros
+            centilitros={litrosCentilitros}
+            onChange={setLitrosCentilitros}
           />
         </div>
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "./Modais";
+import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { TIPOS_MANUTENCAO, labelManutencao } from "@/lib/documentos";
 import type { Manutencao } from "@/lib/admin/frota";
 import { formatData } from "@/lib/format";
@@ -16,10 +17,12 @@ export function HistoricoManutencao({
   manutencoes,
   caminhaoId,
   kmAtual,
+  contas,
 }: {
   manutencoes: Manutencao[];
   caminhaoId: string;
   kmAtual: number | null;
+  contas: ContaOpcao[];
 }) {
   const router = useRouter();
 
@@ -30,10 +33,15 @@ export function HistoricoManutencao({
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [km, setKm] = useState("");
   const [proximaKm, setProximaKm] = useState("");
+  const [proximaData, setProximaData] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   const [aPrazo, setAPrazo] = useState(false);
   const [vencimento, setVencimento] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("boleto");
+  // À vista: o dinheiro saiu AGORA de alguma conta — sem dizer de qual, o
+  // caixa fica maior que a gaveta em silêncio.
+  const [contaId, setContaId] = useState("");
+  const [formaVista, setFormaVista] = useState<"pix" | "dinheiro" | "deposito">("pix");
   const [foto, setFoto] = useState<File | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -46,6 +54,9 @@ export function HistoricoManutencao({
     if (descricao.trim().length < 2) return setErro("Descreva o que foi feito.");
     if (!valorCentavos) return setErro("Quanto custou?");
     if (aPrazo && !vencimento) return setErro("Quando vence o pagamento?");
+    if (!aPrazo && !contaId) {
+      return setErro("Pagou na hora? Diga de qual conta o dinheiro saiu.");
+    }
     setErro(null);
     setSalvando(true);
     try {
@@ -75,10 +86,12 @@ export function HistoricoManutencao({
           valor: centavosParaReais(valorCentavos),
           km: km.trim() === "" ? null : Number(km),
           proxima_km: proximaKm.trim() === "" ? null : Number(proximaKm),
+          proxima_data: proximaData || null,
           fornecedor: fornecedor.trim() || null,
           foto_path,
           vencimento: aPrazo ? vencimento : null,
-          forma_pagamento: aPrazo ? formaPagamento : null,
+          forma_pagamento: aPrazo ? formaPagamento : formaVista,
+          conta_id: aPrazo ? null : contaId,
         }),
       });
       const json = await res.json();
@@ -91,6 +104,7 @@ export function HistoricoManutencao({
       setValorCentavos(null);
       setKm("");
       setProximaKm("");
+      setProximaData("");
       setFornecedor("");
       setAPrazo(false);
       setVencimento("");
@@ -210,17 +224,34 @@ export function HistoricoManutencao({
               />
             </div>
             {tipo === "troca_oleo" && (
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Próxima troca em (km)
-                </label>
-                <input
-                  type="number"
-                  value={proximaKm}
-                  onChange={(e) => setProximaKm(e.target.value)}
-                  className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Próxima troca em (km)
+                  </label>
+                  <input
+                    type="number"
+                    value={proximaKm}
+                    onChange={(e) => setProximaKm(e.target.value)}
+                    className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    ou até a data{" "}
+                    <span className="text-cinza-suave">(opcional)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={proximaData}
+                    onChange={(e) => setProximaData(e.target.value)}
+                    className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+                  />
+                  <p className="text-xs text-cinza-suave mt-1">
+                    O alerta acende pelo que vencer PRIMEIRO — km ou data.
+                  </p>
+                </div>
+              </>
             )}
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -249,7 +280,7 @@ export function HistoricoManutencao({
             </span>
           </label>
 
-          {aPrazo && (
+          {aPrazo ? (
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Vence em</label>
@@ -271,6 +302,29 @@ export function HistoricoManutencao({
                   <option value="pix">Pix</option>
                   <option value="dinheiro">Dinheiro</option>
                   <option value="cheque">Cheque</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              <SelectConta
+                contas={contas}
+                valor={contaId}
+                onChange={setContaId}
+                label="De qual conta saiu o dinheiro"
+              />
+              <div>
+                <label className="block text-sm font-medium mb-1">Como pagou</label>
+                <select
+                  value={formaVista}
+                  onChange={(e) =>
+                    setFormaVista(e.target.value as "pix" | "dinheiro" | "deposito")
+                  }
+                  className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+                >
+                  <option value="pix">Pix</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="deposito">Depósito</option>
                 </select>
               </div>
             </div>

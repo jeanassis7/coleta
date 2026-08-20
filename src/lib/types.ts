@@ -161,6 +161,8 @@ export interface AbastecimentoLocal {
    * saldo dele (ver saldos_motoristas na 0018) e vira conta a pagar.
    */
   pago_na_hora?: boolean;
+  /** ARLA fica fora do km/L calculado — não é combustível (0044). */
+  tipo?: "diesel" | "arla";
   litros: number;
   valor: number;
   km_atual: number;

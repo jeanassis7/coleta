@@ -6,6 +6,7 @@ import { formatBRL, formatDataHora } from "@/lib/format";
 import { LinhaDoTempoCarga } from "@/components/admin/LinhaDoTempoCarga";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import { AdicionarColetaNaCarga } from "@/components/admin/AdicionarColetaNaCarga";
+import { ApagarCarga } from "@/components/admin/ApagarCarga";
 import type { PontoCarga } from "@/components/admin/MapaCarga";
 
 const MapaCarga = nextDynamic(() => import("@/components/admin/MapaCarga"), {
@@ -225,6 +226,8 @@ export default async function CargaDetalhePage({
         Em ordem cronológica. Clique em 📷 pra ver a foto de cada lançamento.
       </p>
       <LinhaDoTempoCarga carga={carga} />
+
+      <ApagarCarga cargaId={carga.id} motoristaNome={carga.motorista_nome} />
     </div>
   );
 }

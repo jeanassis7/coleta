@@ -388,6 +388,8 @@ export interface AbastecimentoAdmin {
   criado_em: string;
   /** false = "assinei a nota": o posto cobra da empresa (virou conta a pagar). */
   pago_na_hora: boolean;
+  /** 'arla' fica fora do km/L (não é combustível). */
+  tipo: "diesel" | "arla";
 }
 
 /**
@@ -401,7 +403,7 @@ export async function buscarAbastecimentos(
   let q = supabase
     .from("abastecimentos")
     .select(
-      `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora,
+      `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora, tipo,
        profiles!abastecimentos_motorista_id_fkey!inner(nome),
        cargas!inner(caminhao_id, caminhoes(placa))`
     )
@@ -433,6 +435,7 @@ export async function buscarAbastecimentos(
     foto_path: string | null;
     criado_em: string;
     pago_na_hora: boolean;
+    tipo: "diesel" | "arla" | null;
     profiles: { nome: string } | null;
     cargas: { caminhoes: { placa: string } | null } | null;
   };
@@ -449,6 +452,7 @@ export async function buscarAbastecimentos(
     foto_path: r.foto_path,
     criado_em: r.criado_em,
     pago_na_hora: r.pago_na_hora !== false,
+    tipo: r.tipo === "arla" ? "arla" : "diesel",
   }));
 }
 
@@ -534,8 +538,10 @@ export interface CompraDireta {
   entra_no_estoque: boolean;
   certificado_tipo: "integral" | "parcial" | "nao";
   litros_certificado: number | null;
-  /** De qual conta o dinheiro saiu (0035). Nula só em compra antiga. */
+  /** De qual conta o dinheiro saiu (0035). Nula em compra antiga ou paga com cheque. */
   conta_id: string | null;
+  /** Carga aberta em que o óleo foi junto, quando o caminhão NÃO estava vazio (0045). */
+  carga_id: string | null;
   foto_path: string | null;
   observacao: string | null;
   criado_em: string;

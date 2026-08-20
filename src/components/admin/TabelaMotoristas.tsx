@@ -26,7 +26,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
   const [nomeEdit, setNomeEdit] = useState("");
   const [modalSenha, setModalSenha] = useState<{ id: string; nome: string } | null>(null);
   const [modalDeletar, setModalDeletar] = useState<{ id: string; nome: string } | null>(null);
-  const [modalForcar, setModalForcar] = useState<{ id: string; nome: string; coletas: number } | null>(null);
+  const [modalForcar, setModalForcar] = useState<{ id: string; nome: string; mensagem: string } | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   function mostrarAviso(msg: string) {
@@ -97,9 +97,19 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
       );
       const data = await res.json();
 
-      if (res.status === 409 && data.error === "tem_coletas") {
-        // Tem coletas — pede a segunda confirmação (modal do app)
-        setModalForcar({ id, nome, coletas: data.coletas });
+      if (
+        res.status === 409 &&
+        (data.error === "tem_coletas" || data.error === "tem_movimento")
+      ) {
+        // Tem coisas dele no banco — segunda confirmação, com a lista do
+        // que vai junto (é o fluxo do perfil de TESTE; real se desativa).
+        setModalForcar({
+          id,
+          nome,
+          mensagem:
+            data.mensagem ||
+            `Esse usuário tem ${data.coletas} coleta(s). Apagar tudo de vez?`,
+        });
         return;
       }
 
@@ -342,8 +352,8 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
 
       {modalForcar && (
         <ModalConfirmar
-          titulo={`${modalForcar.nome} tem ${modalForcar.coletas} coleta(s)`}
-          descricao="Deletar mesmo assim apaga TODAS as coletas e fotos dele permanentemente. Continuar?"
+          titulo={`Apagar TUDO de ${modalForcar.nome}?`}
+          descricao={`${modalForcar.mensagem} Cargas, coletas, despesas, abastecimentos, adiantamentos, acertos, contas amarradas e fotos — some tudo, permanentemente.`}
           confirmarLabel="Apagar tudo de vez"
           perigo
           carregando={loadingId === modalForcar.id}

@@ -18,6 +18,8 @@ export interface Manutencao {
   valor: number;
   fornecedor: string | null;
   proxima_km: number | null;
+  /** Troca de óleo também pode vencer por DATA (0043) — o que vier primeiro. */
+  proxima_data: string | null;
   foto_path: string | null;
   observacao: string | null;
   criado_em: string;
@@ -211,7 +213,7 @@ export async function resumoCaminhao(
         .lte("iniciada_em", ate),
       supabase
         .from("abastecimentos")
-        .select("litros, valor")
+        .select("litros, valor, tipo")
         .eq("caminhao_id", caminhaoId)
         .gte("criado_em", de)
         .lte("criado_em", ate),
@@ -232,11 +234,14 @@ export async function resumoCaminhao(
   const km_rodado = ((cargas as { km_inicial: number; km_final: number }[]) ?? [])
     .reduce((s, c) => s + Math.max(0, c.km_final - c.km_inicial), 0);
 
-  const litros_combustivel = ((abast as { litros: number }[]) ?? []).reduce(
-    (s, a) => s + Number(a.litros || 0),
-    0
-  );
-  const gasto_combustivel = ((abast as { valor: number }[]) ?? []).reduce(
+  // ARLA fica FORA dos litros do consumo (não é combustível — entraria no
+  // denominador e derrubaria o km/L sem ninguém entender). O GASTO conta:
+  // saiu do posto do mesmo jeito.
+  type AbastRow = { litros: number; valor: number; tipo?: string | null };
+  const litros_combustivel = ((abast as AbastRow[]) ?? [])
+    .filter((a) => (a.tipo ?? "diesel") !== "arla")
+    .reduce((s, a) => s + Number(a.litros || 0), 0);
+  const gasto_combustivel = ((abast as AbastRow[]) ?? []).reduce(
     (s, a) => s + Number(a.valor || 0),
     0
   );

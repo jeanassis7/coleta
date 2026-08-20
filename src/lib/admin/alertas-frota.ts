@@ -108,27 +108,37 @@ export async function alertasFrota(): Promise<Alerta[]> {
   }
 
   // -------------------------------------------------------------------
-  // Caminhão passou do km da próxima troca de óleo
+  // Caminhão passou da troca de óleo — por KM ou por DATA (0043), o que
+  // vencer PRIMEIRO manda.
   // -------------------------------------------------------------------
   try {
     const [{ data: trocas }, { data: caminhoes }, kmAtual] = await Promise.all([
       supabase
         .from("manutencoes")
-        .select("caminhao_id, proxima_km")
+        .select("caminhao_id, proxima_km, proxima_data, criado_em")
         .eq("tipo", "troca_oleo")
-        .not("proxima_km", "is", null),
+        .or("proxima_km.not.is.null,proxima_data.not.is.null")
+        .order("criado_em", { ascending: false }),
       supabase.from("caminhoes").select("id, placa, ativo"),
       kmAtualPorCaminhao(),
     ]);
 
-    // A troca que vale é a de MAIOR proxima_km: se houve três, a última manda.
-    const alvo = new Map<string, number>();
-    for (const t of (trocas as { caminhao_id: string; proxima_km: number }[]) ??
-      []) {
-      if ((alvo.get(t.caminhao_id) ?? 0) < t.proxima_km) {
-        alvo.set(t.caminhao_id, t.proxima_km);
+    // A troca que vale é a MAIS RECENTE lançada de cada caminhão — é ela
+    // que carrega o alvo atual (km e/ou data).
+    const alvo = new Map<string, { km: number | null; data: string | null }>();
+    for (const t of (trocas as {
+      caminhao_id: string;
+      proxima_km: number | null;
+      proxima_data: string | null;
+    }[]) ?? []) {
+      if (!alvo.has(t.caminhao_id)) {
+        alvo.set(t.caminhao_id, { km: t.proxima_km, data: t.proxima_data });
       }
     }
+
+    const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
 
     for (const c of (caminhoes as {
       id: string;
@@ -136,22 +146,27 @@ export async function alertasFrota(): Promise<Alerta[]> {
       ativo: boolean;
     }[]) ?? []) {
       if (!c.ativo) continue;
-      const proxima = alvo.get(c.id);
+      const a = alvo.get(c.id);
+      if (!a) continue;
       const km = kmAtual.get(c.id);
-      if (proxima == null || km == null || km <= proxima) continue;
+
+      const passouKm = a.km != null && km != null && km > a.km;
+      const passouData = a.data != null && hojeBr > a.data;
+      if (!passouKm && !passouData) continue;
+
+      const motivo = passouKm
+        ? `a próxima estava marcada pra ${a.km!.toLocaleString("pt-BR")} km e o caminhão já está em ${km!.toLocaleString("pt-BR")} km — ${(km! - a.km!).toLocaleString("pt-BR")} km a mais`
+        : `a próxima estava marcada pra ${formatData(a.data!)} e já passou`;
 
       alertas.push({
-        chave: `troca_oleo:${c.id}:${proxima}`,
+        chave: `troca_oleo:${c.id}:${a.km ?? ""}:${a.data ?? ""}`,
         icone: "🛢️",
         severidade: "media",
-        titulo: `${c.placa} passou do km da troca de óleo`,
+        titulo: `${c.placa} passou da troca de óleo`,
         texto:
-          `A última troca marcou a próxima pra ${proxima.toLocaleString("pt-BR")} km ` +
-          `e o caminhão já está em ${km.toLocaleString("pt-BR")} km — ` +
-          `${(km - proxima).toLocaleString("pt-BR")} km a mais. ` +
-          `O km vem do fim das cargas e dos abastecimentos, então pode ser que ` +
-          `a troca já tenha sido feita e só não foi lançada. Se foi, lance na ` +
-          `ficha do caminhão que o aviso some.`,
+          `${motivo.charAt(0).toUpperCase()}${motivo.slice(1)}. ` +
+          `Pode ser que a troca já tenha sido feita e só não foi lançada. ` +
+          `Se foi, lance na ficha do caminhão que o aviso some.`,
         link: { href: `/admin/caminhoes/${c.id}`, label: "Abrir ficha" },
       });
     }

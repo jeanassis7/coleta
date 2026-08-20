@@ -83,6 +83,14 @@ export function TabelaAbastecimentos({
               <td className="py-2 pr-3 font-mono">{a.caminhao_placa}</td>
               <td className="py-2 pr-3">
                 {a.posto_nome}
+                {a.tipo === "arla" && (
+                  <span
+                    className="ml-2 inline-block px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 text-xs font-medium align-middle"
+                    title="ARLA 32 — não é combustível: fica fora do km/L calculado do caminhão."
+                  >
+                    ARLA
+                  </span>
+                )}
                 {!a.pago_na_hora && (
                   <span
                     className="ml-2 inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-medium align-middle"

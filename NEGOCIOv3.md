@@ -346,8 +346,12 @@ operação do mesmo jeito.
 
 **R74.** **Pneu é manutenção comum** — sem rastreio por carcaça, sem sulco.
 
-**R75.** **Troca de óleo é o único tipo que marca o km da próxima** e gera
-alerta por quilometragem.
+**R75.** **Troca de óleo é o único tipo que marca a próxima** — por
+**quilometragem E/OU por data** (acréscimo do Evaner, 20/08/2026: caminhão
+que roda pouco não bate o km nunca, mas o óleo vence pelo tempo). O alerta
+acende pelo que vencer **primeiro**. A troca que vale é a **mais recente
+lançada** de cada caminhão.
+`[ATUALIZADO 20/08/2026 — proxima_data na 0043]`
 
 **R76.** O **km atual** de um caminhão não é campo — é o **maior valor** entre
 os fins de carga e os abastecimentos.
@@ -622,8 +626,7 @@ nisso.
 | **R117** | Peso da balança diferente | descarga fora de ±30% |
 | **R118** | Umidade não lançada | **7 dias** após a descarga |
 | **R119** | Motorista não confirma | **10** aceites pulados |
-| **R120** | Dinheiro parado na mão | saldo > **R$ 3.000** e **15 dias** sem gastar `[MUDOU de 7 para 15 dias]` |
-| **R121** | Coletas sem foto | **3** na semana |
+| **R120** | Dinheiro parado na mão | saldo > **R$ 3.000** e **15 dias** sem gastar `[MUDOU de 7 para 15 dias]` | **R121** | Coletas sem foto | **3** na semana |
 | **R122** | Coletas sem localização | **3** na semana |
 | **R123** | Coleta acima do preço | fora da curva estatística |
 | **R124** | Coleta com número estranho | valor implausível |

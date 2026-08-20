@@ -83,6 +83,8 @@ export async function POST(req: NextRequest) {
     .insert({
       ...comum,
       posto_nome,
+      // ARLA fica fora do km/L do veículo (0044) — o gasto conta igual.
+      tipo: body.tipo_abastecimento === "arla" ? "arla" : "diesel",
       litros: n2(litros),
       km_atual: Math.round(km_atual),
       pago_na_hora: body.pago_na_hora !== false,

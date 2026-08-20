@@ -51,6 +51,7 @@ export function LancamentoAvulso({
   const [descricao, setDescricao] = useState("");
   const [posto, setPosto] = useState("");
   const [litros, setLitros] = useState("");
+  const [tipoAbast, setTipoAbast] = useState<"diesel" | "arla">("diesel");
   const [km, setKm] = useState("");
   const [pagoNaHora, setPagoNaHora] = useState(true);
   const [vencimento, setVencimento] = useState("");
@@ -85,6 +86,7 @@ export function LancamentoAvulso({
             ? { descricao: descricao.trim() }
             : {
                 posto_nome: posto.trim(),
+                tipo_abastecimento: tipoAbast,
                 litros: Number(litros.replace(",", ".")),
                 km_atual: Number(km),
                 pago_na_hora: pagoNaHora,
@@ -192,6 +194,23 @@ export function LancamentoAvulso({
                 value={posto}
                 onChange={(e) => setPosto(e.target.value)}
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">O que abasteceu</label>
+              <div className="flex rounded-xl overflow-hidden border border-cinza-borda">
+                {(["diesel", "arla"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTipoAbast(t)}
+                    className={`flex-1 px-3 py-2 text-sm ${
+                      tipoAbast === t ? "bg-verde text-white" : "bg-white"
+                    }`}
+                  >
+                    {t === "diesel" ? "Diesel" : "ARLA"}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Litros</label>

@@ -1,4 +1,4 @@
-import { buscarComprasDiretas } from "@/lib/admin/queries";
+import { buscarComprasDiretas, buscarCargas, buscarCheques } from "@/lib/admin/queries";
 import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { CompraDiretaPainel } from "@/components/admin/CompraDiretaPainel";
 import { FiltrosOperacao } from "@/components/admin/FiltrosOperacao";
@@ -14,13 +14,15 @@ export default async function ComprasPage({
 }) {
   const params = await searchParams;
 
-  const [compras, contas] = await Promise.all([
+  const [compras, contas, cargasAtivas, chequesCarteira] = await Promise.all([
     buscarComprasDiretas({
       periodo: params.periodo,
       inicio: params.inicio,
       fim: params.fim,
     }),
     buscarContasFinanceiras(),
+    buscarCargas({ status: "ativa" }),
+    buscarCheques({ status: ["em_carteira"] }),
   ]);
 
   const totalValor = compras.reduce((s, c) => s + c.valor, 0);
@@ -61,7 +63,18 @@ export default async function ComprasPage({
 
       <FiltrosOperacao motoristas={[]} resumo={resumo} />
 
-      <CompraDiretaPainel compras={compras} contas={contas} />
+      <CompraDiretaPainel
+        compras={compras}
+        contas={contas}
+        cargasAtivas={cargasAtivas.map((c) => ({
+          id: c.id,
+          rotulo: `${c.caminhao_placa ?? "—"} — ${c.motorista_nome}`,
+        }))}
+        chequesCarteira={chequesCarteira.map((ch) => ({
+          id: ch.id,
+          rotulo: `${ch.banco} · R$ ${Number(ch.valor).toFixed(2).replace(".", ",")} · bom para ${new Date(ch.bom_para + "T12:00:00").toLocaleDateString("pt-BR")} · de ${ch.comprador_nome ?? "—"}`,
+        }))}
+      />
     </div>
   );
 }
