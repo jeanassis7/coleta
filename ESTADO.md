@@ -100,10 +100,10 @@ avião. Ver "Dívidas" abaixo.
 4. **Limpar o resto do dado de teste** — o caminhão AAA-0000 e o perfil
    Teste 1. Ele disse que faz na mão.
 
-### As 7 correções do NEGOCIO.md
+### As 7 correções do NEGOCIOv3.md
 
 Em **19/08/2026** o Evaner conferiu **131 regras de negócio** uma a uma (ver
-`NEGOCIO.md`, Parte XII). Saíram 7 divergências entre o que a operação faz e
+`NEGOCIOv3.md`, Parte XII). Saíram 7 divergências entre o que a operação faz e
 o que o software faz:
 
 1. **Coleta de R$ 0** — o banco recusa (`check valor_pago > 0`), mas óleo
@@ -145,7 +145,7 @@ página. Otimização pendente: `prefetch={false}` na sidebar e colapsar os 3
   botão some e o lançamento manual funciona igual.
 - **Módulo financeiro inteiro** — caixa, lançamentos, DRE e remuneração.
   Migrations 0027 a 0030.
-- **NEGOCIO.md** — 131 regras de negócio conferidas uma a uma pelo Evaner.
+- **NEGOCIOv3.md** — 131 regras de negócio conferidas uma a uma pelo Evaner.
 
 ### Em aberto, sem decisão
 

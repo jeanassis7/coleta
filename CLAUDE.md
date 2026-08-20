@@ -4,7 +4,7 @@ App PWA para coleta de óleo lubrificante usado (OLUC). Construído pelo **Evane
 
 > **Começando uma sessão?** Leia dois arquivos:
 > - **`ESTADO.md`** — onde paramos, o que está pendente, qual o próximo passo.
-> - **`NEGOCIO.md`** — as 131 regras do negócio, conferidas pelo Evaner uma a uma. É a fonte da verdade sobre **como a empresa funciona**, e a Parte XII dele é a lista de trabalho aberta.
+> - **`NEGOCIOv3.md`** — as 131 regras do negócio, conferidas pelo Evaner uma a uma. É a fonte da verdade sobre **como a empresa funciona**, e a Parte XII dele é a lista de trabalho aberta.
 >
 > Este arquivo aqui é o contexto permanente do CÓDIGO (convenções, decisões, armadilhas).
 
@@ -207,7 +207,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 
 ## MÓDULO FINANCEIRO — as regras que valem
 
-> **As regras de NEGÓCIO inteiras estão em `NEGOCIO.md`** (131 regras
+> **As regras de NEGÓCIO inteiras estão em `NEGOCIOv3.md`** (131 regras
 > numeradas, conferidas pelo Evaner uma a uma). Aqui ficam só as que mudam
 > como se escreve código.
 
