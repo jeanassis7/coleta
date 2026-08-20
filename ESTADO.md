@@ -1,6 +1,6 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 19/08/2026, no fim da sessão que simplificou os papéis.
+> Atualizado em 19/08/2026, no fim da sessão do módulo financeiro.
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md` e
 > `PLANO-MODULO-2.md`.
 
@@ -8,10 +8,13 @@
 
 ## Resumo em uma frase
 
-**Módulos 1 e 2 estão no ar e o Jean já usa** (gate liberado em 18/08), e os
-papéis do sistema foram reduzidos a dois — `motorista` e `admin` —, com a
-única diferença entre Jean e Evaner sendo a coluna `ve_log`. Os motoristas
-reais continuam usando só a coleta.
+**Módulos 1, 2, 3 (frota e documentos) e o módulo FINANCEIRO estão no ar.**
+O sistema fecha o ciclo inteiro: entra óleo → vira estoque → vira venda →
+vira dinheiro → vira DRE. Os papéis foram reduzidos a dois (`motorista` e
+`admin`), com `ve_log` como única diferença entre Jean e Evaner.
+
+**Mas quase nada rodou com dado real ainda** — 0 cargas, estoque zerado,
+nenhuma conta financeira cadastrada. O sistema está à frente da operação.
 
 ---
 
@@ -19,7 +22,7 @@ reais continuam usando só a coleta.
 
 | | |
 |---|---|
-| Migrations aplicadas | 26 (`0001` → `0026`) |
+| Migrations aplicadas | 30 (`0001` → `0030`) |
 | Páginas admin | 22 |
 | Telas do motorista | 9 |
 | Endpoints de API | 33 |
@@ -56,6 +59,10 @@ NOTA"), despesa, descarregar e cancelar carga.
 - **Caminhões · Motoristas · Curadoria de locais · Eventos**
 - **Ficha do caminhão** (`/admin/caminhoes/[id]`) — próxima troca de óleo por km com semáforo, km/L e gasto do mês, histórico de manutenção e documentos
 - **Ficha do motorista** (`/admin/motoristas/[id]`) — CNH, toxicológico, MOPP, cursos, com vencimento e arquivo anexado
+- **`/admin/caixa`** — saldo por conta, dinheiro na mão dos motoristas, transferências (saque/depósito)
+- **`/admin/lancamentos`** — o que já saiu, no ritmo do extrato, com filtros
+- **`/admin/dre`** — painel por regime de caixa, com abertura por pessoa
+- **`/admin/remuneracao`** — vigências de salário/comissão + cálculo da comissão do período
 - **`/admin/features`** — liga feature por motorista (rollout gradual)
 - **`/admin/log`** — quem fez o quê (só quem tem `ve_log`; hoje só o Evaner)
 
@@ -93,6 +100,23 @@ avião. Ver "Dívidas" abaixo.
 4. **Limpar o resto do dado de teste** — o caminhão AAA-0000 e o perfil
    Teste 1. Ele disse que faz na mão.
 
+### As 7 correções do NEGOCIO.md
+
+Em **19/08/2026** o Evaner conferiu **131 regras de negócio** uma a uma (ver
+`NEGOCIO.md`, Parte XII). Saíram 7 divergências entre o que a operação faz e
+o que o software faz:
+
+1. **Coleta de R$ 0** — o banco recusa (`check valor_pago > 0`), mas óleo
+   doado deve poder ser lançado com zero
+2. **Comissão sobre os litros da DESCARGA**, não das coletas — muda quanto
+   cada motorista recebe
+3. **Receita do DRE por RECEBIMENTO**, não pela data da venda
+4. **Painel de caixa com o patrimônio inteiro** — falta valor do estoque,
+   óleo nos caminhões, cheques em aberto, e um preço de referência editável
+5. **Cheque:** repassar exige despesa, e devolver reverte a conta a pagar
+6. **Alertas:** remover 2 de cheque, mudar "dinheiro parado" pra 15 dias
+7. **O sistema lembra do vale** do acerto na hora de pagar o salário
+
 ### Aberto sem causa raiz
 
 **O painel travou de forma intermitente em 19/08** — telas presas no esqueleto
@@ -110,29 +134,25 @@ todos, e o middleware roda `auth.getUser()` (ida de rede) + query de
 página. Otimização pendente: `prefetch={false}` na sidebar e colapsar os 3
 `getUser()` em um.
 
+### Feito nesta sessão (19/08/2026)
+
+- **Bloco 3 — frota e documentos.** Manutenção com custo, documentos com
+  vencimento (CIPP, CIV, IPVA, CNH, toxicológico, cursos), as duas fichas,
+  alertas de vencimento e de km, e os 3 KPIs de topo.
+- **OCR de cheque em lote.** Sobe até 10 fotos, monta a lista de conferência
+  com a foto ao lado, e só lança o que for ticado. Usa **OpenAI** (decisão do
+  Evaner: já paga por ela). Falta `OPENAI_API_KEY` na Vercel — sem ela o
+  botão some e o lançamento manual funciona igual.
+- **Módulo financeiro inteiro** — caixa, lançamentos, DRE e remuneração.
+  Migrations 0027 a 0030.
+- **NEGOCIO.md** — 131 regras de negócio conferidas uma a uma pelo Evaner.
+
 ### Em aberto, sem decisão
 
 1. **Umidade não desconta nada** — espera a máquina de medir.
-2. **OCR de cheque em lote** — desenhado no plano, não implementado. Precisa
-   de `ANTHROPIC_API_KEY` no Vercel.
-3. **Bloco 3 (frota e documentos) — FEITO em 19/08/2026.** Manutenção com
-   custo, documentos com vencimento (CIPP, CIV, IPVA, CNH, toxicológico,
-   cursos), as duas fichas, 6 alertas novos e os 3 KPIs de topo. Falta só
-   você cadastrar os documentos reais e ver os alertas nascerem.
-
-### Módulo 3 — Salários (só no papel)
-
-Decidido: é módulo de **cadastro**, não de cálculo de folha. Vem do contador,
-o Evaner lança, o sistema calcula o vale, anexa o recibo assinado e baixa do
-saldo. Comissão tem **versão** (V1/V2) e nada é recalculado pra trás.
-
-Em aberto: a regra da comissão (hoje 200 L, vai mudar) e se 200 L é bloco
-fechado ou proporcional.
-
-### Depois disso
-
-Caixa consolidado → DRE → fluxo de caixa projetado. Contas a pagar já
-entrega metade do caminho.
+2. **Checklist ao iniciar carga** — o Evaner quer, mas decidiu deixar pra
+   depois.
+3. **Kit de emergência** (carga perigosa) — mesma coisa.
 
 ---
 

@@ -2,7 +2,11 @@
 
 App PWA para coleta de óleo lubrificante usado (OLUC). Construído pelo **Evaner** pra empresa do irmão **Jean**.
 
-> **Começando uma sessão?** Leia `ESTADO.md` — diz onde paramos, o que está pendente e qual o próximo módulo. Este arquivo aqui é o contexto permanente (convenções, decisões, armadilhas).
+> **Começando uma sessão?** Leia dois arquivos:
+> - **`ESTADO.md`** — onde paramos, o que está pendente, qual o próximo passo.
+> - **`NEGOCIO.md`** — as 131 regras do negócio, conferidas pelo Evaner uma a uma. É a fonte da verdade sobre **como a empresa funciona**, e a Parte XII dele é a lista de trabalho aberta.
+>
+> Este arquivo aqui é o contexto permanente do CÓDIGO (convenções, decisões, armadilhas).
 
 ## Quem usa
 
@@ -90,11 +94,19 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
     /features                   → liga feature por motorista (rollout gradual)
     /log                        → quem fez o quê (só quem tem ve_log)
     /estoque · /vendas · /cheques · /contas · /compradores   (Módulo 2)
+    ── Módulo financeiro ──
+    /caixa                      → saldo por conta + dinheiro na mão dos
+                                  motoristas + transferências (saque/depósito)
+    /lancamentos                → o que JÁ SAIU, no ritmo do extrato bancário
+    /dre                        → painel por REGIME DE CAIXA, abre por pessoa
+    /remuneracao                → vigências + cálculo da comissão do período
 
 /api/admin/*                    → endpoints com service_role
   /motoristas[/id][/feature], /coletas/[id], /coletas/bulk-delete, /locais[/id],
   /caminhoes[/id], /descargas/[id], /abastecimentos/[id], /adiantamentos[/id],
-  /acertos, /alertas/visto, /manutencoes[/id], /documentos[/id]
+  /acertos, /alertas/visto, /manutencoes[/id], /documentos[/id],
+  /contas-financeiras[/id], /transferencias[/id], /vigencias[/id],
+  /caixa/lancamentos, /cheques/ocr, /cheques/lote
 /api/locais/proximos            → busca por proximidade (client motorista)
 ```
 
@@ -158,6 +170,10 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0024_fim_do_is_teste.sql` — `is_admin()` perde o `dev` e vira `stable`; `movimentos_estoque` perde o filtro de teste; **`profiles.is_teste` é derrubada** (rodou DEPOIS do deploy)
 - `0025_manutencoes.sql` — `manutencoes` (tipo, valor, km, `proxima_km` da troca de óleo), admin-only
 - `0026_documentos.sql` — `documentos` com CHECK `um_dono_so` (caminhão XOR motorista) + bucket privado `documentos`, admin-only
+- `0027_contas_financeiras.sql` — **caixa de verdade**: `contas_financeiras` (espécie/banco, com saldo inicial e data de CORTE), `transferencias` (saque/depósito), `conta_id` em recebimentos/contas_a_pagar/adiantamentos/acertos, e a função `saldo_contas()`
+- `0028_conta_no_cheque.sql` — `cheques.conta_id`: cheque só vira dinheiro na conta quando **compensa**
+- `0029_lancamentos.sql` — `contas_a_pagar.pessoa_id` (o QUEM separado do QUÊ)
+- `0030_vigencias_remuneracao.sql` — `vigencias_remuneracao`: salário, comissão, bônus e transferência a sócio, cada um valendo **a partir de uma data**
 
 ⚠️ **Tabela nova ganha log sozinha.** A `0022` instalou o event trigger `trg_auto_ligar_log`: toda `create table` em `public` recebe `trg_log_admin` automaticamente. **Não criar o trigger na mão** — dá trigger duplicado e log em dobro.
 
@@ -188,6 +204,54 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 **Coleta retroativa (`coletas.lancado_por_admin`):** o motorista coletou, esqueceu de lançar e avisou depois. Botão "+ Adicionar coleta" no detalhe da carga (`/admin/cargas/[id]`), funciona **mesmo com a carga encerrada**. Pertence ao motorista da carga e **desconta do saldo dele** (o dinheiro saiu da mão dele). Sem GPS e sem foto — não foi capturada em campo, e a linha do tempo marca "lançada no painel". Se a data for anterior ao último acerto, cai no ciclo fechado e não mexe no saldo atual (a tela avisa).
 
 **Alertas do dashboard** (`src/lib/admin/alertas.ts`): calculados na hora, texto **didático** (o que aconteceu → hipóteses de causa → o que fazer). `alertas_vistos` guarda os dispensados; a chave é a **ocorrência** (id do registro), então condição repetida em outro registro = alerta novo. Alerta estatístico só liga com base suficiente (30+ coletas ou 60+ dias) — alerta ruidoso ensina a ignorar alerta.
+
+## MÓDULO FINANCEIRO — as regras que valem
+
+> **As regras de NEGÓCIO inteiras estão em `NEGOCIO.md`** (131 regras
+> numeradas, conferidas pelo Evaner uma a uma). Aqui ficam só as que mudam
+> como se escreve código.
+
+**O caixa é a fundação.** Dinheiro não aparece nem some: toda saída sai de uma
+conta, toda entrada entra em uma. Sem `conta_id` o movimento não existe pro
+caixa — e o DRE em cima disso seria número sem lastro.
+
+**Saque e depósito são `transferencias`**, não despesa. É o mesmo dinheiro
+mudando de bolso, e por isso mora em tabela própria: é o que faz o caixa
+fechar e o DRE ignorar corretamente.
+
+**Cheque NÃO é dinheiro na conta.** Recebimento em cheque fica sem
+`conta_id`; a conta é gravada no próprio cheque, na **compensação**. Conta
+paga COM cheque também fica sem conta — quitou com o papel.
+
+**O DRE é REGIME DE CAIXA, dos dois lados.** Conta a pagar conta quando é
+**paga** (`pago_em`); lançamento operacional só conta se **não virou conta**.
+O `origem_id` é quem diz "esse fato já tem conta". Não existe mais lista de
+"origens espelho" — se um dia voltar, é sinal de que alguém reintroduziu
+competência sem querer.
+
+**`prevista` nunca entra no DRE.** É palpite sobre o futuro; entra no fluxo
+de caixa e sai do resultado.
+
+**O plano de contas (`src/lib/plano-contas.ts`) separa o QUÊ do QUEM.**
+Categoria é o quê; `pessoa_id` é o quem, e só nas marcadas `pedePessoa`.
+Contratar alguém **não** cria categoria nova. Categoria `automatico` não
+aparece no dropdown — o sistema calcula da origem e lançar na mão dobraria.
+
+**Remuneração tem VIGÊNCIA, não valor.** Nada se edita: mudou, nasce uma
+vigência a partir da data em que passou a valer. Vale a de maior
+`vigente_desde <= a data`, e a específica da pessoa vence a geral. Comissão é
+**proporcional**: `litros ÷ base × valor`.
+
+**Comissão calculada não é comissão paga.** Sob caixa ela só entra no DRE
+quando o pagamento é lançado — por isso é categoria lançável, não automática.
+
+⚠️ **`update` em zero linhas volta SUCESSO.** Um script criou o auth user do
+Valdecir e tentou `update` num profile que não existia: nada reclamou e a
+pessoa ficou sem perfil. Em criação, sempre `insert`.
+
+⚠️ **Os arquivos estão em CRLF** (autocrlf do git no Windows). Script de
+refactor que casa texto multilinha precisa normalizar (`.replace(/\r\n/g,"\n")`)
+— senão o match falha calado.
 
 ## O que NÃO fazer
 
