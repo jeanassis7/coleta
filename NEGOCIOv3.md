@@ -475,8 +475,10 @@ RECEITA (venda de óleo, pelo RECEBIMENTO)
 = MARGEM BRUTA
 (−) OPERACIONAIS (combustível, troca de óleo, pneus, manutenção,
                   lavagem, equipamento, viagem, benfeitorias)
-(−) FIXAS (transferência a sócio, salários, advogado, contabilidade,
-           sistema, luz/internet/telefone, seguro, IPVA, taxas, banco)
+(−) FIXAS (transferência a sócio, salários, encargos de funcionário,
+           advogado, contabilidade, sistema, luz/água/internet/telefone,
+           seguro, documentos dos caminhões [IPVA, licenciamento, CIV,
+           CIPP, cronotacógrafo, ANTT], taxas e licenças, banco)
 = RESULTADO OPERACIONAL
 (−) FINANCEIRO (empréstimos, dívidas PF)
 (−) IMPOSTOS
@@ -566,6 +568,9 @@ parte a conta na data certa.
 
 **R112.** Existe regra **geral da empresa** e regra **específica de uma
 pessoa**. A específica vence.
+`[NOTA 20/08/2026 — na prática, hoje "todos recebem a mesma regra" (palavra
+do Evaner): só a vigência geral é usada. A dúvida "geral mais nova × 
+específica mais antiga" fica adormecida até alguém ganhar regra própria]`
 
 **R113.** **Comissão calculada não é comissão paga.** Só entra no DRE quando
 o pagamento é lançado.

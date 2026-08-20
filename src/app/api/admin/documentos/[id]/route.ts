@@ -76,7 +76,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (updates.vencimento !== undefined || updates.valor !== undefined) {
     const { data: doc } = await client
       .from("documentos")
-      .select("tipo, descricao, vencimento, valor")
+      .select("tipo, descricao, vencimento, valor, caminhao_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -107,7 +107,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } else if (!pendente && temValor) {
       await client.from("contas_a_pagar").insert({
         descricao: `${rotuloDoc(doc!.tipo, doc!.descricao)} — vence ${doc!.vencimento}`,
-        categoria: categoriaDeDocumento(doc!.tipo),
+        categoria: categoriaDeDocumento(
+          doc!.tipo,
+          doc!.caminhao_id ? "caminhao" : "motorista"
+        ),
         valor: doc!.valor,
         vencimento: doc!.vencimento,
         status: "prevista",

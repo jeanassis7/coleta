@@ -130,12 +130,35 @@ export const PLANO_CONTAS: LinhaPlano[] = [
     fonte: "lancamento",
     pedePessoa: true,
   },
+  {
+    // INSS, FGTS, 13º, férias — tudo que empregar custa além do salário em
+    // si. Decisão do Evaner (20/08/2026): categoria própria, separada do
+    // Salário, pra ver o custo real de empregar.
+    chave: "encargos_funcionario",
+    label: "Encargos de funcionário",
+    grupo: "fixa",
+    fonte: "lancamento",
+    pedePessoa: true,
+  },
   { chave: "advogado", label: "Advogado", grupo: "fixa", fonte: "lancamento" },
   { chave: "contabilidade", label: "Contabilidade", grupo: "fixa", fonte: "lancamento" },
   { chave: "sistema", label: "Sistema", grupo: "fixa", fonte: "lancamento" },
-  { chave: "luz_internet_telefone", label: "Luz, Internet e Telefone", grupo: "fixa", fonte: "lancamento" },
+  // "água" entrou no rótulo por decisão do Evaner (20/08/2026) — a chave não
+  // muda pra não órfanar lançamento antigo.
+  { chave: "luz_internet_telefone", label: "Luz, água, internet e telefone", grupo: "fixa", fonte: "lancamento" },
   { chave: "seguro_caminhao", label: "Seguro Caminhão", grupo: "fixa", fonte: "lancamento" },
-  { chave: "ipva_frota", label: "IPVA da frota", grupo: "fixa", fonte: "lancamento" },
+  {
+    // Os três baldes de documento que o Evaner escolheu (20/08/2026):
+    // documentos DOS CAMINHÕES aqui (IPVA, licenciamento, CIV, CIPP,
+    // cronotacógrafo, ANTT), seguro na linha própria, e o resto (sede,
+    // documentos de motorista) em Taxas e Licenças — "pra separar o que é
+    // do caminhão do que é da sede". A antiga "IPVA da frota" foi absorvida
+    // por esta.
+    chave: "documentos_frota",
+    label: "Documentos dos caminhões",
+    grupo: "fixa",
+    fonte: "lancamento",
+  },
   { chave: "taxas_licencas", label: "Taxas e Licenças", grupo: "fixa", fonte: "lancamento" },
   { chave: "custos_bancarios", label: "Custos de contas bancárias", grupo: "fixa", fonte: "lancamento" },
 
@@ -175,12 +198,20 @@ export function pedePessoa(chave: string): boolean {
 
 /**
  * Documento com valor gera conta prevista — esta é a categoria dela.
- * Sem isso todo documento cairia numa categoria genérica e o DRE não saberia
- * separar IPVA de seguro.
+ *
+ * Os três baldes (decisão do Evaner, 20/08/2026):
+ *  - seguro                → "Seguro Caminhão" (linha própria)
+ *  - documento de CAMINHÃO → "Documentos dos caminhões" (IPVA, licenciamento,
+ *                            CIV, CIPP, cronotacógrafo, ANTT, outros do veículo)
+ *  - documento de MOTORISTA e o resto → "Taxas e Licenças" (o que é da sede
+ *                            ou da pessoa, não do veículo)
  */
-export function categoriaDeDocumento(tipoDoc: string): string {
-  if (tipoDoc === "ipva") return "ipva_frota";
+export function categoriaDeDocumento(
+  tipoDoc: string,
+  dono: "caminhao" | "motorista"
+): string {
   if (tipoDoc === "seguro") return "seguro_caminhao";
+  if (dono === "caminhao") return "documentos_frota";
   return "taxas_licencas";
 }
 

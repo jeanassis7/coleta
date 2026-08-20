@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       // IPVA cai na linha IPVA, seguro na linha Seguro, o resto em Taxas e
       // Licenças — categoria "documento" não existia no plano e a conta paga
       // sumia do DRE. (Debate em aberto: uma linha única "Documentos"?)
-      categoria: categoriaDeDocumento(tipo),
+      categoria: categoriaDeDocumento(tipo, caminhao_id ? "caminhao" : "motorista"),
       valor: Math.round(valor * 100) / 100,
       vencimento,
       status: "prevista",
