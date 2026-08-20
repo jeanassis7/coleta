@@ -238,18 +238,70 @@ Tudo que a empresa deve. Quatro abas: **A pagar** / **Previstas** (estimativas �
 
 # PARTE 4 — RECEITAS DE BOLO
 
-## 4.1 Montando o sistema do zero (primeiro dia)
+## 4.1 GUIA DE LARGADA — do zero ao primeiro lançamento
 
-Nesta ordem:
+### A ideia que organiza tudo: o DIA DO CORTE
 
-1. **Caixa** → cadastrar as contas (Espécie e Banco), cada uma com o saldo **do começo do dia** e a data. *Sem isso, nada de dinheiro funciona.* Aproveite e defina o **preço de referência** do óleo (R$/litro) no card Patrimônio.
-2. **Caminhões** → cadastrar a frota real, com capacidade e tara.
-3. **Motoristas** → conferir os cadastros, definir senhas, decidir quem exige foto.
-4. **Compradores** → cadastrar as fundições.
-5. **Estoque** → **Abrir estoque**: contar o tanque e informar o custo por kg. *Única vez que o custo é digitado.*
-6. **Remuneração** → criar as vigências: salário de cada um e a regra de comissão (valor a cada X litros).
-7. **Contas a pagar → Recorrentes** → cadastrar aluguel, energia, contador, etc.
-8. **Features** → ligar "Cargas + viagem" em UM motorista, acompanhar, estender.
+**Não tente reconstruir o passado.** Escolha um dia de largada (hoje, ou o
+dia 1 do próximo mês) e trate assim: *tudo que aconteceu ANTES desse dia já
+está resumido nos saldos de partida; tudo DEPOIS é lançado.* O sistema foi
+desenhado exatamente pra isso — cada conta financeira tem um "corte", e nada
+anterior a ele é somado. Reconstruir meses antigos só cria trabalho e erro.
+A única exceção: **boletos futuros já conhecidos** (mesmo de compra antiga)
+entram em Contas a pagar, porque ainda vão sair do caixa.
+
+### Fase 0 — Limpeza (5 min)
+Apagar o que é teste: o perfil **Suzana**, o caminhão **AAA-0000** e o
+**Teste 1** (se não for mais usar).
+
+### Fase 1 — O dinheiro (tudo depende disso)
+1. **Caixa** → cadastrar as contas (**Espécie** e **Banco do Brasil**), cada
+   uma com **quanto tinha no COMEÇO do dia da largada** (na dúvida: o saldo
+   de ontem à noite, com a data de hoje). *Sem isso, nada de dinheiro
+   funciona — e errado aqui, o caixa nunca mais bate.*
+2. No card **Patrimônio**, definir o **preço de referência** do óleo
+   (R$/litro — ex.: 2,80).
+
+### Fase 2 — Os cadastros (15 min)
+3. **Caminhões** reais: placa, capacidade do tanque, **tara** (é ela que
+   transforma o peso da balança em peso de óleo — capricho).
+4. **Motoristas**: conferir os três, senhas, decidir quem exige foto.
+5. **Compradores**: as fundições.
+
+### Fase 3 — O estoque (o número mais importante da largada)
+6. **Estoque → Abrir estoque**: contar o tanque e informar **quanto custa o
+   kg**. É a ÚNICA vez na vida do sistema que o custo é digitado — errado
+   aqui contamina toda margem daí pra frente. Fino e grosso separados.
+
+### Fase 4 — As regras de pagar gente
+7. **Remuneração → vigências**: Salário "Todos" = **R$ 3.287,23** (o bruto
+   fixo do holerite: base + periculosidade) e Comissão "Todos" = o valor a
+   cada 200 L, valendo a partir do dia da largada.
+
+### Fase 5 — As contas que se repetem
+8. **Contas a pagar → Recorrentes**: DAE/eSocial (estimada), FGTS
+   (estimada), sindicato, luz/água/internet, contabilidade, sistema — tudo
+   que chega todo mês. As estimadas nascem como previsão; chegou o boleto,
+   "Confirmar valor".
+
+### Fase 6 — Os primeiros lançamentos (construindo confiança)
+A ordem certa é do simples pro complexo, conferindo o caixa a cada passo:
+9. **Primeiro lançamento da vida**: um gasto pequeno e real do extrato
+   (Lançamentos). Depois olhe o Caixa: **bateu com o banco?** Se sim, o
+   sistema está calibrado.
+10. **Primeiro adiantamento**: envie um pelo painel; o motorista aceita no
+    app (precisa da feature "saldo" ligada pra ele).
+11. **Primeira folha**: quando os holerites chegarem, seguir a **seção
+    4.6** de papel na mão.
+12. **Features → "Cargas + viagem"** em UM motorista. Acompanhar uns dias
+    (coletas, abastecimento, descarga), conferir os números, aí estender
+    pros outros.
+
+### O ritmo depois da largada
+- **Todo dia, 2 min**: abrir o dashboard — os alertas contam se algo pede
+  atenção.
+- **Quando olhar o extrato**: lançar o que saiu (regra de ouro da 4.6).
+- **Fim de mês**: a rotina da seção 4.5.
 
 ## 4.2 O ciclo de uma carga (o que o gestor faz)
 
