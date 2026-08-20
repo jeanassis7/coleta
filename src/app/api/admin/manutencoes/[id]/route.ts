@@ -61,6 +61,28 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .update(updates)
     .eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Manutenção a prazo tem conta a pagar amarrada — corrigir o valor ou a
+  // descrição da manutenção corrige a dívida junto (só enquanto não paga;
+  // paga é história e fica quieta).
+  if (updates.valor !== undefined || updates.descricao !== undefined || updates.fornecedor !== undefined) {
+    const ajuste: Record<string, unknown> = {};
+    if (updates.valor !== undefined) ajuste.valor = updates.valor;
+    if (updates.descricao !== undefined) ajuste.descricao = `Manutenção — ${updates.descricao}`;
+    if (updates.fornecedor !== undefined) ajuste.fornecedor = updates.fornecedor;
+    const { error: eConta } = await client
+      .from("contas_a_pagar")
+      .update(ajuste)
+      .eq("origem_tipo", "manutencao")
+      .eq("origem_id", id)
+      .in("status", ["prevista", "a_pagar"]);
+    if (eConta) {
+      return NextResponse.json({
+        ok: true,
+        aviso: `manutenção corrigida, mas a conta amarrada não acompanhou: ${eConta.message}`,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 

@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 
 /**
  * Consultas de frota: manutenção, documentos e o resumo da ficha do caminhão.
@@ -50,30 +51,39 @@ export async function kmAtualPorCaminhao(): Promise<Map<string, number>> {
   const supabase = await getSupabaseServer();
   // A coluna dos abastecimentos chama km_atual (0007) — já esteve escrito
   // "km" aqui e o PostgREST devolvia erro que ninguém lia: o braço inteiro
-  // ficava morto e o alerta de troca de óleo não acendia. Por isso os erros
-  // agora são vigiados.
-  const [rCargas, rAbast] = await Promise.all([
-    supabase
-      .from("cargas")
-      .select("caminhao_id, km_inicial, km_final"),
-    supabase
-      .from("abastecimentos")
-      .select("caminhao_id, km_atual")
-      .not("km_atual", "is", null),
+  // ficava morto e o alerta de troca de óleo não acendia.
+  //
+  // PAGINADO (selectTudo): as duas tabelas crescem pra sempre; truncadas em
+  // 1000 linhas, o km "atual" podia REGREDIR e apagar o alerta da troca.
+  const [cargas, abast] = await Promise.all([
+    selectTudo<{ caminhao_id: string; km_inicial: number | null; km_final: number | null }>(
+      (de, ate) =>
+        supabase
+          .from("cargas")
+          .select("caminhao_id, km_inicial, km_final")
+          .order("id")
+          .range(de, ate)
+    ),
+    selectTudo<{ caminhao_id: string | null; km_atual: number }>((de, ate) =>
+      supabase
+        .from("abastecimentos")
+        .select("caminhao_id, km_atual")
+        .not("km_atual", "is", null)
+        .order("id")
+        .range(de, ate)
+    ),
   ]);
-  if (rCargas.error) console.error("kmAtualPorCaminhao/cargas:", rCargas.error.message);
-  if (rAbast.error) console.error("kmAtualPorCaminhao/abastecimentos:", rAbast.error.message);
 
   const mapa = new Map<string, number>();
   const considerar = (id: string | null, km: number | null) => {
     if (!id || km == null) return;
     if ((mapa.get(id) ?? 0) < km) mapa.set(id, km);
   };
-  for (const c of (rCargas.data as { caminhao_id: string; km_inicial: number | null; km_final: number | null }[]) ?? []) {
+  for (const c of cargas) {
     considerar(c.caminhao_id, c.km_inicial);
     considerar(c.caminhao_id, c.km_final);
   }
-  for (const a of (rAbast.data as { caminhao_id: string | null; km_atual: number }[]) ?? []) {
+  for (const a of abast) {
     considerar(a.caminhao_id, a.km_atual);
   }
   return mapa;

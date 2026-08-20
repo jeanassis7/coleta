@@ -174,6 +174,18 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0028_conta_no_cheque.sql` — `cheques.conta_id`: cheque só vira dinheiro na conta quando **compensa**
 - `0029_lancamentos.sql` — `contas_a_pagar.pessoa_id` (o QUEM separado do QUÊ)
 - `0030_vigencias_remuneracao.sql` — `vigencias_remuneracao`: salário, comissão, bônus e transferência a sócio, cada um valendo **a partir de uma data**
+- `0031_coleta_valor_zero.sql` — coleta aceita R$ 0 (doação, R2)
+- `0032_vale_quitado.sql` — `acertos.vale_quitado_em/por`: o sistema lembra do vale ao pagar salário
+- `0033_meu_saldo.sql` — RPC `meu_saldo()`: o card do motorista usa a MESMA fórmula do painel
+- `0034_conta_nasce_da_nota_assinada.sql` — **trigger**: abastecimento `pago_na_hora=false` gera a conta a pagar sozinho (cobre o sync do celular)
+- `0035_conta_na_compra_direta.sql` — `compras_diretas.conta_id` + braço da compra no `saldo_contas()`
+- `0036_configuracoes.sql` — tabela chave/valor (nasceu pro `preco_referencia_litro` do patrimônio)
+- `0037_adiantamento_so_aceite_pelo_motorista.sql` — trigger: motorista só pode ACEITAR (RLS é por linha, não por coluna)
+- `0038_vigencia_geral_unica.sql` — índice único parcial pras vigências gerais (NULLs eram distintos)
+- `0039_alerta_visto_por_admin.sql` — PK de `alertas_vistos` vira (chave, visto_por): cada admin tem a própria dispensa
+- `0040_desempate_movimentos_estoque.sql` — `sub_prioridade` na view: entrada antes de saída no mesmo dia, ordem 100% determinística
+
+⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
 
 ⚠️ **Tabela nova ganha log sozinha.** A `0022` instalou o event trigger `trg_auto_ligar_log`: toda `create table` em `public` recebe `trg_log_admin` automaticamente. **Não criar o trigger na mão** — dá trigger duplicado e log em dobro.
 

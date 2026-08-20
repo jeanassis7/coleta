@@ -43,7 +43,8 @@ export function AdicionarColetaNaCarga({
     if (!Number.isFinite(litrosNum) || litrosNum <= 0) {
       return setErro("Litros inválido");
     }
-    if (!/^\d+$/.test(valor.trim()) || valorNum <= 0) {
+    // Zero é válido — óleo doado (R2). O regex já garante inteiro >= 0.
+    if (!/^\d+$/.test(valor.trim()) || valorNum < 0) {
       return setErro("Valor da coleta é número inteiro, sem vírgula (ex: 150)");
     }
     if (local.trim().length < 2) return setErro("Diga o nome do local");

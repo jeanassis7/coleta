@@ -160,7 +160,8 @@ function ModalInventario({
   const router = useRouter();
   const ehAbertura = e.custo_medio_kg <= 0;
 
-  const [data, setData] = useState(hojeBr());
+  // Sempre hoje — ver o comentário no campo Data lá embaixo.
+  const data = hojeBr();
   const [contado, setContado] = useState("");
   const [custoCentavos, setCustoCentavos] = useState<number | null>(null);
   const [motivo, setMotivo] = useState(
@@ -240,14 +241,25 @@ function ModalInventario({
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* A data é SEMPRE hoje — o "Dizia / Você contou / Diferença" da
+              prévia compara com o saldo DE AGORA; datar no passado fazia a
+              perda registrada sair errada (o rebase da view acontecia lá
+              atrás, mas a diferença gravada era contra o saldo de hoje).
+              Contou no domingo? Lança no domingo — ou lança hoje sabendo
+              que a contagem vale pro fim de hoje. */}
           <div>
             <label className="block text-sm font-medium mb-1">Data</label>
             <input
               type="date"
-              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl bg-slate-50 text-cinza-suave"
               value={data}
-              onChange={(ev) => setData(ev.target.value)}
+              disabled
+              readOnly
             />
+            <p className="text-xs text-cinza-suave mt-1">
+              O inventário vale pro fim do dia de hoje — a comparação é com o
+              estoque de agora.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">

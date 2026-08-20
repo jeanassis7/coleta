@@ -13,8 +13,10 @@ export function FotoPicker({ onChange, motoristaId }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   function abrirCamera() {
+    setErro(null);
     logEvent(motoristaId, "foto_capture_started", {});
     inputRef.current?.click();
   }
@@ -45,7 +47,8 @@ export function FotoPicker({ onChange, motoristaId }: Props) {
         tipo_original: file.type,
         erro: err instanceof Error ? err.message : String(err),
       });
-      alert("Não consegui processar a foto. Tenta outra.");
+      // Erro inline, nunca popup do navegador (regra do projeto).
+      setErro("Não consegui processar a foto. Tenta outra.");
       onChange(null);
     } finally {
       setProcessando(false);
@@ -85,6 +88,11 @@ export function FotoPicker({ onChange, motoristaId }: Props) {
           <span className="text-lg font-semibold">📷 TIRAR FOTO</span>
         )}
       </button>
+      {erro && (
+        <div className="mt-2 bg-amber-50 border-2 border-amber-400 rounded-xl p-3 text-sm">
+          ⚠️ {erro}
+        </div>
+      )}
     </div>
   );
 }

@@ -20,7 +20,14 @@ export async function POST(req: NextRequest) {
   const tipo_oleo = String(body.tipo_oleo || "");
   const saldo_novo_kg = Number(body.saldo_novo_kg);
   const motivo = String(body.motivo || "").trim();
-  const data = String(body.data || "").trim();
+  // A data é SEMPRE hoje (BR) — decidida aqui, não pelo cliente. O
+  // `saldo_antes_kg` congelado abaixo é o saldo DE AGORA; aceitar data
+  // retroativa fazia a diferença/perda gravada comparar a contagem de
+  // domingo com o saldo de terça. Inventário vale pro fim do dia em que
+  // é lançado, e ponto (mesma filosofia de não pedir a hora da contagem).
+  const data = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
   if (!["fino", "grosso"].includes(tipo_oleo)) {
     return NextResponse.json({ error: "tipo de óleo inválido" }, { status: 400 });
@@ -33,9 +40,6 @@ export async function POST(req: NextRequest) {
       { error: "escreva o motivo do ajuste" },
       { status: 400 }
     );
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
-    return NextResponse.json({ error: "data inválida" }, { status: 400 });
   }
 
   const client = getSupabaseAdmin(admin.id);

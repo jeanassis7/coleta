@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 
 export interface FiltrosDashboard {
   periodo: "hoje" | "semana" | "mes" | "customizado";
@@ -142,20 +143,23 @@ async function buscarColetasDoIntervalo(
   motoristaId?: string
 ): Promise<ColetaCompleta[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("coletas")
-    .select("*, profiles!coletas_motorista_id_fkey!inner(nome)")
-    .gte("criado_em", inicio.toISOString())
-    .lte("criado_em", fim.toISOString())
-    .order("criado_em", { ascending: false });
+  // PAGINADO (selectTudo): um mês cheio (ou um período customizado longo)
+  // passa de 1000 coletas e o Supabase truncaria SEM ERRO — KPI, lista,
+  // mapa e CSV subcontados em silêncio.
+  return selectTudo<ColetaCompleta>((de, ate) => {
+    let q = supabase
+      .from("coletas")
+      .select("*, profiles!coletas_motorista_id_fkey!inner(nome)")
+      .gte("criado_em", inicio.toISOString())
+      .lte("criado_em", fim.toISOString())
+      .order("criado_em", { ascending: false })
+      .order("id");
 
-  if (motoristaId && motoristaId !== "todos") {
-    q = q.eq("motorista_id", motoristaId);
-  }
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data as ColetaCompleta[]) || [];
+    if (motoristaId && motoristaId !== "todos") {
+      q = q.eq("motorista_id", motoristaId);
+    }
+    return q.range(de, ate);
+  });
 }
 
 export async function buscarColetas(filtros: FiltrosDashboard) {

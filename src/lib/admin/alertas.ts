@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import {
   buscarMotoristasComSaldo,
   type MotoristaComSaldo,
@@ -310,14 +311,20 @@ export async function buscarAlertas(
   // Coletas dos últimos 90 dias → foto faltando, GPS falhando, preço fora
   // ---------------------------------------------------------------------
   try {
-    let q = supabase
-      .from("coletas")
-      .select(
-        `id, motorista_id, litros, valor_pago, gps_capturado, foto_path, local_nome, criado_em,
-         profiles!coletas_motorista_id_fkey!inner(nome, exige_foto)`
-      )
-      .gte("criado_em", new Date(Date.now() - 90 * DIA_MS).toISOString());
-    const { data } = await q;
+    // PAGINADO (selectTudo): 90 dias já beiram 1000 coletas no ritmo atual —
+    // truncar faria a média de preço e a contagem de foto/GPS saírem erradas
+    // sem nenhum erro.
+    const data = await selectTudo<Record<string, unknown>>((de, ate) =>
+      supabase
+        .from("coletas")
+        .select(
+          `id, motorista_id, litros, valor_pago, gps_capturado, foto_path, local_nome, criado_em,
+           profiles!coletas_motorista_id_fkey!inner(nome, exige_foto)`
+        )
+        .gte("criado_em", new Date(Date.now() - 90 * DIA_MS).toISOString())
+        .order("id")
+        .range(de, ate)
+    );
 
     type Row = {
       id: string;
@@ -464,6 +471,27 @@ export async function buscarAlertas(
 
       const nome = c.profiles?.nome || "Um motorista";
       const litrosFmt = litros.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+
+      // R$ 0 é DOAÇÃO (R2) — caso legítimo desde a 0031. O alerta continua
+      // aparecendo (decisão do Evaner, 20/08/2026: "é atípico e merece
+      // atenção"), mas com o texto certo — dizer "faltou dígito" pra uma
+      // doação ensinaria a desconfiar do alerta.
+      if (valor === 0) {
+        alertas.push({
+          chave: `coleta_fora_da_curva:${c.id}`,
+          icone: "🎁",
+          severidade: "media",
+          titulo: "Coleta de R$ 0 — foi doação?",
+          texto:
+            `${nome} lançou ${litrosFmt} L em "${c.local_nome}" sem pagar nada. ` +
+            `Óleo doado se lança com valor zero mesmo — se foi isso, é só dispensar este aviso. ` +
+            `Se na verdade ele pagou e errou o campo, corrija a coleta: o valor desconta do saldo dele.`,
+          link: { href: "/admin?aba=lista", label: "Ver coletas" },
+          data: c.criado_em,
+        });
+        continue;
+      }
+
       // A leitura provável depende de PRA QUE LADO o preço saiu da faixa:
       //   caro demais  → os litros é que estão baixos (digitou o preço ali)
       //   barato demais → o valor é que está errado
@@ -512,11 +540,24 @@ export async function buscarAlertas(
   }
 
   // ---------------------------------------------------------------------
-  // Remove os já dispensados no "OK, VI"
+  // Remove os já dispensados no "OK, VI" — só os dispensados POR MIM.
+  // Cada admin tem a própria dispensa (0039): o Evaner dispensar não some
+  // com o alerta do dashboard do Jean.
   // ---------------------------------------------------------------------
   try {
-    const { data: vistos } = await supabase.from("alertas_vistos").select("chave");
-    const set = new Set((vistos || []).map((v) => v.chave));
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const meuId = session?.user?.id ?? null;
+    // PAGINADO (selectTudo): as chaves diárias (vale_alto, foto_faltando,
+    // gps_falhando) acumulam sem limpeza — truncado em 1000, alerta já
+    // dispensado voltava a aparecer aleatoriamente.
+    const vistos = await selectTudo<{ chave: string }>((de, ate) => {
+      let q = supabase.from("alertas_vistos").select("chave");
+      if (meuId) q = q.eq("visto_por", meuId);
+      return q.order("chave").range(de, ate);
+    });
+    const set = new Set(vistos.map((v) => v.chave));
     const restantes = alertas.filter((a) => !set.has(a.chave));
     return ordenar(restantes);
   } catch {

@@ -218,6 +218,30 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     await adminClient.from("coletas").delete().eq("motorista_id", id);
   }
 
+  // Documentos morrem por cascade junto com o profile — mas a conta
+  // PREVISTA de cada um e o arquivo no bucket não. Limpa antes (mesma
+  // lógica do delete individual de documento).
+  const { data: docsDoMotorista } = await adminClient
+    .from("documentos")
+    .select("id, arquivo_path")
+    .eq("motorista_id", id);
+  const docIds = (docsDoMotorista ?? []).map((d) => d.id);
+  if (docIds.length > 0) {
+    const { error: ePrev } = await adminClient
+      .from("contas_a_pagar")
+      .delete()
+      .eq("origem_tipo", "documento")
+      .in("origem_id", docIds)
+      .in("status", ["prevista", "a_pagar"]);
+    if (ePrev) return NextResponse.json({ error: ePrev.message }, { status: 400 });
+    const pathsDocs = (docsDoMotorista ?? [])
+      .map((d) => d.arquivo_path)
+      .filter((p): p is string => !!p);
+    if (pathsDocs.length > 0) {
+      await adminClient.storage.from("documentos").remove(pathsDocs);
+    }
+  }
+
   // Deleta app_events relacionados
   const { error: errEventos } = await adminClient
     .from("app_events")

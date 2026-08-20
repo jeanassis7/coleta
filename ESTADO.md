@@ -100,39 +100,54 @@ avião. Ver "Dívidas" abaixo.
 4. **Limpar o resto do dado de teste** — o caminhão AAA-0000 e o perfil
    Teste 1. Ele disse que faz na mão.
 
-### As 7 correções do NEGOCIOv3.md — 5 FEITAS, 2 PENDENTES
+### As 7 correções do NEGOCIOv3.md — 7 DE 7 FEITAS ✅
 
 Em **19/08/2026** o Evaner conferiu **131 regras de negócio** uma a uma (ver
-`NEGOCIOv3.md`). A Parte XII de lá tem o detalhe de cada uma; aqui fica o
-placar.
+`NEGOCIOv3.md`). Os 5 primeiros itens saíram em 19/08; em **20/08** saíram
+os dois últimos — **item 2** (comissão pelos litros da DESCARGA, vigência do
+dia da pesagem, só carga encerrada) e **item 4** (card Patrimônio no Caixa:
+seis linhas + total + preço de referência editável em R$/litro, tabela
+`configuracoes` na 0036).
 
-| | O quê | |
-|---|---|---|
-| 1 | **Coleta de R$ 0** — migration 0031 (`>= 0`) + `parseValorInteiro` parou de recusar zero | ✅ |
-| 6 | **Alertas** — removidos "cheque bom pra esta semana" e "cheque devolvido"; "dinheiro parado" foi de 7 pra **15 dias** | ✅ |
-| 3 | **Receita do DRE por recebimento** — soma recebimentos não-cheque + cheques compensados. Cheque e recebimento-em-cheque são o MESMO dinheiro; somar os dois dobraria | ✅ |
-| 5 | **Cheque** — repassar virou consequência de pagar algo (a ação solta saiu do endpoint e da tela); devolver reverte a conta a pagar e avisa | ✅ |
-| 7 | **Sistema lembra do vale** — migration 0032 (`vale_quitado_em` + `vale_quitado_por`). Ao lançar Salário, a tela mostra os vales pendentes da pessoa. O update filtra por pendente, então dois pagamentos não descontam o mesmo | ✅ |
-| **2** | **Comissão sobre `descargas.litros_estimados`**, não sobre `coletas.litros` — muda quanto cada motorista recebe | ⬜ |
-| **4** | **Painel de caixa com o patrimônio** — falta valor do estoque, óleo nos caminhões, cheques em aberto (carteira + depositado) e o **preço de referência em R$/litro, editável, um só pros dois óleos** | ⬜ |
+### A auditoria completa de 20/08/2026 — e a onda de correções
 
-**Onde retomar (próxima sessão começa aqui):**
+O Evaner pediu uma varredura completa (código × 131 regras). O resultado
+está em **`RELATORIO-AUDITORIA.md`** (achados, gravidade, decisões) e o
+**`MANUAL-DO-SOFTWARE.md`** nasceu junto. Ele respondeu achado por achado e
+autorizou as correções, que foram TODAS aplicadas em 20/08, nas migrations
+0033-0040 e nos commits do dia. Destaques:
 
-**Item 2 — comissão pela descarga.** Hoje `calcularComissao()` em
-`src/lib/admin/remuneracao.ts` soma `coletas.litros`. Tem que ler
-`descargas.litros_estimados` e atribuir ao motorista da carga, usando a
-vigência **do dia da descarga**. Carga cancelada não entra; carga sem descarga
-fica pendente até pesar. Coleta retroativa se resolve sozinha — o óleo dela já
-estava no caminhão quando pesou. **Muda quanto cada motorista recebe.**
+- **DRE nunca mais engole dinheiro**: linha automática soma as contas pagas
+  da categoria; conta órfã cai na linha "Não classificado"; "Nova conta" e
+  recorrentes validam contra o plano; receita inclui cheque repassado
+  (R67-b nova).
+- **Caixa fecha com a gaveta**: compra direta com conta (0035), acerto
+  negativo grava a conta, "assinei a nota" vira conta por trigger (0034),
+  apagar/editar fato desfaz/ajusta a conta amarrada, vale e cheque voltam
+  quando o pagamento é apagado.
+- **Comissão pela descarga** e **patrimônio** (itens 2 e 4).
+- **selectTudo()** (`src/lib/supabase/select-tudo.ts`): paginação automática
+  que mata DE VEZ o teto silencioso de 1.000 linhas do Supabase — usar em
+  TODA consulta sem limite natural (já aplicado em DRE/jaTemConta, coletas
+  do dashboard, coletas 90d dos alertas, alertas_vistos, km da frota).
+- **Alertas**: dispensa por admin (0039), chave de documento com vencimento,
+  doação de R$ 0 com texto próprio, período customizado com fuso certo.
+- **Motorista**: avisos não se engolem mais, zero alert(), CardSaldo usa a
+  RPC `meu_saldo()` (0033 — a MESMA fórmula do painel).
+- **RLS**: motorista só ACEITA adiantamento (trigger 0037).
 
-**Item 4 — painel do patrimônio.** `/admin/caixa` mostra só contas + dinheiro
-dos motoristas. Faltam: valor do estoque, óleo nos caminhões (litros das
-coletas de cargas ABERTAS), cheques em aberto (`em_carteira` + `depositado`),
-e o **total**. Precisa de um **preço de referência em R$/litro, editável, um
-só pros dois óleos** — é conta de cabeça pra saber se o patrimônio sobe ou
-desce, não custo médio.
-
-A regra por trás de cada um está na Parte XII do `NEGOCIOv3.md`.
+**Decisões que o Evaner deixou EM ABERTO (não mexer sem ordem):**
+- **D6/R14**: foto do painel ao iniciar carga continua opcional no código
+  (a regra diz obrigatória) — "por enquanto deixa aberto".
+- **D3/R112**: vigência geral mais nova hoje VENCE específica mais antiga —
+  aguardando resposta dele aos exemplos.
+- **Categorias do DRE pra documentos**: hoje IPVA→ipva_frota etc.
+  (categoriaDeDocumento); debate sobre linha única "Documentos" em aberto.
+- **D10**: senhas continuam no CLAUDE.md (decisão dele, projeto interno).
+- **Item 7 do relatório** (baixos/cosméticos): NÃO autorizado em lote — ele
+  quer entender melhor antes. Detalhar em grupos pequenos quando pedir.
+- **M4** (reversão de devolução não-atômica) e **M22** (idempotência do
+  maço/payload do OCR): explicados de novo, aguardando ok.
 
 ### Aberto sem causa raiz
 

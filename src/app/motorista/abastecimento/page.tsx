@@ -41,6 +41,9 @@ export default function AbastecimentoPage() {
     | { tipo: "salto_grande"; salto: number }
     | null
   >(null);
+  // Avisos já confirmados neste preenchimento — confirmar um não pula os
+  // outros (editar o km zera a lista).
+  const [avisosConfirmados, setAvisosConfirmados] = useState<string[]>([]);
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
 
@@ -94,6 +97,7 @@ export default function AbastecimentoPage() {
     setKmTexto(s);
     setErroKm(null);
     setAvisoKm(null);
+    setAvisosConfirmados([]);
   }
 
   async function salvar() {
@@ -119,13 +123,26 @@ export default function AbastecimentoPage() {
     }
     setErroKm(null);
 
-    // AVISOS de segundo toque (primeiro toque mostra, segundo confirma)
-    if (!avisoKm) {
+    // AVISOS de segundo toque (primeiro toque mostra, segundo confirma).
+    // Confirmar UM aviso não pula os outros — a cadeia re-roda e o próximo
+    // ainda aparece. Editar o km zera as confirmações.
+    const confirmados = [...avisosConfirmados];
+    if (avisoKm) {
+      confirmados.push(avisoKm.tipo);
+      setAvisosConfirmados(confirmados);
+      setAvisoKm(null);
+    }
+    {
       const ultimoKmRaw = localStorage.getItem(
         LAST_KM_KEY_PREFIX + carga.caminhao_id
       );
       const ultimoKm = ultimoKmRaw ? Number(ultimoKmRaw) : null;
-      if (ultimoKm !== null && Number.isFinite(ultimoKm) && kmNum < ultimoKm) {
+      if (
+        !confirmados.includes("menor_que_ultimo") &&
+        ultimoKm !== null &&
+        Number.isFinite(ultimoKm) &&
+        kmNum < ultimoKm
+      ) {
         setAvisoKm({ tipo: "menor_que_ultimo", ultimoKm });
         return;
       }
@@ -133,7 +150,10 @@ export default function AbastecimentoPage() {
         carga.km_inicial,
         ultimoKm !== null && Number.isFinite(ultimoKm) ? ultimoKm : 0
       );
-      if (kmNum - referencia > SALTO_MAXIMO_KM) {
+      if (
+        !confirmados.includes("salto_grande") &&
+        kmNum - referencia > SALTO_MAXIMO_KM
+      ) {
         setAvisoKm({ tipo: "salto_grande", salto: kmNum - referencia });
         return;
       }

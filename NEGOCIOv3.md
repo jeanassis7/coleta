@@ -22,8 +22,10 @@ rodar caminhão pelo oeste do Paraná.
 **R2.** **Óleo é sempre pago.** Não existe caso de a empresa receber para
 retirar. Se em algum momento o óleo for doado, lança-se com **valor zero** —
 não há regra especial.
-`[CONFIRMADO]` · `[A CORRIGIR — o banco tem check (valor_pago > 0) e recusa
-zero hoje]`
+`[CONFIRMADO]` · `[CORRIGIDO 20/08/2026 — banco aceita zero (0031), app,
+lançamento retroativo e edição pelo painel também. A coleta de R$ 0 continua
+gerando um aviso no painel ("foi doação?") por decisão do Evaner: é atípico
+e merece atenção]`
 
 **R3.** **O certificado de coleta não é o motor do negócio.** Ele é emitido na
 hora, em **bloco físico, escrito à mão pelo motorista**. Não há consequência
@@ -246,10 +248,13 @@ buscar**.
 
 **R56.** Emitir nota fiscal está **fora do sistema** — guarda só o número.
 
-**R57.** **Os custos de viagem não são atrelados a uma venda específica.**
-Existe a categoria "Custos de viagem" como **gasto geral**, não por entrega.
-`[CONFIRMADO — o campo venda_id existe em despesa e abastecimento mas
-nenhuma tela usa, e está certo assim]`
+**R57.** Os custos de viagem em geral **não** são atrelados a uma venda —
+existe a categoria "Custos de viagem" como gasto geral. **Exceção pedida
+pelo Evaner**: o botão **"+ gasto"** na tela de Vendas amarra despesa ou
+abastecimento de uma ENTREGA à venda dela (`venda_id`), pra permitir o
+custo total da viagem por kg.
+`[ATUALIZADO 20/08/2026 — a versão anterior desta regra dizia que nenhuma
+tela usava venda_id; o "+ gasto" usa, e é intencional]`
 
 ## 11. A conta corrente do comprador
 
@@ -292,9 +297,17 @@ some só o valor dele. `[UNIQUE no banco]`
 **R67.** ⚠️ **REGRA NOVA — repassar exige despesa.** Não é possível repassar
 um cheque sem que exista o gasto que ele pagou. Todo repasse tem motivo, e o
 motivo é um lançamento.
-`[CONFIRMADO — regra do Evaner]` · `[A CORRIGIR — hoje o painel de cheques
-tem um botão "Repassar" solto que só grava um texto livre de "pra quem foi",
-sem criar despesa nenhuma. Ver Parte XII, item 5]`
+`[CONFIRMADO — regra do Evaner]` · `[CORRIGIDO 19/08/2026 — o botão solto
+saiu; repassar é consequência de pagar algo com o cheque (Contas a pagar ou
+Lançamentos)]`
+
+**R67-b.** ⚠️ **REGRA NOVA (20/08/2026) — o repasse também é RECEITA.**
+Quando o cheque paga um fornecedor, a despesa conta no dia do repasse — e a
+venda que gerou aquele cheque vira receita **no mesmo dia**: "usou o cheque
+pra pagar = entrada do cheque e saída pro fornecedor". Sem isso, todo
+repasse derrubava o resultado pelo valor do cheque (a despesa entrava e a
+receita nunca). Se o cheque voltar, os dois lados se desfazem sozinhos.
+`[CONFIRMADO — decisão do Evaner na auditoria de 20/08]`
 
 **R68.** **Cheque devolvido: TUDO volta.** `[CONFIRMADO]`
 
@@ -310,8 +323,8 @@ desfaz a cadeia inteira:
 Na prática, o que costuma acontecer depois: **a despesa é paga por PIX da
 conta bancária**, e **o comprador que deu o cheque também paga por PIX** na
 conta. Ou seja, o cheque some da cadeia e os dois lados viram dinheiro.
-`[A CORRIGIR — hoje o cheque volta e a dívida do comprador volta, mas a conta
-a pagar que ele quitou CONTINUA PAGA. Ver Parte XII, item 5]`
+`[CORRIGIDO 19/08/2026 — devolver reverte a conta a pagar e a tela avisa o
+que foi desfeito]`
 
 **R69.** **Reapresentação de cheque é automática no banco** e **não precisa
 ser tratada no sistema**. `[CONFIRMADO]`
@@ -419,12 +432,15 @@ Regras dele:
   **Devolvido fica de fora**: a dívida do comprador já voltou, e contá-lo
   seria contar duas vezes.
 
-`[A CORRIGIR — hoje a tela só mostra as contas e o dinheiro dos motoristas.
-Ver Parte XII, item 4]`
+`[CORRIGIDO 20/08/2026 — a tela de Caixa ganhou o card Patrimônio com as
+seis linhas e o total, e o preço de referência editável em R$/litro]`
 
 **R88.** Entra no caixa: recebimento, transferência recebida, acerto
 devolvido, **cheque compensado**.
-Sai: conta paga, adiantamento (exceto cancelado), transferência enviada.
+Sai: conta paga, adiantamento (exceto cancelado), transferência enviada,
+**e compra direta** (pela conta escolhida no lançamento — acréscimo de
+20/08/2026, decisão do Evaner: "o dinheiro tem que sair de algum lugar").
+O acerto de saldo negativo pago na hora também sai pela conta escolhida.
 
 **R89.** O **dinheiro na mão do motorista** aparece como linha, mas **não é
 conta financeira** — é lido da função que já calcula o saldo dele.
@@ -438,8 +454,9 @@ Consequência direta, e confirmada: **venda paga em cheque só vira receita
 quando o cheque COMPENSA** — o que pode ser 60 dias depois da venda. Entre um
 e outro, a venda existe (o estoque saiu, a dívida do comprador nasceu) mas o
 DRE não a viu ainda.
-`[CONFIRMADO]` · `[A CORRIGIR — hoje a receita entra pela data da VENDA. Ver
-Parte XII, item 3]`
+`[CONFIRMADO]` · `[CORRIGIDO 19/08/2026 — receita = recebimentos não-cheque
++ cheques compensados; em 20/08 entrou também o cheque repassado, pela data
+do repasse (R67-b)]`
 
 **R91.** O Evaner sabe e aceita a consequência: **um mês bom pode aparecer
 como mês ruim** no DRE, se a venda foi feita e o dinheiro não entrou. E
@@ -528,7 +545,9 @@ absorvido automaticamente, independente de quando a coleta foi digitada.
 
 É o argumento mais forte a favor de medir pelo peso em vez de pela declaração.
 
-`[A CORRIGIR — hoje calculo sobre coletas.litros. Ver Parte XII, item 2]`
+`[CORRIGIDO 20/08/2026 — a comissão passou a somar descargas.litros_estimados
+(fallback: peso líquido ÷ 0,9), só de carga encerrada, com a vigência do dia
+da descarga]`
 
 **R109.** É **por motorista**, conforme a coleta de cada um. Como uma carga
 tem um motorista só, a descarga daquela carga é dele.
@@ -538,8 +557,9 @@ tem um motorista só, a descarga daquela carga é dele.
 **R110-b.** O **vale** do acerto (R36) desconta do salário — e **o sistema
 deve lembrar** disso na hora de pagar. Não é o gestor que tem que guardar de
 cabeça.
-`[CONFIRMADO]` · `[A CORRIGIR — hoje o vale fica registrado no acerto e nada
-o liga ao pagamento. Ver Parte XII, item 7]`
+`[CONFIRMADO]` · `[CORRIGIDO 19/08/2026 — ao lançar Salário a tela mostra os
+vales pendentes; em 20/08 fechou-se a ponta solta: apagar o pagamento devolve
+o vale pra lista de pendentes]`
 
 **R111.** Cada coleta usa a regra **do dia dela**. Mudança no meio do mês
 parte a conta na data certa.
@@ -580,7 +600,17 @@ ignorar alerta.
 
 **R130.** ❌ **Removidos por decisão do Evaner:** "cheque bom para esta
 semana" e "cheque devolvido sem resolver".
-`[A CORRIGIR — ainda estão no código. Ver Parte XII, item 6]`
+`[CORRIGIDO 19/08/2026 — removidos do código, sem resquício]`
+
+**Nota de 20/08/2026 sobre R121/R122 (foto e GPS):** o código avisa mais
+cedo do que a regra dizia — foto: 1 coleta sem foto nas últimas 48h; GPS:
+4 coletas sem localização nos últimos 7 dias corridos. O Evaner decidiu
+**manter o comportamento do código**: se o problema vier, vem seguido, e a
+ideia é só avaliar o que está acontecendo. A régua "3 na semana" da tabela
+acima fica substituída por esta.
+
+**Nota de 20/08/2026 sobre a dispensa ("OK, VI"):** cada admin tem a
+própria dispensa — o Evaner dispensar um alerta não o esconde do Jean.
 
 ---
 
@@ -634,6 +664,11 @@ revelar se estão certos quando passar dinheiro de verdade por eles.
 ---
 
 # PARTE XII — O QUE O SOFTWARE PRECISA MUDAR
+
+> **PLACAR 20/08/2026: 7 de 7 FEITOS.** Os itens 1, 3, 5, 6 e 7 saíram em
+> 19/08; os itens 2 (comissão pela descarga) e 4 (painel do patrimônio)
+> saíram em 20/08, junto com as correções da auditoria completa (ver
+> RELATORIO-AUDITORIA.md). Os textos abaixo ficam como registro histórico.
 
 Sete itens. Cada um saiu da conferência — nenhum é opinião minha.
 

@@ -45,6 +45,9 @@ export default function DescarregarPage() {
     | { tipo: "km_salto"; salto: number }
     | null
   >(null);
+  // Avisos que o motorista JÁ confirmou neste preenchimento — confirmar um
+  // não pula os outros (editar qualquer número zera a lista).
+  const [avisosConfirmados, setAvisosConfirmados] = useState<string[]>([]);
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -95,12 +98,14 @@ export default function DescarregarPage() {
     // Editou o número → validações antigas não valem mais
     setErro(null);
     setAviso(null);
+    setAvisosConfirmados([]);
   }
 
   function trocarKm(s: string) {
     setKmTexto(s);
     setErro(null);
     setAviso(null);
+    setAvisosConfirmados([]);
   }
 
   async function salvar() {
@@ -125,12 +130,28 @@ export default function DescarregarPage() {
 
     // Antiburros em duas etapas: primeiro clique mostra o aviso NO APP,
     // segundo clique ("CONFIRMAR MESMO ASSIM") prossegue.
-    if (!aviso) {
+    //
+    // Cada "CONFIRMAR MESMO ASSIM" confirma SÓ o aviso que está na tela —
+    // a cadeia roda de novo e o próximo aviso ainda aparece. Antes, um
+    // salto de km confirmado engolia junto a divergência de peso de 45%,
+    // que o motorista nunca via.
+    const confirmados = [...avisosConfirmados];
+    if (aviso) {
+      confirmados.push(aviso.tipo);
+      setAvisosConfirmados(confirmados);
+      setAviso(null);
+    }
+    {
       const ultimoKmRaw = localStorage.getItem(
         LAST_KM_KEY_PREFIX + carga.caminhao_id
       );
       const ultimoKm = ultimoKmRaw ? Number(ultimoKmRaw) : null;
-      if (ultimoKm !== null && Number.isFinite(ultimoKm) && kmNum < ultimoKm) {
+      if (
+        !confirmados.includes("km_menor") &&
+        ultimoKm !== null &&
+        Number.isFinite(ultimoKm) &&
+        kmNum < ultimoKm
+      ) {
         setAviso({ tipo: "km_menor", ultimoKm });
         return;
       }
@@ -138,15 +159,18 @@ export default function DescarregarPage() {
         carga.km_inicial,
         ultimoKm !== null && Number.isFinite(ultimoKm) ? ultimoKm : 0
       );
-      if (kmNum - referencia > SALTO_MAXIMO_KM) {
+      if (
+        !confirmados.includes("km_salto") &&
+        kmNum - referencia > SALTO_MAXIMO_KM
+      ) {
         setAviso({ tipo: "km_salto", salto: kmNum - referencia });
         return;
       }
-      if (resumo.coletas === 0) {
+      if (!confirmados.includes("sem_coletas") && resumo.coletas === 0) {
         setAviso({ tipo: "sem_coletas" });
         return;
       }
-      if (resumo.litros > 0) {
+      if (!confirmados.includes("divergencia") && resumo.litros > 0) {
         const pesoEsperado = resumo.litros * DENSIDADE_KG_POR_L;
         const diff = Math.abs(pesoLiquidoKg - pesoEsperado) / pesoEsperado;
         if (diff > 0.3) {

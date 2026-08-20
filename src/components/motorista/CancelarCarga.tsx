@@ -24,6 +24,7 @@ export function CancelarCarga({
   const [cancelando, setCancelando] = useState(false);
   // Confirmação em duas etapas no próprio app — sem confirm() do navegador
   const [confirmandoEtapa, setConfirmandoEtapa] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -66,6 +67,7 @@ export function CancelarCarga({
 
   async function cancelar() {
     setCancelando(true);
+    setErro(null);
     try {
       const supabase = getSupabaseBrowser();
       const { error } = await supabase
@@ -74,7 +76,11 @@ export function CancelarCarga({
         .eq("id", carga.id)
         .eq("status", "ativa");
       if (error) {
-        alert("Erro ao cancelar: " + error.message);
+        // Inline, nunca popup do navegador. O caso clássico: o sinal caiu
+        // entre o botão aparecer e o toque no confirmar.
+        setErro(
+          "Não consegui cancelar — parece que o sinal caiu. Tenta de novo quando pegar internet."
+        );
         return;
       }
       await logEvent(motoristaId, "carga_cancelada", { carga_id: carga.id });
@@ -96,6 +102,11 @@ export function CancelarCarga({
             Você vai precisar iniciar uma nova pra continuar.
           </span>
         </p>
+        {erro && (
+          <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 text-sm">
+            ⚠️ {erro}
+          </div>
+        )}
         <button
           onClick={cancelar}
           disabled={cancelando}

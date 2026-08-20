@@ -4,8 +4,9 @@ import { exigirAdmin } from "@/lib/auth/exigir-admin";
 
 /**
  * POST { chave } — marca um alerta como visto ("OK, VI").
- * Ele some do dashboard pra sempre. Se a condição voltar em OUTRO
- * registro, a chave é diferente e o alerta aparece de novo.
+ * Some do dashboard DE QUEM CLICOU (a dispensa é por admin desde a 0039 —
+ * o upsert cai na PK composta chave+visto_por). Se a condição voltar em
+ * OUTRO registro, a chave é diferente e o alerta aparece de novo.
  */
 export async function POST(req: NextRequest) {
   const user = await exigirAdmin();

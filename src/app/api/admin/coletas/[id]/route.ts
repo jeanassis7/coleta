@@ -39,7 +39,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (typeof body.local_nome === "string" && body.local_nome.trim()) {
     updates.local_nome = body.local_nome.trim();
   }
-  if (typeof body.valor_pago === "number" && body.valor_pago > 0) {
+  // Zero é válido: doação (R2, 0031). O PATCH ignorava o zero EM SILÊNCIO —
+  // a tela dizia salvo e o valor antigo ficava.
+  if (typeof body.valor_pago === "number" && body.valor_pago >= 0) {
     updates.valor_pago = Math.round(body.valor_pago);
   }
   if (

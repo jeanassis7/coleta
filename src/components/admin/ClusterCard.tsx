@@ -43,6 +43,8 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
 
   const [localExistenteId, setLocalExistenteId] = useState("");
   const [salvando, setSalvando] = useState(false);
+  // Erro inline no card — alert() é proibido no projeto inteiro.
+  const [erro, setErro] = useState<string | null>(null);
 
   const temGps = cluster.latitude !== 0 || cluster.longitude !== 0;
 
@@ -59,8 +61,9 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
   }
 
   async function criarLocalUnico() {
+    setErro(null);
     if (!temGps) {
-      alert("Esse cluster não tem GPS — vincule manualmente a um local existente.");
+      setErro("Esse cluster não tem GPS — vincule manualmente a um local existente.");
       return;
     }
     setSalvando(true);
@@ -80,7 +83,7 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
       });
       const data = await res.json();
       if (!res.ok && res.status !== 207) {
-        alert("Erro: " + data.error);
+        setErro("Erro: " + data.error);
       } else {
         router.refresh();
       }
@@ -90,16 +93,17 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
   }
 
   async function criarLocaisSeparados() {
+    setErro(null);
     const c1 = centroGeografico(coletasGrupo1);
     const c2 = centroGeografico(coletasGrupo2);
     if (!c1 || !c2) {
-      alert(
+      setErro(
         "Alguma das divisões não tem coleta com GPS. Não dá pra separar em 2 locais."
       );
       return;
     }
     if (!nomeGrupo1.trim() || !nomeGrupo2.trim()) {
-      alert("Preencha os dois nomes.");
+      setErro("Preencha os dois nomes.");
       return;
     }
     setSalvando(true);
@@ -122,7 +126,7 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
       });
       const data1 = await res1.json();
       if (!res1.ok && res1.status !== 207) {
-        alert("Erro no local 1: " + data1.error);
+        setErro("Erro no local 1: " + data1.error);
         return;
       }
 
@@ -144,7 +148,7 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
       });
       const data2 = await res2.json();
       if (!res2.ok && res2.status !== 207) {
-        alert(
+        setErro(
           "Local 1 criado, mas erro no local 2: " +
             data2.error +
             ". Refaça a curadoria."
@@ -160,6 +164,7 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
 
   async function vincularExistente() {
     if (!localExistenteId) return;
+    setErro(null);
     setSalvando(true);
     try {
       const res = await fetch(`/api/admin/locais/${localExistenteId}`, {
@@ -171,7 +176,7 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert("Erro: " + data.error);
+        setErro("Erro: " + data.error);
       } else {
         router.refresh();
       }
@@ -234,6 +239,11 @@ export function ClusterCard({ cluster, locaisExistentes }: Props) {
 
       {aberto && (
         <div className="mt-4 space-y-4 border-t border-cinza-borda pt-4">
+          {erro && (
+            <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm">
+              {erro}
+            </div>
+          )}
           {/* Lista de coletas com checkboxes pra separar em outro local */}
           <div>
             <p className="text-sm font-semibold mb-2">

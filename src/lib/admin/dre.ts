@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import { PLANO_CONTAS, type GrupoDre, type LinhaPlano } from "@/lib/plano-contas";
 
 /**
@@ -156,10 +157,16 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     // Todo fato que já virou conta — em qualquer época. Não pode ser
     // limitado ao período: uma manutenção de março paga em maio tem conta
     // fora da janela, e o fato continuaria contando duas vezes.
-    supabase
-      .from("contas_a_pagar")
-      .select("origem_id")
-      .not("origem_id", "is", null),
+    // PAGINADO (selectTudo): esta lista cresce PRA SEMPRE — truncar em 1000
+    // faria a anti-dobra falhar aleatoriamente daqui a uns anos.
+    selectTudo<{ origem_id: string }>((de, ate) =>
+      supabase
+        .from("contas_a_pagar")
+        .select("origem_id")
+        .not("origem_id", "is", null)
+        .order("id")
+        .range(de, ate)
+    ).then((rows) => ({ data: rows, error: null })),
     supabase.from("profiles").select("id, nome"),
   ]);
 

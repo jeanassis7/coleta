@@ -39,7 +39,9 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(litros) || litros <= 0) {
     return NextResponse.json({ error: "litros inválido" }, { status: 400 });
   }
-  if (!Number.isInteger(valor_pago) || valor_pago <= 0) {
+  // Zero é válido: óleo doado se lança com R$ 0 (R2, migration 0031) — a
+  // retroativa não pode ser mais restritiva que o app do motorista.
+  if (!Number.isInteger(valor_pago) || valor_pago < 0) {
     return NextResponse.json(
       { error: "valor da coleta é inteiro, sem centavos" },
       { status: 400 }

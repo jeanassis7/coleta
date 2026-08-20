@@ -74,7 +74,12 @@ export async function alertasFrota(): Promise<Alerta[]> {
       const doc = labelDocumento(d.tipo, d.descricao);
 
       alertas.push({
-        chave: `documento:${d.id}`,
+        // O vencimento entra na chave: renovou o documento (vencimento novo)
+        // = ocorrência nova = o alerta volta a valer no próximo ciclo. Sem
+        // isso, um "OK, VI" na CNH de 2026 silenciava a de 2031 pra sempre.
+        // A situação também entra: dispensar o "vencendo" amarelo não pode
+        // engolir o "vencido" vermelho do mesmo ciclo.
+        chave: `documento:${d.id}:${d.vencimento}:${situacao}`,
         icone: situacao === "vencido" ? "🚨" : "📄",
         severidade: situacao === "vencido" ? "alta" : "media",
         titulo:

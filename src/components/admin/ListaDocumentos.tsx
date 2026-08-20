@@ -43,6 +43,66 @@ export function ListaDocumentos({
   const [erro, setErro] = useState<string | null>(null);
   const [modalApagar, setModalApagar] = useState<Documento | null>(null);
 
+  // Renovação: muda o vencimento (e o valor/arquivo, se quiser) do MESMO
+  // documento — preserva o histórico e sincroniza a conta prevista no
+  // servidor. O alerta do dashboard ensinava esse fluxo antes dele existir
+  // na tela.
+  const [renovando, setRenovando] = useState<Documento | null>(null);
+  const [novoVencimento, setNovoVencimento] = useState("");
+  const [novoValorCentavos, setNovoValorCentavos] = useState<number | null>(null);
+  const [novoArquivo, setNovoArquivo] = useState<File | null>(null);
+
+  function abrirRenovar(d: Documento) {
+    setRenovando(d);
+    setNovoVencimento("");
+    setNovoValorCentavos(null);
+    setNovoArquivo(null);
+    setErro(null);
+  }
+
+  async function renovar() {
+    if (!renovando) return;
+    if (!novoVencimento) return setErro("Qual o vencimento novo?");
+    setErro(null);
+    setSalvando(true);
+    try {
+      let arquivo_path: string | undefined;
+      if (novoArquivo) {
+        const supabase = getSupabaseBrowser();
+        const ext = novoArquivo.name.split(".").pop()?.toLowerCase() || "bin";
+        const path = `${dono.tipo}/${dono.id}/${renovando.tipo}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("documentos")
+          .upload(path, novoArquivo, { upsert: true, contentType: novoArquivo.type });
+        if (upErr) {
+          setErro("Falha ao enviar o arquivo: " + upErr.message);
+          return;
+        }
+        arquivo_path = path;
+      }
+      const res = await fetch(`/api/admin/documentos/${renovando.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vencimento: novoVencimento,
+          ...(novoValorCentavos != null
+            ? { valor: centavosParaReais(novoValorCentavos) }
+            : {}),
+          ...(arquivo_path ? { arquivo_path } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErro(data.error || "Falha ao renovar.");
+        return;
+      }
+      setRenovando(null);
+      router.refresh();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   function limpar() {
     setTipo(tipos[0].valor);
     setDescricao("");
@@ -314,12 +374,75 @@ export function ListaDocumentos({
                     </button>
                   )}
                   <button
+                    onClick={() => abrirRenovar(d)}
+                    className="text-verde hover:underline font-medium"
+                  >
+                    Renovar
+                  </button>
+                  <button
                     onClick={() => setModalApagar(d)}
                     className="text-alerta hover:underline"
                   >
                     Apagar
                   </button>
                 </div>
+                {renovando?.id === d.id && (
+                  <div className="w-full border-t border-cinza-borda pt-3 mt-1 space-y-2">
+                    <p className="text-sm text-cinza-suave">
+                      Renovar mantém o histórico e ajusta a previsão no caixa
+                      sozinho.
+                    </p>
+                    <div className="flex items-end gap-3 flex-wrap">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Vence em (novo)
+                        </label>
+                        <input
+                          type="date"
+                          value={novoVencimento}
+                          onChange={(e) => setNovoVencimento(e.target.value)}
+                          className="border border-cinza-borda rounded-lg px-3 py-2 text-base"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Novo valor{" "}
+                          <span className="text-cinza-suave">(opcional)</span>
+                        </label>
+                        <InputDinheiro
+                          centavos={novoValorCentavos}
+                          onChange={setNovoValorCentavos}
+                          grande={false}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Arquivo novo{" "}
+                          <span className="text-cinza-suave">(opcional)</span>
+                        </label>
+                        <input
+                          type="file"
+                          onChange={(e) => setNovoArquivo(e.target.files?.[0] ?? null)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <button
+                        onClick={renovar}
+                        disabled={salvando}
+                        className="btn-primario"
+                      >
+                        {salvando ? "Salvando…" : "Renovar"}
+                      </button>
+                      <button
+                        onClick={() => setRenovando(null)}
+                        disabled={salvando}
+                        className="px-4 py-2 rounded-xl border border-cinza-borda text-sm"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
