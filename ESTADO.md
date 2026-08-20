@@ -100,7 +100,7 @@ avião. Ver "Dívidas" abaixo.
 4. **Limpar o resto do dado de teste** — o caminhão AAA-0000 e o perfil
    Teste 1. Ele disse que faz na mão.
 
-### As 7 correções do NEGOCIOv3.md — 4 FEITAS, 3 PENDENTES
+### As 7 correções do NEGOCIOv3.md — 5 FEITAS, 2 PENDENTES
 
 Em **19/08/2026** o Evaner conferiu **131 regras de negócio** uma a uma (ver
 `NEGOCIOv3.md`). A Parte XII de lá tem o detalhe de cada uma; aqui fica o
@@ -112,12 +112,27 @@ placar.
 | 6 | **Alertas** — removidos "cheque bom pra esta semana" e "cheque devolvido"; "dinheiro parado" foi de 7 pra **15 dias** | ✅ |
 | 3 | **Receita do DRE por recebimento** — soma recebimentos não-cheque + cheques compensados. Cheque e recebimento-em-cheque são o MESMO dinheiro; somar os dois dobraria | ✅ |
 | 5 | **Cheque** — repassar virou consequência de pagar algo (a ação solta saiu do endpoint e da tela); devolver reverte a conta a pagar e avisa | ✅ |
-| **7** | **Sistema lembra do vale** do acerto ao pagar o salário | ⬜ |
+| 7 | **Sistema lembra do vale** — migration 0032 (`vale_quitado_em` + `vale_quitado_por`). Ao lançar Salário, a tela mostra os vales pendentes da pessoa. O update filtra por pendente, então dois pagamentos não descontam o mesmo | ✅ |
 | **2** | **Comissão sobre `descargas.litros_estimados`**, não sobre `coletas.litros` — muda quanto cada motorista recebe | ⬜ |
 | **4** | **Painel de caixa com o patrimônio** — falta valor do estoque, óleo nos caminhões, cheques em aberto (carteira + depositado) e o **preço de referência em R$/litro, editável, um só pros dois óleos** | ⬜ |
 
-**Onde retomar:** os três pendentes estão descritos com a regra por trás na
-Parte XII do `NEGOCIOv3.md`. A ordem combinada com o Evaner é 7 → 2 → 4.
+**Onde retomar (próxima sessão começa aqui):**
+
+**Item 2 — comissão pela descarga.** Hoje `calcularComissao()` em
+`src/lib/admin/remuneracao.ts` soma `coletas.litros`. Tem que ler
+`descargas.litros_estimados` e atribuir ao motorista da carga, usando a
+vigência **do dia da descarga**. Carga cancelada não entra; carga sem descarga
+fica pendente até pesar. Coleta retroativa se resolve sozinha — o óleo dela já
+estava no caminhão quando pesou. **Muda quanto cada motorista recebe.**
+
+**Item 4 — painel do patrimônio.** `/admin/caixa` mostra só contas + dinheiro
+dos motoristas. Faltam: valor do estoque, óleo nos caminhões (litros das
+coletas de cargas ABERTAS), cheques em aberto (`em_carteira` + `depositado`),
+e o **total**. Precisa de um **preço de referência em R$/litro, editável, um
+só pros dois óleos** — é conta de cabeça pra saber se o patrimônio sobe ou
+desce, não custo médio.
+
+A regra por trás de cada um está na Parte XII do `NEGOCIOv3.md`.
 
 ### Aberto sem causa raiz
 
