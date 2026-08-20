@@ -32,25 +32,27 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
           .limit(1)
           .maybeSingle();
         const corte = acerto?.corte_em || "1970-01-01T00:00:00Z";
-        const carry = acerto?.valor_saldo || 0;
 
+        // O NÚMERO GRANDE vem da fórmula oficial do servidor (meu_saldo →
+        // saldos_motoristas, migration 0033). O card já recalculou isso na
+        // mão uma vez e esqueceu duas exceções — painel e celular mostravam
+        // saldos diferentes. Uma fórmula só, pra sempre.
         const [
-          { data: adiantamentos },
+          { data: saldoRpc, error: eSaldo },
           { data: coletas },
           { data: despesas },
           { data: abast },
           { data: ultimo },
         ] = await Promise.all([
-          supabase
-            .from("adiantamentos")
-            .select("valor")
-            .eq("motorista_id", motoristaId)
-            .eq("status", "aceito")
-            .gt("aceito_em", corte),
+          supabase.rpc("meu_saldo"),
+          // As linhas de detalhe seguem a mesma regra do saldo: só o que
+          // saiu DA MÃO DELE (coleta paga pela sede e nota assinada ficam
+          // fora — o dinheiro não era dele).
           supabase
             .from("coletas")
             .select("valor_pago")
             .eq("motorista_id", motoristaId)
+            .eq("pago_pela_sede", false)
             .gt("criado_em", corte),
           supabase
             .from("despesas")
@@ -61,6 +63,7 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
             .from("abastecimentos")
             .select("valor")
             .eq("motorista_id", motoristaId)
+            .eq("pago_na_hora", true)
             .gt("criado_em", corte),
           supabase
             .from("adiantamentos")
@@ -71,11 +74,8 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
             .limit(1)
             .maybeSingle(),
         ]);
+        if (eSaldo) return; // sem número oficial não mostra número nenhum
 
-        const somaAd = (adiantamentos || []).reduce(
-          (s, a) => s + Number(a.valor),
-          0
-        );
         const somaC = (coletas || []).reduce(
           (s, c) => s + Number(c.valor_pago),
           0
@@ -96,7 +96,7 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
           gasto_coletas: cent(somaC),
           gasto_despesas: cent(somaD),
           gasto_abast: cent(somaA),
-          saldo: cent(somaAd - somaC - somaD - somaA + carry),
+          saldo: cent(Number(saldoRpc ?? 0)),
         });
       } catch {
         // silencioso — card só aparece se conseguir dados

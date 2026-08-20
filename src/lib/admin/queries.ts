@@ -37,7 +37,15 @@ function fromBrParts(y: number, m: number, d: number, h = 0, mi = 0, s = 0, ms =
  */
 export function resolvePeriodo(filtros: FiltrosDashboard): { inicio: Date; fim: Date } {
   if (filtros.periodo === "customizado" && filtros.inicio && filtros.fim) {
-    return { inicio: new Date(filtros.inicio), fim: new Date(filtros.fim) };
+    // As datas chegam como "aaaa-mm-dd" do <input type="date">. `new Date()`
+    // nelas seria meia-noite UTC = 21h BR do dia ANTERIOR — o último dia
+    // escolhido ficava fora do filtro. Parsear como dia-calendário BR.
+    const [ai, mi, di] = filtros.inicio.split("-").map(Number);
+    const [af, mf, df] = filtros.fim.split("-").map(Number);
+    return {
+      inicio: fromBrParts(ai, mi - 1, di, 0, 0, 0, 0),
+      fim: fromBrParts(af, mf - 1, df, 23, 59, 59, 999),
+    };
   }
 
   const { year, month, date, day } = nowBrParts();
@@ -365,6 +373,8 @@ export interface AbastecimentoAdmin {
   km_atual: number;
   foto_path: string | null;
   criado_em: string;
+  /** false = "assinei a nota": o posto cobra da empresa (virou conta a pagar). */
+  pago_na_hora: boolean;
 }
 
 /**
@@ -378,7 +388,7 @@ export async function buscarAbastecimentos(
   let q = supabase
     .from("abastecimentos")
     .select(
-      `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em,
+      `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora,
        profiles!abastecimentos_motorista_id_fkey!inner(nome),
        cargas!inner(caminhao_id, caminhoes(placa))`
     )
@@ -409,6 +419,7 @@ export async function buscarAbastecimentos(
     km_atual: number;
     foto_path: string | null;
     criado_em: string;
+    pago_na_hora: boolean;
     profiles: { nome: string } | null;
     cargas: { caminhoes: { placa: string } | null } | null;
   };
@@ -424,6 +435,7 @@ export async function buscarAbastecimentos(
     km_atual: r.km_atual,
     foto_path: r.foto_path,
     criado_em: r.criado_em,
+    pago_na_hora: r.pago_na_hora !== false,
   }));
 }
 

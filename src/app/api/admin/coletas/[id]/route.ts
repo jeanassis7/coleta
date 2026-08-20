@@ -97,7 +97,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     // Sem vencimento informado, cai no dia 1 do mês que vem — que é como
     // o combinado costuma ser ("pago início mês que vem").
     let vencimento = String(body.vencimento || "");
-    if (!/^d{4}-d{2}-d{2}$/.test(vencimento)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) {
       const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000);
       const prox = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 1));
       vencimento = prox.toISOString().slice(0, 10);
@@ -107,7 +107,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       const { error: eConta } = await adminClient.from("contas_a_pagar").insert({
         descricao: `Óleo — ${fornecedor || "fornecedor"}`,
         fornecedor: fornecedor || null,
-        categoria: "oleo",
+        // "oleo_sede": a linha do DRE que já promete "compra direta e
+        // coletas pagas pela sede". Categoria fora do plano fazia a conta
+        // paga cair no "Não classificado".
+        categoria: "oleo_sede",
         valor,
         vencimento,
         status: "a_pagar",

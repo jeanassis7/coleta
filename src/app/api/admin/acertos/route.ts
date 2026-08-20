@@ -16,24 +16,52 @@ export async function POST(req: NextRequest) {
   const conta_id = body.conta_id ? String(body.conta_id) : null;
 
   if (!motorista_id) return NextResponse.json({ error: "motorista_id obrigatório" }, { status: 400 });
-  // Só exige conta quando ele devolveu dinheiro — aí o dinheiro entrou em
-  // algum lugar. Acerto que só vira vale ou carrega saldo não move caixa.
-  if (valor_devolvido > 0 && !conta_id) {
+  // Conta é exigida sempre que dinheiro se move, NOS DOIS SENTIDOS:
+  // devolvido > 0 = entrou na conta; devolvido < 0 = a empresa pagou o
+  // motorista agora e o dinheiro SAIU de uma conta. Descartar a conta no
+  // negativo fazia o caixa ficar maior que a gaveta, em silêncio.
+  if (valor_devolvido !== 0 && !conta_id) {
     return NextResponse.json(
-      { error: "diga em qual conta entrou o dinheiro devolvido" },
+      {
+        error:
+          valor_devolvido > 0
+            ? "diga em qual conta entrou o dinheiro devolvido"
+            : "diga de qual conta saiu o pagamento ao motorista",
+      },
       { status: 400 }
     );
   }
   // Negativos são VÁLIDOS desde a 0011: saldo negativo = empresa devendo
   // pro motorista (pagou agora / soma no salário / leva pro próximo ciclo).
-  // A coerência (soma = saldo) é garantida pelo modal do acerto.
 
   const client = getSupabaseAdmin(admin.id);
+
+  // A soma devolvido+vale+saldo tem que bater com o saldo REAL DE AGORA,
+  // recalculado aqui — não com o que a tela carregou minutos atrás. Se um
+  // lançamento do motorista sincronizou nesse meio-tempo (ou outro admin
+  // acertou junto), o valor dele cairia no ciclo fechado sem entrar na
+  // divisão: dinheiro que ninguém cobra. 409 manda recarregar a tela.
+  const { data: saldos, error: eSaldo } = await client.rpc("saldos_motoristas");
+  if (eSaldo) return NextResponse.json({ error: eSaldo.message }, { status: 400 });
+  const saldoAgora = Number(
+    ((saldos as { motorista_id: string; saldo: number }[]) || []).find(
+      (s) => s.motorista_id === motorista_id
+    )?.saldo ?? 0
+  );
+  const somaAcerto = Math.round((valor_devolvido + valor_vale + valor_saldo) * 100);
+  if (somaAcerto !== Math.round(saldoAgora * 100)) {
+    return NextResponse.json(
+      {
+        error: `o saldo mudou enquanto a tela estava aberta (agora é R$ ${saldoAgora.toFixed(2).replace(".", ",")}) — recarregue e refaça o acerto`,
+      },
+      { status: 409 }
+    );
+  }
   const { data, error } = await client
     .from("acertos")
     .insert({
       motorista_id,
-      conta_id: valor_devolvido > 0 ? conta_id : null,
+      conta_id: valor_devolvido !== 0 ? conta_id : null,
       valor_devolvido,
       valor_vale,
       valor_saldo,

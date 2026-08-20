@@ -48,27 +48,33 @@ export interface Documento {
  */
 export async function kmAtualPorCaminhao(): Promise<Map<string, number>> {
   const supabase = await getSupabaseServer();
-  const [{ data: cargas }, { data: abast }] = await Promise.all([
+  // A coluna dos abastecimentos chama km_atual (0007) — já esteve escrito
+  // "km" aqui e o PostgREST devolvia erro que ninguém lia: o braço inteiro
+  // ficava morto e o alerta de troca de óleo não acendia. Por isso os erros
+  // agora são vigiados.
+  const [rCargas, rAbast] = await Promise.all([
     supabase
       .from("cargas")
-      .select("caminhao_id, km_final")
-      .not("km_final", "is", null),
+      .select("caminhao_id, km_inicial, km_final"),
     supabase
       .from("abastecimentos")
-      .select("caminhao_id, km")
-      .not("km", "is", null),
+      .select("caminhao_id, km_atual")
+      .not("km_atual", "is", null),
   ]);
+  if (rCargas.error) console.error("kmAtualPorCaminhao/cargas:", rCargas.error.message);
+  if (rAbast.error) console.error("kmAtualPorCaminhao/abastecimentos:", rAbast.error.message);
 
   const mapa = new Map<string, number>();
   const considerar = (id: string | null, km: number | null) => {
     if (!id || km == null) return;
     if ((mapa.get(id) ?? 0) < km) mapa.set(id, km);
   };
-  for (const c of (cargas as { caminhao_id: string; km_final: number }[]) ?? []) {
+  for (const c of (rCargas.data as { caminhao_id: string; km_inicial: number | null; km_final: number | null }[]) ?? []) {
+    considerar(c.caminhao_id, c.km_inicial);
     considerar(c.caminhao_id, c.km_final);
   }
-  for (const a of (abast as { caminhao_id: string | null; km: number }[]) ?? []) {
-    considerar(a.caminhao_id, a.km);
+  for (const a of (rAbast.data as { caminhao_id: string | null; km_atual: number }[]) ?? []) {
+    considerar(a.caminhao_id, a.km_atual);
   }
   return mapa;
 }
