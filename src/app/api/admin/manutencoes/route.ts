@@ -101,10 +101,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (vencimento) {
+    // A categoria da conta segue o TIPO da manutenção — assim, quando a
+    // conta for paga, o valor cai na mesma linha do DRE em que a manutenção
+    // à vista cairia (troca de óleo / pneus / manutenção).
+    const categoriaConta =
+      tipo === "troca_oleo" ? "troca_oleo" : tipo === "pneu" ? "pneus" : "manutencao";
     const { error: errConta } = await client.from("contas_a_pagar").insert({
       descricao: `Manutenção — ${descricao}`,
       fornecedor,
-      categoria: "manutencao",
+      categoria: categoriaConta,
       valor: Math.round(valor * 100) / 100,
       vencimento,
       status: "a_pagar",

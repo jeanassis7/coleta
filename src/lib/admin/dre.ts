@@ -96,6 +96,7 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const [
     { data: recebimentos },
     { data: chequesCompensados },
+    { data: chequesRepassados },
     { data: coletas },
     { data: compras },
     { data: abast },
@@ -119,6 +120,19 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
       .eq("status", "compensado")
       .gte("compensado_em", inicio)
       .lte("compensado_em", fim),
+    // Cheque REPASSADO também é receita — no dia do repasse. É o espelho da
+    // regra do gasto (Parte XIII): a conta paga com o cheque conta no dia do
+    // repasse; se a despesa conta, a receita que a pagou conta junto, senão
+    // todo repasse derrubava o resultado pelo valor do cheque. Decisão do
+    // Evaner em 20/08/2026: "usou o cheque pra pagar fornecedor = entrada do
+    // cheque e saída pro fornecedor". Se o cheque voltar, o status vira
+    // 'devolvido' e ele sai daqui sozinho — igual à conta, que volta a dever.
+    supabase
+      .from("cheques")
+      .select("valor")
+      .eq("status", "repassado")
+      .gte("repassado_em", inicio)
+      .lte("repassado_em", fim),
     supabase
       .from("coletas")
       .select("id, valor_pago, pago_pela_sede, motorista_id")
@@ -203,7 +217,8 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const automatico: Record<string, number> = {
     venda_oleo:
       soma(recebimentos as { valor: number }[], (r) => r.valor) +
-      soma(chequesCompensados as { valor: number }[], (c) => c.valor),
+      soma(chequesCompensados as { valor: number }[], (c) => c.valor) +
+      soma(chequesRepassados as { valor: number }[], (c) => c.valor),
     oleo_motorista: soma(doMotorista, (c) => c.valor_pago),
     oleo_sede: soma(
       ((compras as { id: string; valor: number }[]) ?? []).filter(
@@ -223,12 +238,24 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const despesaMotorista = soma(despesas as { valor: number }[], (d) => d.valor);
 
   // ------------------------------------------------------------- montagem
+  // Toda categoria de conta paga que entrou em alguma linha é riscada daqui;
+  // o que sobrar no final vira a linha "Não classificado" — dinheiro que saiu
+  // NUNCA pode simplesmente desaparecer do relatório.
+  const categoriasConsumidas = new Set<string>();
+
   const linhas: LinhaDre[] = PLANO_CONTAS.map((p: LinhaPlano) => {
     let valor = 0;
     let porPessoa: LinhaDre["porPessoa"];
 
     if (p.fonte === "automatico") {
-      valor = automatico[p.chave] ?? 0;
+      // O fato à vista conta pela data dele; o fato que virou conta conta
+      // quando a conta é PAGA — e a conta paga entra AQUI, na mesma linha.
+      // Sem esta soma, nota assinada, manutenção a prazo e coleta paga pela
+      // sede sumiam do DRE ao serem pagas (contavam 0 vezes).
+      valor =
+        (automatico[p.chave] ?? 0) +
+        soma(porCategoria.get(p.chave) ?? [], (c) => c.valor);
+      categoriasConsumidas.add(p.chave);
       if (p.chave === "oleo_motorista") {
         porPessoa = [...oleoPorMotorista.entries()]
           .map(([id, v]) => ({ id, nome: nomePessoa.get(id) ?? "—", valor: v }))
@@ -237,6 +264,7 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     } else {
       const daCategoria = porCategoria.get(p.chave) ?? [];
       valor = soma(daCategoria, (c) => c.valor);
+      categoriasConsumidas.add(p.chave);
       if (p.chave === "custos_viagem") valor += despesaMotorista;
       if (p.pedePessoa) {
         const agrupado = new Map<string, number>();
@@ -263,6 +291,25 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
       vemDe: p.vemDe,
     };
   });
+
+  // Rede de segurança: conta paga com categoria que não é linha de ninguém
+  // (dado antigo, categoria que saiu do plano). Em vez de sumir do resultado
+  // — o que faria o mês parecer melhor do que foi — vira uma linha visível,
+  // pra alguém ver e reclassificar o lançamento.
+  const orfas: ContaPaga[] = [];
+  for (const [cat, lista] of porCategoria) {
+    if (!categoriasConsumidas.has(cat)) orfas.push(...lista);
+  }
+  if (orfas.length > 0) {
+    linhas.push({
+      chave: "nao_classificado",
+      label: "Não classificado (categoria fora do plano)",
+      grupo: "fixa",
+      valor: soma(orfas, (c) => c.valor),
+      vemDe:
+        "contas pagas cuja categoria não existe no plano de contas — reclassifique o lançamento pra sumir daqui",
+    });
+  }
 
   const doGrupo = (g: GrupoDre) =>
     linhas.filter((l) => l.grupo === g).reduce((s, l) => s + l.valor, 0);

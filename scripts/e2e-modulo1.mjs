@@ -206,6 +206,20 @@ async function main() {
   });
   check("abastecimento com nota assinada insere", !e7c, e7c?.message);
 
+  // O trigger 0034 tem que ter criado a conta a pagar da nota — é ele que
+  // garante que a dívida com o posto existe mesmo quando o lançamento veio
+  // do celular (o sync insere direto, sem passar por endpoint).
+  const { data: abastAssinadoRow } = await svc.from("abastecimentos")
+    .select("id").eq("client_id", criados.abastAssinadoClientId).maybeSingle();
+  const { data: contaNota } = await svc.from("contas_a_pagar")
+    .select("id, categoria, valor, status")
+    .eq("origem_tipo", "abastecimento")
+    .eq("origem_id", abastAssinadoRow?.id ?? "00000000-0000-0000-0000-000000000000")
+    .maybeSingle();
+  check("nota assinada gera conta a pagar por trigger (0034)",
+    contaNota?.status === "a_pagar" && contaNota?.categoria === "combustivel" && Number(contaNota?.valor) === 500,
+    contaNota ? `status=${contaNota.status} cat=${contaNota.categoria} valor=${contaNota.valor}` : "conta não nasceu");
+
   // ---- 8. descarga + generated column + idempotência ----
   const { data: desc, error: e8 } = await mot.from("descargas").insert({
     client_id: criados.descargaClientId,
@@ -597,6 +611,11 @@ async function cleanup() {
     await del("descargas", "client_id", criados.descargaClientId);
     await del("despesas", "client_id", criados.despesaClientId);
     await del("abastecimentos", "client_id", criados.abastClientId);
+    // A nota assinada gera conta a pagar por trigger (0034) — a conta
+    // referencia o bot em registrado_por e seguraria o delete do profile.
+    if (criados.motoristaId) {
+      await del("contas_a_pagar", "registrado_por", criados.motoristaId);
+    }
     await del("abastecimentos", "client_id", criados.abastAssinadoClientId);
     await del("coletas", "client_id", criados.coletaSedeClientId);
     await del("coletas", "client_id", criados.coletaClientId);

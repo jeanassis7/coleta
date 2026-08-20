@@ -49,7 +49,8 @@ export const PLANO_CONTAS: LinhaPlano[] = [
     label: "Venda de óleo",
     grupo: "receita",
     fonte: "automatico",
-    vemDe: "recebimentos do período + cheques compensados",
+    vemDe:
+      "recebimentos do período + cheques compensados + cheques repassados (pagaram uma conta — o papel virou dinheiro no dia do repasse)",
   },
 
   // ---------------------------------------------------------- custo do óleo

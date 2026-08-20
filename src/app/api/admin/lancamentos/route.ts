@@ -91,26 +91,24 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  // Nota assinada = dívida com o posto. Nasce junto pra não depender de
-  // alguém lembrar de criar a conta depois.
+  // Nota assinada = dívida com o posto. Quem CRIA a conta é o trigger do
+  // banco (0034) — vale pra qualquer caminho de inserção, inclusive o sync
+  // do celular. Aqui só se ajusta o vencimento, se o Jean informou um.
   if (body.pago_na_hora === false && abast) {
     const venc = String(body.vencimento || "").trim();
-    const { error: eConta } = await client.from("contas_a_pagar").insert({
-      descricao: `Combustível — ${posto_nome}`,
-      fornecedor: posto_nome,
-      categoria: "combustivel",
-      valor: n2(valor),
-      vencimento: /^\d{4}-\d{2}-\d{2}$/.test(venc) ? venc : criado_em,
-      status: "a_pagar",
-      origem_tipo: "abastecimento",
-      origem_id: abast.id,
-      registrado_por: admin.id,
-    });
-    if (eConta) {
-      return NextResponse.json({
-        ok: true,
-        aviso: `abastecimento salvo, mas a conta a pagar não nasceu: ${eConta.message}`,
-      });
+    if (/^\d{4}-\d{2}-\d{2}$/.test(venc)) {
+      const { error: eConta } = await client
+        .from("contas_a_pagar")
+        .update({ vencimento: venc })
+        .eq("origem_tipo", "abastecimento")
+        .eq("origem_id", abast.id)
+        .eq("status", "a_pagar");
+      if (eConta) {
+        return NextResponse.json({
+          ok: true,
+          aviso: `abastecimento salvo, mas não consegui ajustar o vencimento da conta: ${eConta.message}`,
+        });
+      }
     }
   }
 

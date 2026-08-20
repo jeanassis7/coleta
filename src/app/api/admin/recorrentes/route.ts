@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { linhaPlano } from "@/lib/plano-contas";
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
 /** POST: cadastra uma despesa recorrente (aluguel, energia, contador, IPVA). */
@@ -30,11 +31,22 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  // Mesma validação das contas: categoria tem que ser lançável do plano.
+  // Sem isso as contas geradas herdavam categoria órfã ("fixa") e, quando
+  // pagas, caíam no "Não classificado" do DRE.
+  const categoria = String(body.categoria || "");
+  const linha = linhaPlano(categoria);
+  if (!linha || linha.fonte !== "lancamento") {
+    return NextResponse.json(
+      { error: "categoria inválida pra uma despesa recorrente" },
+      { status: 400 }
+    );
+  }
 
   const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("despesas_recorrentes").insert({
     descricao,
-    categoria: String(body.categoria || "fixa"),
+    categoria,
     fornecedor: body.fornecedor ? String(body.fornecedor).trim() : null,
     valor: n2(valor),
     dia_vencimento: dia,

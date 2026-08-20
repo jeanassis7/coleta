@@ -10,6 +10,7 @@ import {
   reaisParaCentavos,
 } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "@/components/admin/Modais";
+import { CATEGORIAS_LANCAVEIS, labelCategoria } from "@/lib/plano-contas";
 import type {
   ContaAPagar,
   DespesaRecorrente,
@@ -18,16 +19,14 @@ import type {
   FormaPagamento,
 } from "@/lib/admin/queries";
 
-const CATEGORIAS: Array<[string, string]> = [
-  ["combustivel", "Combustível"],
-  ["manutencao", "Manutenção"],
-  ["oleo", "Óleo"],
-  ["imposto", "Imposto"],
-  ["fixa", "Fixa"],
-  ["folha", "Folha"],
-  ["outra", "Outra"],
-];
-const CAT_ROTULO = Object.fromEntries(CATEGORIAS);
+// As categorias vêm do PLANO DE CONTAS (as lançáveis) — a mesma lista da
+// tela de Lançamentos. A lista antiga (combustivel/oleo/fixa/folha...) era
+// de antes do plano existir: o servidor recusava TODAS as 7 opções e criar
+// conta pela tela era impossível.
+const CATEGORIAS: Array<[string, string]> = CATEGORIAS_LANCAVEIS.map((l) => [
+  l.chave,
+  l.label,
+]);
 
 const FORMAS: Array<[FormaPagamento, string]> = [
   ["pix", "Pix"],
@@ -484,7 +483,7 @@ function TabelaContas({
                 <td className="py-2 pr-3">{c.descricao}</td>
                 <td className="py-2 pr-3 text-cinza-suave">{c.fornecedor || "—"}</td>
                 <td className="py-2 pr-3 text-cinza-suave text-xs">
-                  {CAT_ROTULO[c.categoria] || c.categoria}
+                  {labelCategoria(c.categoria)}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono font-semibold">
                   {formatBRL(c.valor)}

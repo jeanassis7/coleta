@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { TIPOS_DOC_CAMINHAO, TIPOS_DOC_MOTORISTA } from "@/lib/documentos";
+import { categoriaDeDocumento } from "@/lib/plano-contas";
 
 /**
  * POST: cadastra um documento com vencimento, de caminhão OU de motorista.
@@ -96,7 +97,10 @@ export async function POST(req: NextRequest) {
   if (valor != null && valor > 0) {
     const { error: errConta } = await client.from("contas_a_pagar").insert({
       descricao: `${rotuloDoc(tipo, descricao)} — vence ${vencimento}`,
-      categoria: "documento",
+      // IPVA cai na linha IPVA, seguro na linha Seguro, o resto em Taxas e
+      // Licenças — categoria "documento" não existia no plano e a conta paga
+      // sumia do DRE. (Debate em aberto: uma linha única "Documentos"?)
+      categoria: categoriaDeDocumento(tipo),
       valor: Math.round(valor * 100) / 100,
       vencimento,
       status: "prevista",

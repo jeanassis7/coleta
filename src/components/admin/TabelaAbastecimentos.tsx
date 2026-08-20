@@ -81,7 +81,17 @@ export function TabelaAbastecimentos({
                 {a.motorista_nome}
               </td>
               <td className="py-2 pr-3 font-mono">{a.caminhao_placa}</td>
-              <td className="py-2 pr-3">{a.posto_nome}</td>
+              <td className="py-2 pr-3">
+                {a.posto_nome}
+                {!a.pago_na_hora && (
+                  <span
+                    className="ml-2 inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-medium align-middle"
+                    title="O motorista assinou a nota: o posto cobra da empresa depois. A conta a pagar nasceu sozinha — está em Contas a pagar."
+                  >
+                    assinou a nota
+                  </span>
+                )}
+              </td>
               <td className="py-2 pr-3 text-right font-mono">
                 {a.litros.toLocaleString("pt-BR")} L
               </td>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { TIPOS_DOC_CAMINHAO, TIPOS_DOC_MOTORISTA } from "@/lib/documentos";
+import { categoriaDeDocumento } from "@/lib/plano-contas";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -106,7 +107,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } else if (!pendente && temValor) {
       await client.from("contas_a_pagar").insert({
         descricao: `${rotuloDoc(doc!.tipo, doc!.descricao)} — vence ${doc!.vencimento}`,
-        categoria: "documento",
+        categoria: categoriaDeDocumento(doc!.tipo),
         valor: doc!.valor,
         vencimento: doc!.vencimento,
         status: "prevista",

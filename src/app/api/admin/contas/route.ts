@@ -49,16 +49,28 @@ export async function POST(req: NextRequest) {
   const base = Math.floor((valor * 100) / parcelas) / 100;
   const sobra = n2(valor - base * parcelas);
 
+  // Vencimento dia 29-31: `setMonth` estoura o mês (31/01 + 1 = 3 de março,
+  // fevereiro ficava sem parcela e março com duas). Clampa pro último dia do
+  // mês, igual ao gerador de recorrentes. Datas montadas por parte, sem
+  // passar por Date/UTC — dia-calendário puro.
+  const [anoV, mesV, diaV] = vencimento.split("-").map(Number);
+  const vencimentoParcela = (i: number) => {
+    const totalMeses = mesV - 1 + i;
+    const ano = anoV + Math.floor(totalMeses / 12);
+    const mes = (totalMeses % 12) + 1;
+    const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+    const dia = Math.min(diaV, ultimoDia);
+    return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+  };
+
   const linhas = Array.from({ length: parcelas }, (_, i) => {
-    const d = new Date(`${vencimento}T12:00:00`);
-    d.setMonth(d.getMonth() + i);
     return {
       descricao:
         parcelas > 1 ? `${descricao} (${i + 1}/${parcelas})` : descricao,
       fornecedor: body.fornecedor ? String(body.fornecedor).trim() : null,
       categoria,
       valor: i === parcelas - 1 ? n2(base + sobra) : base,
-      vencimento: d.toISOString().slice(0, 10),
+      vencimento: vencimentoParcela(i),
       status: prevista ? "prevista" : "a_pagar",
       origem_tipo: body.origem_tipo || null,
       origem_id: body.origem_id || null,

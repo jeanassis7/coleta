@@ -67,6 +67,9 @@ async function main() {
 
   await del("acertos", svc.from("acertos").delete().eq("motorista_id", id));
   await del("adiantamentos", svc.from("adiantamentos").delete().eq("motorista_id", id));
+  // Nota assinada e coleta paga pela sede geram conta a pagar (trigger 0034 /
+  // endpoint) com registrado_por = motorista. Sem limpar, o FK segura tudo.
+  await del("contas_a_pagar", svc.from("contas_a_pagar").delete().eq("registrado_por", id));
   if (cargaIds.length > 0) {
     await del("descargas", svc.from("descargas").delete().in("carga_id", cargaIds));
   }
