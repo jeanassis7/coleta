@@ -100,22 +100,24 @@ avião. Ver "Dívidas" abaixo.
 4. **Limpar o resto do dado de teste** — o caminhão AAA-0000 e o perfil
    Teste 1. Ele disse que faz na mão.
 
-### As 7 correções do NEGOCIOv3.md
+### As 7 correções do NEGOCIOv3.md — 4 FEITAS, 3 PENDENTES
 
 Em **19/08/2026** o Evaner conferiu **131 regras de negócio** uma a uma (ver
-`NEGOCIOv3.md`, Parte XII). Saíram 7 divergências entre o que a operação faz e
-o que o software faz:
+`NEGOCIOv3.md`). A Parte XII de lá tem o detalhe de cada uma; aqui fica o
+placar.
 
-1. **Coleta de R$ 0** — o banco recusa (`check valor_pago > 0`), mas óleo
-   doado deve poder ser lançado com zero
-2. **Comissão sobre os litros da DESCARGA**, não das coletas — muda quanto
-   cada motorista recebe
-3. **Receita do DRE por RECEBIMENTO**, não pela data da venda
-4. **Painel de caixa com o patrimônio inteiro** — falta valor do estoque,
-   óleo nos caminhões, cheques em aberto, e um preço de referência editável
-5. **Cheque:** repassar exige despesa, e devolver reverte a conta a pagar
-6. **Alertas:** remover 2 de cheque, mudar "dinheiro parado" pra 15 dias
-7. **O sistema lembra do vale** do acerto na hora de pagar o salário
+| | O quê | |
+|---|---|---|
+| 1 | **Coleta de R$ 0** — migration 0031 (`>= 0`) + `parseValorInteiro` parou de recusar zero | ✅ |
+| 6 | **Alertas** — removidos "cheque bom pra esta semana" e "cheque devolvido"; "dinheiro parado" foi de 7 pra **15 dias** | ✅ |
+| 3 | **Receita do DRE por recebimento** — soma recebimentos não-cheque + cheques compensados. Cheque e recebimento-em-cheque são o MESMO dinheiro; somar os dois dobraria | ✅ |
+| 5 | **Cheque** — repassar virou consequência de pagar algo (a ação solta saiu do endpoint e da tela); devolver reverte a conta a pagar e avisa | ✅ |
+| **7** | **Sistema lembra do vale** do acerto ao pagar o salário | ⬜ |
+| **2** | **Comissão sobre `descargas.litros_estimados`**, não sobre `coletas.litros` — muda quanto cada motorista recebe | ⬜ |
+| **4** | **Painel de caixa com o patrimônio** — falta valor do estoque, óleo nos caminhões, cheques em aberto (carteira + depositado) e o **preço de referência em R$/litro, editável, um só pros dois óleos** | ⬜ |
+
+**Onde retomar:** os três pendentes estão descritos com a regra por trás na
+Parte XII do `NEGOCIOv3.md`. A ordem combinada com o Evaner é 7 → 2 → 4.
 
 ### Aberto sem causa raiz
 
