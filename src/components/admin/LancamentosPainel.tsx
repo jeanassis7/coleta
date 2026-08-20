@@ -11,6 +11,7 @@ import {
   GRUPOS,
   labelCategoria,
   pedePessoa,
+  pessoaOpcional,
   contaVeioDeLancamento,
 } from "@/lib/plano-contas";
 import type { Lancamento, ValePendente } from "@/lib/admin/caixa";
@@ -253,7 +254,11 @@ export function LancamentosPainel({
                 onChange={(e) => setPessoaId(e.target.value)}
                 className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
               >
-                <option value="">Escolha…</option>
+                <option value="">
+                  {pessoaOpcional(categoria)
+                    ? "Empresa toda (guia coletiva)"
+                    : "Escolha…"}
+                </option>
                 {pessoas.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nome}

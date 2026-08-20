@@ -38,6 +38,10 @@ export interface LinhaPlano {
   fonte: "lancamento" | "automatico";
   /** Pede o campo "quem" no lançamento e abre por pessoa no DRE. */
   pedePessoa?: boolean;
+  /** Mostra o campo "quem" mas aceita ficar vazio — pra guia COLETIVA
+   *  (a DAE do INSS/eSocial e o FGTS vêm num boleto só da empresa toda;
+   *  consignado e sindicato dá pra apontar a pessoa). */
+  pessoaOpcional?: boolean;
   /** De onde o número sai, quando é automático — pra explicar na tela. */
   vemDe?: string;
 }
@@ -139,6 +143,9 @@ export const PLANO_CONTAS: LinhaPlano[] = [
     grupo: "fixa",
     fonte: "lancamento",
     pedePessoa: true,
+    // A guia DAE (INSS+IRRF do eSocial) e o FGTS digital vêm num boleto só,
+    // da empresa inteira — não têm UMA pessoa. Consignado e sindicato têm.
+    pessoaOpcional: true,
   },
   { chave: "advogado", label: "Advogado", grupo: "fixa", fonte: "lancamento" },
   { chave: "contabilidade", label: "Contabilidade", grupo: "fixa", fonte: "lancamento" },
@@ -194,6 +201,10 @@ export function labelCategoria(chave: string): string {
 
 export function pedePessoa(chave: string): boolean {
   return !!linhaPlano(chave)?.pedePessoa;
+}
+
+export function pessoaOpcional(chave: string): boolean {
+  return !!linhaPlano(chave)?.pessoaOpcional;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
-import { linhaPlano, pedePessoa } from "@/lib/plano-contas";
+import { linhaPlano, pedePessoa, pessoaOpcional } from "@/lib/plano-contas";
 
 /**
  * POST /api/admin/caixa/lancamentos — lançar o que JÁ SAIU.
@@ -64,7 +64,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (pedePessoa(categoria) && !pessoa_id) {
+  // Guia coletiva (DAE do INSS, FGTS digital) não tem UMA pessoa — nas
+  // categorias marcadas pessoaOpcional o campo pode ficar vazio.
+  if (pedePessoa(categoria) && !pessoaOpcional(categoria) && !pessoa_id) {
     return NextResponse.json(
       { error: `"${linha.label}" precisa dizer de quem é` },
       { status: 400 }

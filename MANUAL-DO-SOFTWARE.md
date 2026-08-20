@@ -280,9 +280,49 @@ Nesta ordem:
 1. **Contas a pagar → Recorrentes → "Gerar contas do mês"**.
 2. Confirmar valores das previstas cujo boleto chegou (**"Confirmar valor"**).
 3. Pagar contas e lançar no extrato o que saiu (**Lançamentos**).
-4. Pagar o mês dos funcionários pela folha do contador, **item a item** em Lançamentos: Salário (com os vales), Comissão (**Remuneração** calcula o valor) e Encargos de funcionário — cada um na sua categoria.
+4. Pagar o mês dos funcionários pela folha do contador, **item a item** em Lançamentos (a receita exata está logo abaixo).
 5. Ler o **DRE** do mês.
 6. A cada 2-3 meses: **inventário** do estoque.
+
+### Como lançar a folha (holerite) do contador — a receita exata
+
+O holerite de cada motorista tem quatro linhas de provento (Horas normais,
+Periculosidade, Comissões, DSR s/ comissões), os descontos (INSS, IRRF,
+sindicato, consignado) e o **Total Líquido** — que é o PIX que sai da conta.
+A regra do sistema é: **cada lançamento = um dinheiro que saiu de verdade.**
+
+**No dia que pagar os PIX** — dois lançamentos por motorista, que juntos
+fecham exatamente com o líquido:
+
+1. **Comissão** (pessoa = o motorista) = **COMISSÕES + DSR S/COMISSÕES** do
+   holerite, somados. (O DSR é o descanso remunerado que a lei manda pagar
+   junto da comissão — anda com ela, então conta como comissão.)
+2. **Salário** (pessoa = o motorista) = **Total Líquido − o valor do item 1**.
+   É aqui que os vales pendentes aparecem pra marcar.
+
+*Exemplo real (folha 07/2026, Lucimar): Comissão = 2.555,56 + 378,60 =
+R$ 2.934,16; Salário = 4.975,10 − 2.934,16 = R$ 2.040,94. Soma = o PIX de
+R$ 4.975,10 — o caixa fecha no centavo.*
+
+**Nos dias em que as guias forem pagas** (mês seguinte) — um lançamento por
+guia, valor cheio do boleto:
+
+3. **Encargos de funcionário** → a guia **DAE/eSocial** (INSS + IRRF) e o
+   **FGTS digital**: são da empresa toda, escolha **"Empresa toda (guia
+   coletiva)"** no campo De quem. A guia do **sindicato** idem.
+4. **Consignado** (desconto de empréstimo repassado ao banco, como o do
+   Luiz): lance como **Salário** com a pessoa dele e observação
+   "consignado" — é parte do salário dele que vai pro banco em vez do bolso.
+
+**Por que assim:** a Comissão aparece **bruta** no Custo do Óleo (é o prêmio
+por litro, e é o número que tem que bater com a linha COMISSÕES que o
+contador imprimiu — que por sua vez veio da tela de Remuneração). Os
+encargos aparecem como o custo de empregar. E cada lançamento bate com um
+débito real do extrato — o caixa nunca desencontra da conta.
+
+**Dica**: cadastre as guias (DAE, FGTS, sindicato) como **despesas
+recorrentes estimadas** — elas aparecem no fluxo de caixa futuro como
+previsão e todo mês é só confirmar o valor do boleto.
 
 ## 4.6 Tarefas pontuais
 
