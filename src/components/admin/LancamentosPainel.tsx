@@ -13,7 +13,7 @@ import {
   pedePessoa,
   contaVeioDeLancamento,
 } from "@/lib/plano-contas";
-import type { Lancamento } from "@/lib/admin/caixa";
+import type { Lancamento, ValePendente } from "@/lib/admin/caixa";
 
 /**
  * Lançar o que já saiu, no ritmo do extrato bancário.
@@ -41,6 +41,7 @@ export function LancamentosPainel({
   contas,
   pessoas,
   cheques,
+  vales,
   filtros,
 }: {
   lancamentos: Lancamento[];
@@ -48,6 +49,8 @@ export function LancamentosPainel({
   pessoas: PessoaOpcao[];
   /** Cheques na carteira — pagar com um deles é o que o repassa. */
   cheques: ChequeOpcao[];
+  /** Vales de acerto ainda não descontados de nenhum salário. */
+  vales: ValePendente[];
   filtros: { inicio: string; fim: string; categoria: string; conta_id: string };
 }) {
   const router = useRouter();
@@ -65,6 +68,8 @@ export function LancamentosPainel({
   // Marcar isto repassa o cheque — e é o único jeito de repassar.
   const [comCheque, setComCheque] = useState(false);
   const [chequeId, setChequeId] = useState("");
+  // Vales que este pagamento está quitando.
+  const [valesMarcados, setValesMarcados] = useState<string[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -91,6 +96,7 @@ export function LancamentosPainel({
           data,
           conta_id: comCheque ? null : contaId,
           cheque_id: comCheque ? chequeId : null,
+          vales_quitados: valesMarcados,
           pessoa_id: pedePessoa(categoria) ? pessoaId : null,
           descricao: descricao.trim() || null,
         }),
@@ -108,6 +114,13 @@ export function LancamentosPainel({
       // O cheque saiu da carteira: não dá pra usar de novo.
       setChequeId("");
       setComCheque(false);
+      setValesMarcados([]);
+      if (json.valesQuitados > 0) {
+        setOk(
+          (a) =>
+            `${a ?? ""} ${json.valesQuitados} vale${json.valesQuitados === 1 ? "" : "s"} quitado${json.valesQuitados === 1 ? "" : "s"}.`
+        );
+      }
       router.refresh();
     } finally {
       setSalvando(false);
@@ -250,6 +263,49 @@ export function LancamentosPainel({
             />
           </div>
         </div>
+
+        {categoria === "salario" && pessoaId && (() => {
+          const doDele = vales.filter((v) => v.motorista_id === pessoaId);
+          if (doDele.length === 0) return null;
+          return (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
+              <p className="text-sm font-medium">
+                Esse pagamento quita algum vale?
+              </p>
+              <p className="text-xs text-cinza-suave">
+                Vales vieram de acertos e ainda não foram descontados de
+                nenhum salário. Valor negativo é o contrário: a empresa deve a
+                ele e o valor <strong>soma</strong> no pagamento.
+              </p>
+              {doDele.map((v) => (
+                <label
+                  key={v.acerto_id}
+                  className="flex items-center gap-2 cursor-pointer text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={valesMarcados.includes(v.acerto_id)}
+                    onChange={(e) =>
+                      setValesMarcados((a) =>
+                        e.target.checked
+                          ? [...a, v.acerto_id]
+                          : a.filter((x) => x !== v.acerto_id)
+                      )
+                    }
+                    className="w-5 h-5 cursor-pointer"
+                  />
+                  <span>
+                    <strong>{formatBRL(v.valor)}</strong> — acerto de{" "}
+                    {formatData(v.corte_em)}
+                    {v.observacao && (
+                      <span className="text-cinza-suave"> · {v.observacao}</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          );
+        })()}
 
         <label className="flex items-center gap-2 cursor-pointer">
           <input

@@ -1,4 +1,8 @@
-import { buscarLancamentos, buscarContasFinanceiras } from "@/lib/admin/caixa";
+import {
+  buscarLancamentos,
+  buscarContasFinanceiras,
+  buscarValesPendentes,
+} from "@/lib/admin/caixa";
 import { buscarMotoristas, buscarCheques } from "@/lib/admin/queries";
 import { LancamentosPainel } from "@/components/admin/LancamentosPainel";
 
@@ -30,19 +34,22 @@ export default async function LancamentosPage({
     conta_id: params.conta_id || "",
   };
 
-  const [lancamentos, contas, perfis, chequesCarteira] = await Promise.all([
-    buscarLancamentos({
-      inicio: filtros.inicio,
-      fim: filtros.fim,
-      categoria: filtros.categoria || undefined,
-      conta_id: filtros.conta_id || undefined,
-    }),
-    buscarContasFinanceiras(),
-    buscarMotoristas(),
-    // Pagar com cheque tira o papel da carteira — é o caminho que substituiu
-    // o antigo botão "Repassar" solto.
-    buscarCheques({ status: ["em_carteira"] }),
-  ]);
+  const [lancamentos, contas, perfis, chequesCarteira, vales] =
+    await Promise.all([
+      buscarLancamentos({
+        inicio: filtros.inicio,
+        fim: filtros.fim,
+        categoria: filtros.categoria || undefined,
+        conta_id: filtros.conta_id || undefined,
+      }),
+      buscarContasFinanceiras(),
+      buscarMotoristas(),
+      // Pagar com cheque tira o papel da carteira — é o caminho que
+      // substituiu o antigo botão "Repassar" solto.
+      buscarCheques({ status: ["em_carteira"] }),
+      // O vale do acerto desconta do salário — o sistema lembra, não o gestor.
+      buscarValesPendentes(),
+    ]);
 
   return (
     <div>
@@ -67,6 +74,7 @@ export default async function LancamentosPage({
           rotulo: `${c.banco} · ${c.emitente} · R$ ${c.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} · bom para ${c.bom_para.slice(8, 10)}/${c.bom_para.slice(5, 7)}`,
           valor: c.valor,
         }))}
+        vales={vales}
         filtros={filtros}
       />
     </div>

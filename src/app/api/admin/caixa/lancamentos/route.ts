@@ -28,6 +28,10 @@ export async function POST(req: NextRequest) {
   // Pagar com cheque da carteira: o dinheiro não sai de conta nenhuma —
   // sai do papel. É o caminho que substitui o antigo botão "Repassar".
   const cheque_id = body.cheque_id ? String(body.cheque_id) : null;
+  // Vales de acerto que este pagamento está quitando (R110-b).
+  const vales_quitados: string[] = Array.isArray(body.vales_quitados)
+    ? body.vales_quitados.map(String)
+    : [];
   const pessoa_id = body.pessoa_id ? String(body.pessoa_id) : null;
   const descricao = String(body.descricao || "").trim();
   const forma_pagamento = body.forma_pagamento
@@ -122,5 +126,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, id: criado.id });
+  // Marca os vales que este pagamento quitou. Só os que ainda estão
+  // pendentes — se dois pagamentos tentarem quitar o mesmo, o segundo mexe
+  // em zero linhas e ninguém desconta duas vezes.
+  let valesQuitados = 0;
+  if (vales_quitados.length > 0) {
+    const { data: mexidos } = await client
+      .from("acertos")
+      .update({ vale_quitado_em: data, vale_quitado_por: criado.id })
+      .in("id", vales_quitados)
+      .is("vale_quitado_em", null)
+      .select("id");
+    valesQuitados = mexidos?.length ?? 0;
+  }
+
+  return NextResponse.json({ ok: true, id: criado.id, valesQuitados });
 }

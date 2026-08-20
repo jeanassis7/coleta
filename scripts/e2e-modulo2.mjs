@@ -1031,6 +1031,59 @@ try {
   await client.query("ROLLBACK");
 }
 
+// ─────────────────────────── 3k. o vale do acerto desconta uma vez só
+console.log("\n🔬 VALE DO ACERTO (rollback no fim)\n");
+await client.query("BEGIN");
+try {
+  const { rows: [perfil] } = await client.query(
+    "select id from public.profiles where role='admin' and ativo limit 1"
+  );
+  const { rows: [mot] } = await client.query(
+    "select id from public.profiles where role='motorista' limit 1"
+  );
+
+  const pendentes = async () => Number((await client.query(
+    `select count(*)::int n from public.acertos
+      where motorista_id = $1 and valor_vale <> 0 and vale_quitado_em is null`,
+    [mot.id]
+  )).rows[0].n);
+
+  const base = await pendentes();
+
+  const { rows: [ac] } = await client.query(
+    `insert into public.acertos (motorista_id,corte_em,valor_devolvido,valor_vale,valor_saldo,registrado_por)
+     values ($1, now(), 0, 800, 0, $2) returning id`,
+    [mot.id, perfil.id]
+  );
+  checar("acerto com vale entra na lista de pendentes", (await pendentes()) - base, 1);
+
+  const { rows: [sal] } = await client.query(
+    `insert into public.contas_a_pagar (descricao,categoria,valor,vencimento,pago_em,status,pessoa_id,registrado_por)
+     values ('Salário E2E','salario',2500,current_date,current_date,'paga',$1,$2) returning id`,
+    [mot.id, perfil.id]
+  );
+
+  const r1 = await client.query(
+    `update public.acertos set vale_quitado_em = current_date, vale_quitado_por = $2
+      where id = $1 and vale_quitado_em is null returning id`,
+    [ac.id, sal.id]
+  );
+  afirmar("o pagamento quita o vale", r1.rowCount === 1);
+  checar("vale sai da lista de pendentes", (await pendentes()) - base, 0);
+
+  // O guarda-chuva: um segundo pagamento não pode descontar o mesmo vale.
+  // Sem o filtro de pendente no update, o motorista seria descontado duas
+  // vezes e só descobriria no contracheque.
+  const r2 = await client.query(
+    `update public.acertos set vale_quitado_em = current_date
+      where id = $1 and vale_quitado_em is null returning id`,
+    [ac.id]
+  );
+  afirmar("um segundo pagamento NÃO desconta o mesmo vale de novo", r2.rowCount === 0);
+} finally {
+  await client.query("ROLLBACK");
+}
+
 // ───────────────────────────────────────────────── 4. rollback devolveu tudo
 const depois = await client.query(
   "select count(*)::int as n from public.movimentos_estoque"

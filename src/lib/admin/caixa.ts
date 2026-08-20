@@ -185,3 +185,55 @@ export async function buscarLancamentos(
     valor: Number(l.valor),
   }));
 }
+
+export interface ValePendente {
+  acerto_id: string;
+  motorista_id: string;
+  valor: number;
+  /** Data do acerto que gerou o vale — é o que situa "de quando é". */
+  corte_em: string;
+  observacao: string | null;
+}
+
+/**
+ * Vales de acerto que ainda não foram descontados de nenhum salário.
+ *
+ * No acerto o saldo se divide em devolvido / vale / saldo. O **vale** desconta
+ * do salário — e antes disso ficava só registrado no acerto, dependendo de o
+ * gestor lembrar na hora de pagar. Lembrar de cabeça é o que o sistema existe
+ * pra evitar (R110-b do NEGOCIOv3.md).
+ *
+ * Valor NEGATIVO é válido e significa o contrário: a empresa deve pro
+ * motorista e vai **somar** no salário dele, em vez de descontar. Vem do
+ * acerto com saldo negativo (migration 0011).
+ */
+export async function buscarValesPendentes(
+  motoristaId?: string
+): Promise<ValePendente[]> {
+  const supabase = await getSupabaseServer();
+  let q = supabase
+    .from("acertos")
+    .select("id, motorista_id, valor_vale, corte_em, observacao")
+    .neq("valor_vale", 0)
+    .is("vale_quitado_em", null)
+    .order("corte_em", { ascending: true });
+  if (motoristaId) q = q.eq("motorista_id", motoristaId);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (
+    (data as {
+      id: string;
+      motorista_id: string;
+      valor_vale: number;
+      corte_em: string;
+      observacao: string | null;
+    }[]) || []
+  ).map((a) => ({
+    acerto_id: a.id,
+    motorista_id: a.motorista_id,
+    valor: Number(a.valor_vale),
+    corte_em: a.corte_em,
+    observacao: a.observacao,
+  }));
+}
