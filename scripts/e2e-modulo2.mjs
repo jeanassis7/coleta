@@ -227,6 +227,15 @@ try {
     "insert into public.compradores (nome, cidade) values ('Fundição E2E','Cascavel') returning id"
   );
 
+  // BASELINE ANTES DA VENDA — regra do projeto: E2E contra produção mede
+  // DELTA, nunca total absoluto. A abertura acima é de ONTEM; qualquer
+  // movimento REAL de hoje (o Evaner testando de verdade) entra DEPOIS dela
+  // e mudaria o total — mas aparece igual nas duas leituras, então o delta
+  // isola só a venda deste teste.
+  const antesQ = await client.query("select * from public.estoque_atual()");
+  const antesFino = antesQ.rows.find((r) => r.tipo_oleo === "fino");
+  const antesGrosso = antesQ.rows.find((r) => r.tipo_oleo === "grosso");
+
   // Vende 5.000 kg: 4.000 de fino + 1.000 de grosso, a R$ 3,50 = R$ 17.500
   const { rows: [venda] } = await client.query(
     `insert into public.vendas
@@ -240,10 +249,20 @@ try {
   const fino = est.rows.find((r) => r.tipo_oleo === "fino");
   const grosso = est.rows.find((r) => r.tipo_oleo === "grosso");
   console.log("   Abre 10.000 fino@2,00 e 2.000 grosso@3,00 → vende 4.000+1.000\n");
-  checar("fino baixou", fino.saldo_kg, 6000);
-  checar("grosso baixou", grosso.saldo_kg, 1000);
-  checar("custo do fino não mudou com a saída", fino.custo_medio_kg, 2.0, 0.0002);
-  checar("custo do grosso não mudou com a saída", grosso.custo_medio_kg, 3.0, 0.0002);
+  checar("fino baixou 4.000 (delta)", antesFino.saldo_kg - fino.saldo_kg, 4000);
+  checar("grosso baixou 1.000 (delta)", antesGrosso.saldo_kg - grosso.saldo_kg, 1000);
+  checar(
+    "custo do fino não mudou com a saída",
+    fino.custo_medio_kg,
+    Number(antesFino.custo_medio_kg),
+    0.0002
+  );
+  checar(
+    "custo do grosso não mudou com a saída",
+    grosso.custo_medio_kg,
+    Number(antesGrosso.custo_medio_kg),
+    0.0002
+  );
 
   const saldoDe = async () => {
     const { rows } = await client.query(
