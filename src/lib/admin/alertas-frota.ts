@@ -155,26 +155,25 @@ export async function alertasFrota(): Promise<Alerta[]> {
   }
 
   // -------------------------------------------------------------------
-  // Cheques
+  // Cheque que passou do "bom para" e continua na carteira
   // -------------------------------------------------------------------
+  // Só este. "Bom para esta semana" e "devolvido sem resolver" foram
+  // removidos a pedido do Evaner (19/08/2026): o primeiro avisa de algo que
+  // ele já sabe pela agenda, e o segundo de algo que ele resolve na hora —
+  // os dois viravam ruído na tela do dashboard.
+  //
+  // ⚠️ O status é 'em_carteira', não 'carteira'. Errar aqui não dá erro
+  // nenhum: só faz o alerta nunca acender.
   try {
-    // ⚠️ O status é 'em_carteira', não 'carteira' (CHECK da migration 0017).
-    // Errar aqui não dá erro nenhum — só faz o alerta nunca acender.
     const { data: cheques } = await supabase
       .from("cheques")
-      .select("id, banco, emitente, valor, bom_para, status")
-      .in("status", ["em_carteira", "devolvido"]);
+      .select("id, banco, emitente, valor, bom_para")
+      .eq("status", "em_carteira");
 
     const hoje = new Date();
     const hojeIso = new Date(
       Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())
     );
-    const emDias = (d: string) =>
-      Math.round(
-        (new Date(`${d.slice(0, 10)}T00:00:00Z`).getTime() -
-          hojeIso.getTime()) /
-          86_400_000
-      );
 
     for (const ch of (cheques as {
       id: string;
@@ -182,58 +181,28 @@ export async function alertasFrota(): Promise<Alerta[]> {
       emitente: string | null;
       valor: number;
       bom_para: string;
-      status: string;
     }[]) ?? []) {
+      const dias = Math.round(
+        (new Date(`${ch.bom_para.slice(0, 10)}T00:00:00Z`).getTime() -
+          hojeIso.getTime()) /
+          86_400_000
+      );
+      if (dias >= 0) continue;
+
       const quem = ch.emitente || ch.banco || "sem emitente";
-      const valor = real(Number(ch.valor));
-
-      if (ch.status === "devolvido") {
-        alertas.push({
-          chave: `cheque_devolvido:${ch.id}`,
-          icone: "❌",
-          severidade: "alta",
-          titulo: "Cheque devolvido sem resolver",
-          texto:
-            `O cheque de ${quem}, ${valor}, voltou e continua em aberto. ` +
-            `Enquanto não for resolvido, esse dinheiro está contado como ` +
-            `recebido e não é. Combine a reapresentação ou outra forma de ` +
-            `pagamento com o comprador e dê baixa na tela de cheques.`,
-          link: { href: "/admin/cheques", label: "Ver cheques" },
-          data: ch.bom_para,
-        });
-        continue;
-      }
-
-      const dias = emDias(ch.bom_para);
-      if (dias < 0) {
-        alertas.push({
-          chave: `cheque_vencido:${ch.id}`,
-          icone: "🏦",
-          severidade: "alta",
-          titulo: "Cheque passou do bom para e continua na carteira",
-          texto:
-            `O cheque de ${quem}, ${valor}, era bom para ${formatData(ch.bom_para)} — ` +
-            `${Math.abs(dias)} dia${Math.abs(dias) === 1 ? "" : "s"} atrás — e ainda ` +
-            `não foi depositado nem repassado. Pode ser só que o depósito não ` +
-            `foi lançado aqui. Se já depositou, marque na tela de cheques.`,
-          link: { href: "/admin/cheques", label: "Ver cheques" },
-          data: ch.bom_para,
-        });
-      } else if (dias <= 7) {
-        alertas.push({
-          chave: `cheque_semana:${ch.id}`,
-          icone: "📅",
-          severidade: "media",
-          titulo: "Cheque bom para esta semana",
-          texto:
-            `O cheque de ${quem}, ${valor}, fica bom para ${formatData(ch.bom_para)}` +
-            (dias === 0 ? " — hoje." : `, daqui a ${dias} dia${dias === 1 ? "" : "s"}.`) +
-            ` Depositar no dia evita esquecer e evita o cheque virar problema ` +
-            `de cobrança depois.`,
-          link: { href: "/admin/cheques", label: "Ver cheques" },
-          data: ch.bom_para,
-        });
-      }
+      alertas.push({
+        chave: `cheque_vencido:${ch.id}`,
+        icone: "🏦",
+        severidade: "alta",
+        titulo: "Cheque passou do bom para e continua na carteira",
+        texto:
+          `O cheque de ${quem}, ${real(Number(ch.valor))}, era bom para ` +
+          `${formatData(ch.bom_para)} — ${Math.abs(dias)} dia${Math.abs(dias) === 1 ? "" : "s"} ` +
+          `atrás — e ainda não foi depositado nem repassado. Pode ser só que o ` +
+          `depósito não foi lançado aqui. Se já depositou, marque na tela de cheques.`,
+        link: { href: "/admin/cheques", label: "Ver cheques" },
+        data: ch.bom_para,
+      });
     }
   } catch {
     // segue

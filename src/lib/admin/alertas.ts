@@ -39,7 +39,10 @@ const DENSIDADE_KG_POR_L = 0.9;
 const DIAS_CARGA_PARADA = 15;
 const DIAS_UMIDADE_PENDENTE = 7;
 const SALDO_ALTO = 3000;
-const DIAS_SEM_GASTO = 7;
+// 15 dias, não 7 (Evaner, 19/08/2026). Com 7 o alerta acendia em toda
+// folga de fim de semana esticada e virava ruído — e alerta ruidoso ensina
+// a ignorar alerta.
+const DIAS_SEM_GASTO = 15;
 const COLETAS_SEM_GPS_NA_SEMANA = 3;
 const PULAR_ACEITE = 10;
 // Alerta de preço só liga com base estatística — senão vira ruído e o

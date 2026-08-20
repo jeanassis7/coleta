@@ -69,10 +69,19 @@ export function parseLitros(raw: string): number | null {
  * Qualquer vírgula/ponto/letra → null (REJEITA, nunca descarta em
  * silêncio — "100,50" virando 10050 foi um bug real de campo).
  */
+/**
+ * Valor de coleta — inteiro, sem centavos (decisão do Evaner: coleta é sempre
+ * valor cheio, 100/125/200).
+ *
+ * **Zero é válido.** Óleo é sempre pago, mas quando é doado lança-se com zero
+ * em vez de inventar um campo ou uma regra especial (R2 do NEGOCIOv3.md). O
+ * `null` aqui significa "não dá pra ler o que foi digitado", não "é zero" —
+ * quem chama usa isso pra desabilitar o botão.
+ */
 export function parseValorInteiro(raw: string): number | null {
   const cleaned = raw.trim();
   if (cleaned === "" || !/^\d+$/.test(cleaned)) return null;
   const n = parseInt(cleaned, 10);
-  if (isNaN(n) || n <= 0) return null;
+  if (isNaN(n) || n < 0) return null;
   return n;
 }
