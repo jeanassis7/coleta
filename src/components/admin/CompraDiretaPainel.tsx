@@ -119,11 +119,14 @@ function FormCompra({
   );
   const [observacao, setObservacao] = useState(editando?.observacao || "");
   const [contaId, setContaId] = useState(editando?.conta_id || "");
-  // Pagou de conta (o comum) ou com CHEQUE da carteira (repasse — R66/R67:
-  // o cheque sai amarrado a uma conta a pagar já paga, igual aos outros
-  // caminhos de repasse). Edição não mexe na forma de pagamento.
-  const [formaCompra, setFormaCompra] = useState<"conta" | "cheque">("conta");
+  // Pagou de conta (o comum), com CHEQUE da carteira (repasse — R66/R67),
+  // ou ficou DEVENDO (a prazo → conta a pagar em aberto). Edição não mexe
+  // na forma de pagamento.
+  const [formaCompra, setFormaCompra] = useState<"conta" | "cheque" | "prazo">(
+    "conta"
+  );
   const [chequeId, setChequeId] = useState("");
+  const [vencimentoPrazo, setVencimentoPrazo] = useState("");
   // Caminhão NÃO estava vazio → em qual carga aberta o óleo foi junto
   const [cargaId, setCargaId] = useState(editando?.carga_id || "");
   const [foto, setFoto] = useState<Blob | null>(null);
@@ -158,6 +161,9 @@ function FormCompra({
     if (!editando && formaCompra === "cheque" && !chequeId) {
       return setErro("Escolha qual cheque da carteira pagou essa compra");
     }
+    if (!editando && formaCompra === "prazo" && !vencimentoPrazo) {
+      return setErro("Quando ficou combinado de pagar? Informe o vencimento");
+    }
     if (!caminhaoVazio && !cargaId) {
       return setErro("O óleo foi junto em qual carga aberta? Escolha a carga");
     }
@@ -191,6 +197,8 @@ function FormCompra({
         litros_certificado: certTipo === "parcial" ? litrosCertNum : null,
         conta_id: formaCompra === "conta" ? contaId : null,
         cheque_id: formaCompra === "cheque" ? chequeId : null,
+        a_prazo: formaCompra === "prazo",
+        ...(formaCompra === "prazo" ? { vencimento: vencimentoPrazo } : {}),
         observacao: observacao.trim() || null,
         ...(foto_path ? { foto_path } : {}),
       };
@@ -260,11 +268,12 @@ function FormCompra({
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium mb-1">Como pagou?</label>
-            <div className="flex rounded-xl overflow-hidden border border-cinza-borda max-w-md">
+            <div className="flex rounded-xl overflow-hidden border border-cinza-borda max-w-lg">
               {(
                 [
                   ["conta", "De uma conta"],
                   ["cheque", "Com cheque da carteira"],
+                  ["prazo", "Fica pra depois"],
                 ] as const
               ).map(([v, r]) => (
                 <button
@@ -280,7 +289,24 @@ function FormCompra({
               ))}
             </div>
           </div>
-          {formaCompra === "conta" ? (
+          {formaCompra === "prazo" ? (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Quando ficou de pagar
+              </label>
+              <input
+                type="date"
+                value={vencimentoPrazo}
+                onChange={(e) => setVencimentoPrazo(e.target.value)}
+                className="w-full max-w-xs px-3 py-2 border border-cinza-borda rounded-xl"
+              />
+              <p className="text-xs text-cinza-suave mt-1">
+                A dívida com o fornecedor nasce em Contas a pagar — o óleo
+                entra no estoque agora, o dinheiro sai quando você pagar a
+                conta (dá pra pagar com cheque também, por lá).
+              </p>
+            </div>
+          ) : formaCompra === "conta" ? (
             <SelectConta
               contas={contas}
               valor={contaId}

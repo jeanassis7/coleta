@@ -50,15 +50,36 @@ export async function POST(req: NextRequest) {
   if (!["kg", "litros"].includes(unidade)) {
     return NextResponse.json({ error: "unidade deve ser kg ou litros" }, { status: 400 });
   }
-  // Dinheiro não aparece nem some (R83): a compra sai de uma CONTA ou do
-  // papel de um CHEQUE da carteira (repasse, R66/R67). Um dos dois, sempre.
+  // Dinheiro não aparece nem some (R83): a compra sai de uma CONTA, do
+  // papel de um CHEQUE da carteira (repasse, R66/R67), ou fica DEVENDO —
+  // "devo R$ 8.000 de óleo ao Zé, pago sexta" vira conta a pagar em aberto.
+  // Antes o a-prazo era impossível de registrar: o óleo entrava no tanque e
+  // a dívida não existia em lugar nenhum.
   const conta_id = body.conta_id ? String(body.conta_id) : null;
   const cheque_id = body.cheque_id ? String(body.cheque_id) : null;
-  if (!conta_id && !cheque_id) {
+  const aPrazo = body.a_prazo === true;
+  if (aPrazo && (conta_id || cheque_id)) {
     return NextResponse.json(
-      { error: "diga de qual conta saiu o dinheiro (ou qual cheque pagou)" },
+      { error: "a prazo não leva conta nem cheque — o pagamento vem depois, por Contas a pagar" },
       { status: 400 }
     );
+  }
+  if (!aPrazo && !conta_id && !cheque_id) {
+    return NextResponse.json(
+      { error: "diga de qual conta saiu o dinheiro, qual cheque pagou — ou marque que ficou pra pagar depois" },
+      { status: 400 }
+    );
+  }
+  let vencimentoPrazo: string | null = null;
+  if (aPrazo) {
+    const venc = String(body.vencimento || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(venc)) {
+      return NextResponse.json(
+        { error: "quando ficou combinado de pagar? informe o vencimento" },
+        { status: 400 }
+      );
+    }
+    vencimentoPrazo = venc;
   }
   // Caminhão não-vazio: em qual carga aberta o óleo foi junto (0045).
   const carga_id = body.carga_id ? String(body.carga_id) : null;
@@ -111,6 +132,30 @@ export async function POST(req: NextRequest) {
     .select()
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // A PRAZO: a dívida com o fornecedor nasce agora, em aberto, amarrada à
+  // compra (origem_id). O DRE conta quando ela for paga (jaTemConta exclui
+  // o fato do automático); o caixa só mexe no pagamento. Apagar a compra
+  // leva a conta aberta junto (DELETE já cobre).
+  if (aPrazo && criada) {
+    const { error: eConta } = await client.from("contas_a_pagar").insert({
+      descricao: `Óleo (compra direta a prazo) — ${fornecedor}`,
+      fornecedor,
+      categoria: "oleo_sede",
+      valor: Math.round(valor * 100) / 100,
+      vencimento: vencimentoPrazo,
+      status: "a_pagar",
+      origem_tipo: "compra_direta",
+      origem_id: criada.id,
+      registrado_por: admin.id,
+    });
+    if (eConta) {
+      // Compra sem dívida em lugar nenhum é o buraco que isto veio fechar —
+      // desfaz a compra e explica.
+      await client.from("compras_diretas").delete().eq("id", criada.id);
+      return NextResponse.json({ error: eConta.message }, { status: 400 });
+    }
+  }
 
   // Pagou com CHEQUE: o papel sai da carteira amarrado a uma conta a pagar
   // JÁ PAGA de origem compra_direta — é o que faz o repasse auditável, o
