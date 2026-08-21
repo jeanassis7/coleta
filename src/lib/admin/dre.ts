@@ -89,6 +89,36 @@ const fimBr = (dia: string) =>
 const soma = <T,>(linhas: T[] | null, campo: (t: T) => unknown): number =>
   (linhas ?? []).reduce((s, l) => s + Number(campo(l) || 0), 0);
 
+export interface DreAnual {
+  ano: number;
+  /** Um Dre por mês, janeiro..dezembro. */
+  meses: Dre[];
+}
+
+/**
+ * O ano inteiro, mês a mês — a grade estilo planilha que o Evaner pediu
+ * (21/08/2026). Roda o MESMO calcularDre 12 vezes de propósito: qualquer
+ * regra nova (anti-dobra, repasse, não-classificado) vale automaticamente
+ * na visão anual, sem segunda implementação pra divergir.
+ * Em blocos de 3 pra não estourar o pool do Supabase (cada mês são ~11
+ * consultas paralelas).
+ */
+export async function calcularDreAnual(ano: number): Promise<DreAnual> {
+  const p = (d: Date) => d.toISOString().slice(0, 10);
+  const janelas = Array.from({ length: 12 }, (_, m) => ({
+    inicio: p(new Date(Date.UTC(ano, m, 1))),
+    fim: p(new Date(Date.UTC(ano, m + 1, 0))),
+  }));
+  const meses: Dre[] = [];
+  for (let i = 0; i < janelas.length; i += 3) {
+    const bloco = await Promise.all(
+      janelas.slice(i, i + 3).map((j) => calcularDre(j.inicio, j.fim))
+    );
+    meses.push(...bloco);
+  }
+  return { ano, meses };
+}
+
 export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const supabase = await getSupabaseServer();
   const de = inicioBr(inicio);

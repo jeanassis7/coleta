@@ -1,10 +1,11 @@
-import { calcularDre } from "@/lib/admin/dre";
+import { calcularDre, calcularDreAnual } from "@/lib/admin/dre";
 import { DrePainel } from "@/components/admin/DrePainel";
+import { DreAnualGrade } from "@/components/admin/DreAnual";
 
 export const dynamic = "force-dynamic";
 
 /** Primeiro e último dia do mês atual em Brasília. */
-function mesAtual(): { inicio: string; fim: string } {
+function mesAtual(): { inicio: string; fim: string; ano: number } {
   const br = new Date(Date.now() - 3 * 60 * 60 * 1000);
   const ano = br.getUTCFullYear();
   const mes = br.getUTCMonth();
@@ -12,6 +13,7 @@ function mesAtual(): { inicio: string; fim: string } {
   return {
     inicio: p(new Date(Date.UTC(ano, mes, 1))),
     fim: p(new Date(Date.UTC(ano, mes + 1, 0))),
+    ano,
   };
 }
 
@@ -24,8 +26,16 @@ export default async function DrePage({
   const padrao = mesAtual();
   const inicio = params.inicio || padrao.inicio;
   const fim = params.fim || padrao.fim;
+  const ano = Number(params.ano) || padrao.ano;
+  // A empresa entrou no sistema em 2026 — anos anteriores só se um dia
+  // houver backfill mais antigo.
+  const anos: number[] = [];
+  for (let a = 2026; a <= padrao.ano; a++) anos.push(a);
 
-  const dre = await calcularDre(inicio, fim);
+  const [anual, dre] = await Promise.all([
+    calcularDreAnual(ano),
+    calcularDre(inicio, fim),
+  ]);
 
   return (
     <div>
@@ -45,6 +55,31 @@ export default async function DrePage({
         .
       </p>
 
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <h2 className="text-lg font-bold">O ano inteiro</h2>
+        {anos.length > 1 && (
+          <form method="get" className="flex items-center gap-2">
+            <select
+              name="ano"
+              defaultValue={String(ano)}
+              className="border border-cinza-borda rounded-lg px-3 py-1.5 text-sm"
+            >
+              {anos.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="btn-primario text-sm py-1.5">
+              Ver
+            </button>
+          </form>
+        )}
+      </div>
+
+      <DreAnualGrade anual={anual} />
+
+      <h2 className="text-lg font-bold mt-10 mb-3">Por período (com detalhe)</h2>
       <form className="card mb-6 flex flex-wrap gap-3 items-end" method="get">
         <div>
           <label className="block text-sm font-medium mb-1">De</label>
@@ -64,6 +99,8 @@ export default async function DrePage({
             className="border border-cinza-borda rounded-lg px-3 py-2"
           />
         </div>
+        {/* preserva o ano escolhido na grade ao filtrar o período */}
+        <input type="hidden" name="ano" value={ano} />
         <button type="submit" className="btn-primario">
           Ver
         </button>

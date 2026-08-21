@@ -1,19 +1,19 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
-import { formatBRL } from "@/lib/format";
+import { formatBRLExato as formatBRL } from "@/lib/format";
 import { GRUPOS, type GrupoDre } from "@/lib/plano-contas";
 import type { Dre, LinhaDre } from "@/lib/admin/dre";
 
 /**
- * O DRE é PAINEL: só leitura, calculado na hora.
+ * O DRE Ã© PAINEL: sÃ³ leitura, calculado na hora.
  *
- * O que muda é o lançamento; aqui nada se edita. Foi assim que o Evaner
- * descreveu e é o desenho certo — relatório que se edita deixa de ser
- * relatório.
+ * O que muda Ã© o lanÃ§amento; aqui nada se edita. Foi assim que o Evaner
+ * descreveu e Ã© o desenho certo â€” relatÃ³rio que se edita deixa de ser
+ * relatÃ³rio.
  *
- * A flecha abre a linha por pessoa (Salários → cada funcionário; Óleo
- * comprado → cada motorista).
+ * A flecha abre a linha por pessoa (SalÃ¡rios â†’ cada funcionÃ¡rio; Ã“leo
+ * comprado â†’ cada motorista).
  */
 export function DrePainel({ dre }: { dre: Dre }) {
   const [aberta, setAberta] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function DrePainel({ dre }: { dre: Dre }) {
       </table>
 
       <div className="mt-6 pt-4 border-t-2 border-preto flex items-baseline justify-between gap-3 flex-wrap">
-        <span className="text-lg font-bold">Resultado do período</span>
+        <span className="text-lg font-bold">Resultado do perÃ­odo</span>
         <span
           className={`text-3xl font-bold ${
             dre.resultado < 0 ? "text-alerta" : "text-verde"
@@ -104,7 +104,7 @@ function GrupoBloco({
         <td colSpan={2} className="pt-5 pb-1">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-xs font-bold text-cinza-suave tracking-wide uppercase">
-              {receita ? titulo : `(−) ${titulo}`}
+              {receita ? titulo : `(âˆ’) ${titulo}`}
             </span>
             <span className="font-semibold">{formatBRL(total)}</span>
           </div>
@@ -128,7 +128,7 @@ function GrupoBloco({
                         aberto ? "rotate-90" : ""
                       }`}
                     >
-                      ▸
+                      â–¸
                     </span>
                     {l.label}
                   </button>

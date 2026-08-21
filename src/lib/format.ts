@@ -15,6 +15,20 @@ export function formatBRL(valor: number): string {
   }).format(valor);
 }
 
+/**
+ * Sempre com 2 casas — relatórios financeiros (DRE, caixa). Pedido do
+ * Evaner (21/08/2026): "R$ 29.909" no meio de valores com vírgula parece
+ * fora de ordem; relatório alinha tudo em centavos.
+ */
+export function formatBRLExato(valor: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(valor);
+}
+
 export function formatLitros(litros: number): string {
   return new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: litros % 1 === 0 ? 0 : 2,
