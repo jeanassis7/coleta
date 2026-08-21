@@ -35,6 +35,10 @@ export function TabelaAbastecimentos({
         setAviso("Erro: " + data.error);
         setTimeout(() => setAviso(null), 8000);
       } else {
+        // O servidor às vezes avisa algo importante junto do ok (ex.: a
+        // conta da nota já estava paga) — descartar isso deixava a rede de
+        // proteção invisível.
+        if (data.aviso) setAviso(data.aviso);
         router.refresh();
       }
     } finally {
@@ -155,6 +159,7 @@ export function TabelaAbastecimentos({
         <ModalEditarAbastecimento
           abastecimento={editando}
           onFechar={() => setEditando(null)}
+          onAviso={setAviso}
         />
       )}
 
@@ -176,9 +181,11 @@ export function TabelaAbastecimentos({
 function ModalEditarAbastecimento({
   abastecimento,
   onFechar,
+  onAviso,
 }: {
   abastecimento: AbastecimentoAdmin;
   onFechar: () => void;
+  onAviso: (aviso: string | null) => void;
 }) {
   const router = useRouter();
   const [posto, setPosto] = useState(abastecimento.posto_nome);
@@ -189,6 +196,7 @@ function ModalEditarAbastecimento({
     reaisParaCentavos(abastecimento.valor)
   );
   const [kmTexto, setKmTexto] = useState(String(abastecimento.km_atual));
+  const [pagoNaHora, setPagoNaHora] = useState(abastecimento.pago_na_hora);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -210,6 +218,7 @@ function ModalEditarAbastecimento({
           litros,
           valor: centavosParaReais(valorCentavos),
           km_atual: Math.round(km),
+          pago_na_hora: pagoNaHora,
         }),
       });
       const data = await res.json();
@@ -217,6 +226,7 @@ function ModalEditarAbastecimento({
         setErro(data.error || "erro");
         return;
       }
+      onAviso(data.aviso || null);
       router.refresh();
       onFechar();
     } finally {
@@ -270,6 +280,40 @@ function ModalEditarAbastecimento({
             onChange={setValorCentavos}
             grande={false}
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Como foi pago</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(true)}
+              className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              Pagou na hora
+            </button>
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(false)}
+              className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                !pagoNaHora
+                  ? "bg-amber-500 text-white border-amber-500"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              Assinou a nota
+            </button>
+          </div>
+          {pagoNaHora !== abastecimento.pago_na_hora && (
+            <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-2">
+              {pagoNaHora
+                ? "Trocando pra PAGOU NA HORA: o gasto volta a descontar do saldo do motorista e a conta a pagar do posto é removida. Se a conta já foi paga, o sistema recusa — apague o pagamento primeiro."
+                : "Trocando pra ASSINOU A NOTA: o gasto sai do saldo do motorista e vira dívida com o posto em Contas a pagar (vencimento dia 1 do mês que vem)."}
+            </p>
+          )}
         </div>
         {erro && (
           <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
