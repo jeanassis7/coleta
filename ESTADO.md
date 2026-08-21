@@ -34,7 +34,11 @@ Material em `dados-historicos/` (fora do git): `MAPA-BACKFILL.md`,
   comprador próprio; datas pré-corte (20/08) não mexem no caixa.
 - **Esperado/conhecido**: estoque foi ZERADO (abertura 0/0 em 21/08, pedido
   do Evaner — o histórico vira só história); a contagem real entra depois
-  pelo INVENTÁRIO na tela de estoque. PROLUMINAS (−308k) e
+  pelo INVENTÁRIO na tela de estoque. **Saldos dos motoristas ZERADOS** por
+  acerto administrativo de fechamento do regime antigo (resíduos
+  documentados na observação: Lucimar −8.620, Lucinei +575, Luiz +413) — o
+  ledger real de cada um começa no próximo adiantamento manual + aceite.
+  PROLUMINAS (−308k) e
   FILTROVILLE (−2,7k) aparecem com "crédito" porque não há controle de kg
   das vendas deles — só recebimentos. VISSOTO −1.536,02 (mistério dos
   7.057,76 de 27/07, "a posteriori" por decisão do Evaner).

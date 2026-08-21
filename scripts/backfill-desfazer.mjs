@@ -30,7 +30,7 @@ const db = new pg.Client({
 await db.connect();
 
 // ordem reversa de dependência (conta paga com cheque → cheque → recebimento...)
-const ORDEM = ["ajustes_estoque", "contas_a_pagar", "adiantamentos", "cheques", "recebimentos", "descargas", "cargas", "vendas", "caminhoes", "compradores"];
+const ORDEM = ["ajustes_estoque", "acertos", "contas_a_pagar", "adiantamentos", "cheques", "recebimentos", "descargas", "cargas", "vendas", "caminhoes", "compradores"];
 
 try {
   await db.query("begin");
