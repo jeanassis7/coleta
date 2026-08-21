@@ -537,7 +537,7 @@ function FormCompra({
 
       <div className="flex gap-2 justify-end">
         <button
-          onClick={onFim}
+          onClick={() => onFim()}
           disabled={salvando}
           className="px-4 py-2 rounded-xl border border-cinza-borda"
         >

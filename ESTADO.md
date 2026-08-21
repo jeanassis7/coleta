@@ -1,8 +1,9 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 19/08/2026, no fim da sessão do módulo financeiro.
-> Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md` e
-> `PLANO-MODULO-2.md`.
+> Atualizado em 21/08/2026 (rodada de edição pós-varredura do dinheiro).
+> Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
+> `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
+> fechado de dinheiro, mapeados em 20/08).
 
 ---
 
@@ -212,6 +213,47 @@ tem a entrada... ou até mesmo em alguns" — pediu-se o resto); régua da
 comissão em litros (atual) ou kg (só rótulo); D3 (gestor); D6 (foto do
 painel). Pra reunião: combinar o número da regularização com cada motorista
 ANTES, e alinhar com o contador se o vale vira linha de desconto na folha.
+
+### A varredura do dinheiro (20/08 à noite) e a rodada de EDIÇÃO (21/08)
+
+O Evaner pediu a varredura completa do sistema fechado de dinheiro antes dos
+lançamentos reais — resultado em **`VARREDURA-DINHEIRO.md`** (47 buracos,
+numerados, com arquivo:linha). Da varredura ele autorizou a **rodada de
+edição** ("o que precisa edição?"), 9 itens implementados em 21/08, um
+commit por item, regra única: **editar/apagar arrasta o dinheiro amarrado**:
+
+1. **Conta financeira** ganhou tela de edição no Caixa (nome, saldo de
+   partida, data de corte), desativar/reativar e apagar (só sem movimento;
+   o guard do DELETE agora cobre cheques e compras diretas).
+2. **Acerto**: "Desfazer" no ÚLTIMO acerto (histórico do motorista). Reabre
+   o ciclo; recusa se não for o mais recente ou se o vale já foi quitado.
+3. **Recebimento**: "apagar" no extrato do comprador, desfazendo tudo.
+   Cheque junto só em carteira/depositado (compensado/repassado recusam).
+4. **Cheque**: "Editar" dados (valor/banco/emitente/bom para — o
+   recebimento par acompanha o valor, tudo-ou-nada) e "corrigir conta" da
+   compensação. Falha na reversão de vales deixou de ser engolida.
+5. **Abastecimento**: troca PAGUEI AGORA ↔ ASSINEI A NOTA no modal de
+   edição — cria/remove a conta amarrada (trigger 0034 é só INSERT); conta
+   paga recusa a troca. Avisos do servidor agora aparecem na tela.
+6. **Pagamento feito** (Lançamentos): "Editar" — data, conta, categoria,
+   pessoa, obs. Valor de fora (apagar e relançar). Conta de origem: só
+   data/conta. Cheque: repassado_em anda junto. Categoria de pagamento que
+   quitou vale só pode continuar salario.
+7. **Venda**: "Editar" campos simples (data, comprador, preço→total, nota,
+   obs). Peso/mistura de fora (estoque). Trocar comprador só sem
+   recebimento vinculado. Apagar venda recebida avisa do crédito.
+8. **Manutenção**: "Editar" na ficha do caminhão (o PATCH já existia sem
+   caller); apagar agora remove a conta EM ABERTO amarrada (paga fica, com
+   aviso) — igual ao abastecimento.
+9. **Compra direta**: editar propaga valor/data/fornecedor pra conta do
+   cheque (e o repassado_em); PATCH recusa dupla fonte de pagamento e
+   fora-do-estoque sem carga; **apagar devolve o cheque pra carteira** e
+   remove a conta espelho.
+
+Verificação: typecheck + build limpos, e2e-modulo1 56/56, e2e-modulo2 tudo
+verde. O resto da varredura (entrada avulsa/aporte, ajuste de caixa,
+pagamento parcial, juros, abatimento de comprador, compra a prazo etc.)
+**aguarda decisão do Evaner** — não mexer sem ordem.
 
 ### Aberto sem causa raiz
 
