@@ -37,6 +37,7 @@ export function CompraDiretaPainel({
 }) {
   const [formAberto, setFormAberto] = useState(false);
   const [editando, setEditando] = useState<CompraDireta | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   return (
     <>
@@ -51,15 +52,22 @@ export function CompraDiretaPainel({
         )}
       </div>
 
+      {aviso && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm mb-4">
+          {aviso}
+        </div>
+      )}
+
       {(formAberto || editando) && (
         <FormCompra
           editando={editando}
           contas={contas}
           cargasAtivas={cargasAtivas}
           chequesCarteira={chequesCarteira}
-          onFim={() => {
+          onFim={(avisoServidor) => {
             setFormAberto(false);
             setEditando(null);
+            if (avisoServidor) setAviso(avisoServidor);
           }}
         />
       )}
@@ -80,7 +88,7 @@ function FormCompra({
   contas: ContaOpcao[];
   cargasAtivas: OpcaoRotulada[];
   chequesCarteira: OpcaoRotulada[];
-  onFim: () => void;
+  onFim: (aviso?: string | null) => void;
 }) {
   const router = useRouter();
   const inputFoto = useRef<HTMLInputElement>(null);
@@ -201,7 +209,7 @@ function FormCompra({
         return;
       }
       router.refresh();
-      onFim();
+      onFim(resposta.aviso || null);
     } finally {
       setSalvando(false);
     }
@@ -557,12 +565,23 @@ function TabelaCompras({
   const router = useRouter();
   const [apagando, setApagando] = useState<CompraDireta | null>(null);
   const [loading, setLoading] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   async function apagar(c: CompraDireta) {
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/compras/${c.id}`, { method: "DELETE" });
-      if (res.ok) router.refresh();
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        // O servidor desfaz o pagamento com cheque junto — e conta o que
+        // desfez. Desfazer calado é pior que não desfazer.
+        if (Array.isArray(json.desfeito) && json.desfeito.length > 0) {
+          setAviso(`Apagada. Junto: ${json.desfeito.join("; ")}.`);
+        }
+        router.refresh();
+      } else {
+        setAviso(json.error || "Falha ao apagar.");
+      }
     } finally {
       setLoading(false);
       setApagando(null);
@@ -581,6 +600,11 @@ function TabelaCompras({
 
   return (
     <div className="card overflow-x-auto">
+      {aviso && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm mb-3">
+          {aviso}
+        </div>
+      )}
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-cinza-suave border-b border-cinza-borda">
@@ -672,7 +696,7 @@ function TabelaCompras({
       {apagando && (
         <ModalConfirmar
           titulo="Apagar essa compra?"
-          descricao={`${apagando.fornecedor} · ${formatBRL(apagando.valor)} · ${apagando.peso_kg.toLocaleString("pt-BR")} kg. O comprovante também será apagado.`}
+          descricao={`${apagando.fornecedor} · ${formatBRL(apagando.valor)} · ${apagando.peso_kg.toLocaleString("pt-BR")} kg. O óleo sai do estoque e o comprovante é apagado. Se foi paga com cheque, o cheque volta pra carteira e o pagamento é desfeito junto.`}
           confirmarLabel="Apagar"
           perigo
           carregando={loading}
