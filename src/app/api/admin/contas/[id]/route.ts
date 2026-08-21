@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { linhaPlano, pedePessoa, pessoaOpcional } from "@/lib/plano-contas";
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
 /**
- * PATCH — três ações:
+ * PATCH — quatro ações:
  *
  *  pagar     → marca como paga. Escolhendo cheque, o papel sai da carteira
  *              e vira 'repassado' com esta conta como destino. É o elo entre
  *              o cheque que entrou numa venda e a conta que ele quita.
  *  confirmar → previsão vira conta real (o boleto chegou e o valor é outro).
  *  cancelar  → some das contas sem apagar o histórico.
+ *  editar_pagamento → corrige um pagamento JÁ FEITO: data, conta, categoria,
+ *              pessoa e observação. O VALOR fica de fora de propósito —
+ *              valor errado se conserta apagando e relançando, porque mexe
+ *              no caixa e merece o rito completo.
  */
 export async function PATCH(
   req: NextRequest,
@@ -77,6 +82,147 @@ export async function PATCH(
         { error: "essa conta já foi paga ou cancelada — recarregue a tela" },
         { status: 409 }
       );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // Corrigir um pagamento já feito. Categoria errada no DRE é o tipo de
+  // erro que só aparece olhando o relatório no fim do mês — obrigar a
+  // apagar e relançar por causa disso é convite pra deixar errado.
+  if (acao === "editar_pagamento") {
+    const { data: conta, error: eConta } = await client
+      .from("contas_a_pagar")
+      .select("id, status, origem_tipo, cheque_id, categoria, pessoa_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (eConta) return NextResponse.json({ error: eConta.message }, { status: 400 });
+    if (!conta) return NextResponse.json({ error: "conta não encontrada" }, { status: 404 });
+    if (conta.status !== "paga") {
+      return NextResponse.json(
+        { error: "essa conta ainda não foi paga — use 'editar' (valor/vencimento) enquanto está em aberto" },
+        { status: 409 }
+      );
+    }
+
+    const updates: Record<string, unknown> = {};
+
+    if (body.pago_em !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.pago_em))) {
+        return NextResponse.json({ error: "data de pagamento inválida" }, { status: 400 });
+      }
+      updates.pago_em = body.pago_em;
+    }
+
+    if (body.conta_id !== undefined) {
+      if (conta.cheque_id) {
+        return NextResponse.json(
+          { error: "esse pagamento foi com CHEQUE — o dinheiro saiu do papel, não de conta; não há conta pra trocar" },
+          { status: 400 }
+        );
+      }
+      if (!body.conta_id) {
+        return NextResponse.json({ error: "diga de qual conta saiu o dinheiro" }, { status: 400 });
+      }
+      updates.conta_id = String(body.conta_id);
+    }
+
+    // Categoria/pessoa/observação: só em lançamento manual. Conta que veio
+    // de um fato (abastecimento, manutenção, coleta, documento, compra)
+    // tem categoria derivada da origem — mexer aqui dessincronizaria.
+    if (
+      (body.categoria !== undefined ||
+        body.pessoa_id !== undefined ||
+        body.descricao !== undefined) &&
+      conta.origem_tipo
+    ) {
+      return NextResponse.json(
+        { error: "essa conta veio de um lançamento operacional — categoria e descrição são da origem; aqui só a data e a conta do pagamento podem mudar" },
+        { status: 400 }
+      );
+    }
+
+    if (body.categoria !== undefined) {
+      const linha = linhaPlano(String(body.categoria));
+      if (!linha || linha.fonte !== "lancamento") {
+        return NextResponse.json({ error: "categoria inválida" }, { status: 400 });
+      }
+      // Se esse pagamento descontou vales, ele precisa CONTINUAR sendo
+      // Salário — vale só desconta em salário. Trocar a categoria deixaria
+      // vale quitado por um pagamento de outra coisa.
+      if (String(body.categoria) !== conta.categoria) {
+        const { count } = await client
+          .from("acertos")
+          .select("id", { count: "exact", head: true })
+          .eq("vale_quitado_por", id);
+        if ((count ?? 0) > 0 && String(body.categoria) !== "salario") {
+          return NextResponse.json(
+            { error: "esse pagamento descontou vale(s) de acerto — pra trocar a categoria, apague o pagamento (os vales voltam a pendentes) e relance" },
+            { status: 409 }
+          );
+        }
+      }
+      updates.categoria = String(body.categoria);
+    }
+
+    const categoriaFinal = (updates.categoria as string) ?? conta.categoria;
+    if (body.pessoa_id !== undefined) {
+      updates.pessoa_id = body.pessoa_id ? String(body.pessoa_id) : null;
+    }
+    const pessoaFinal =
+      body.pessoa_id !== undefined
+        ? body.pessoa_id
+          ? String(body.pessoa_id)
+          : null
+        : conta.pessoa_id;
+    if (pedePessoa(categoriaFinal) && !pessoaOpcional(categoriaFinal) && !pessoaFinal) {
+      return NextResponse.json(
+        { error: "essa categoria pede a pessoa (o QUEM) — escolha de quem é" },
+        { status: 400 }
+      );
+    }
+    if (!pedePessoa(categoriaFinal)) updates.pessoa_id = null;
+
+    if (body.descricao !== undefined) {
+      // descricao é NOT NULL — vazio cai no rótulo da categoria, igual ao
+      // POST de lançamentos.
+      updates.descricao =
+        (body.descricao ? String(body.descricao).trim() : "") ||
+        (linhaPlano(categoriaFinal)?.label ?? categoriaFinal);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
+    }
+
+    const { data: mexeu, error } = await client
+      .from("contas_a_pagar")
+      .update(updates)
+      .eq("id", id)
+      .eq("status", "paga")
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!mexeu?.length) {
+      return NextResponse.json(
+        { error: "essa conta já mudou de situação — recarregue a tela" },
+        { status: 409 }
+      );
+    }
+
+    // Pagamento com cheque tem DOIS relógios amarrados: a despesa conta
+    // pelo pago_em da conta e a receita do cheque pelo repassado_em. Mudou
+    // a data, os dois andam juntos — senão o DRE racharia no meio.
+    if (updates.pago_em !== undefined && conta.cheque_id) {
+      const { error: eCh } = await client
+        .from("cheques")
+        .update({ repassado_em: updates.pago_em })
+        .eq("id", conta.cheque_id)
+        .eq("status", "repassado");
+      if (eCh) {
+        return NextResponse.json({
+          ok: true,
+          aviso: `a data do repasse do cheque não acompanhou (${eCh.message}) — confira na tela de Cheques`,
+        });
+      }
     }
     return NextResponse.json({ ok: true });
   }

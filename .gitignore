@@ -41,3 +41,6 @@ public/swe-worker-*.js
 # Artefatos gerados localmente
 tutorial-coleta.pdf
 manual.txt
+
+# Planilhas reais da empresa (backfill 2026) — dado sensível, não vai pro GitHub
+/dados-historicos/

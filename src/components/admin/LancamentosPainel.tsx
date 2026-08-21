@@ -76,6 +76,62 @@ export function LancamentosPainel({
   const [ok, setOk] = useState<string | null>(null);
   const [apagando, setApagando] = useState<Lancamento | null>(null);
 
+  // Editar um pagamento já feito: data, conta, categoria, pessoa, obs.
+  // Valor fica de fora — valor errado é apagar e relançar.
+  const [editando, setEditando] = useState<Lancamento | null>(null);
+  const [edPagoEm, setEdPagoEm] = useState("");
+  const [edContaId, setEdContaId] = useState("");
+  const [edCategoria, setEdCategoria] = useState("");
+  const [edPessoaId, setEdPessoaId] = useState("");
+  const [edDescricao, setEdDescricao] = useState("");
+
+  function abrirEdicao(l: Lancamento) {
+    setErro(null);
+    setOk(null);
+    setEditando(l);
+    setEdPagoEm(l.pago_em);
+    setEdContaId(l.conta_id ?? "");
+    setEdCategoria(l.categoria);
+    setEdPessoaId(l.pessoa_id ?? "");
+    setEdDescricao(l.observacao || l.descricao || "");
+  }
+
+  async function salvarEdicao() {
+    if (!editando) return;
+    const daOrigem = contaVeioDeLancamento(editando.origem_tipo);
+    const comCheque = editando.forma_pagamento === "cheque";
+    setSalvando(true);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/admin/contas/${editando.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acao: "editar_pagamento",
+          pago_em: edPagoEm,
+          ...(comCheque ? {} : { conta_id: edContaId }),
+          ...(daOrigem
+            ? {}
+            : {
+                categoria: edCategoria,
+                pessoa_id: pedePessoa(edCategoria) ? edPessoaId || null : null,
+                descricao: edDescricao.trim() || null,
+              }),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || "Falha ao salvar.");
+        return;
+      }
+      if (json.aviso) setOk(json.aviso);
+      setEditando(null);
+      router.refresh();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   const nomePessoa = new Map(pessoas.map((p) => [p.id, p.nome]));
   const nomeConta = new Map(contas.map((c) => [c.id, c.nome]));
   const total = lancamentos.reduce((s, l) => s + l.valor, 0);
@@ -462,14 +518,22 @@ export function LancamentosPainel({
                         {formatBRL(l.valor)}
                       </td>
                       <td className="py-2 pr-3">
-                        {!daOrigem && (
+                        <div className="flex gap-2">
                           <button
-                            onClick={() => setApagando(l)}
-                            className="text-alerta hover:underline"
+                            onClick={() => abrirEdicao(l)}
+                            className="text-verde hover:underline"
                           >
-                            Apagar
+                            Editar
                           </button>
-                        )}
+                          {!daOrigem && (
+                            <button
+                              onClick={() => setApagando(l)}
+                              className="text-alerta hover:underline"
+                            >
+                              Apagar
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -491,6 +555,146 @@ export function LancamentosPainel({
           onFechar={() => setApagando(null)}
         />
       )}
+
+      {editando && (() => {
+        const daOrigem = contaVeioDeLancamento(editando.origem_tipo);
+        const comCheque = editando.forma_pagamento === "cheque";
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+              <div>
+                <h2 className="text-lg font-bold">Editar pagamento</h2>
+                <p className="text-sm text-cinza-suave mt-1">
+                  {labelCategoria(editando.categoria)} ·{" "}
+                  {formatBRL(editando.valor)}. O valor não se edita — valor
+                  errado é apagar e relançar, porque mexe no caixa.
+                </p>
+                {daOrigem && (
+                  <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-2">
+                    Esse pagamento veio de um lançamento operacional
+                    (abastecimento, manutenção, coleta, documento). Categoria e
+                    descrição são da origem — aqui só a data e a conta.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Pago em
+                  </label>
+                  <input
+                    type="date"
+                    value={edPagoEm}
+                    onChange={(e) => setEdPagoEm(e.target.value)}
+                    className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                  />
+                  {comCheque && (
+                    <p className="text-xs text-cinza-suave mt-1">
+                      Pagamento com cheque: a data do repasse acompanha.
+                    </p>
+                  )}
+                </div>
+                {!comCheque && (
+                  <SelectConta
+                    contas={contas}
+                    valor={edContaId}
+                    onChange={setEdContaId}
+                    label="Saiu de"
+                  />
+                )}
+              </div>
+
+              {!daOrigem && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      O que foi
+                    </label>
+                    <select
+                      value={edCategoria}
+                      onChange={(e) => setEdCategoria(e.target.value)}
+                      className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                    >
+                      {GRUPOS.map((g) => {
+                        const doGrupo = CATEGORIAS_LANCAVEIS.filter(
+                          (c) => c.grupo === g.chave
+                        );
+                        if (doGrupo.length === 0) return null;
+                        return (
+                          <optgroup key={g.chave} label={g.label}>
+                            {doGrupo.map((c) => (
+                              <option key={c.chave} value={c.chave}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  {pedePessoa(edCategoria) && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        De quem
+                      </label>
+                      <select
+                        value={edPessoaId}
+                        onChange={(e) => setEdPessoaId(e.target.value)}
+                        className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                      >
+                        <option value="">
+                          {pessoaOpcional(edCategoria)
+                            ? "Empresa toda (guia coletiva)"
+                            : "Escolha…"}
+                        </option>
+                        {pessoas.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Observação
+                    </label>
+                    <input
+                      value={edDescricao}
+                      onChange={(e) => setEdDescricao(e.target.value)}
+                      className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                    />
+                  </div>
+                </>
+              )}
+
+              {erro && (
+                <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                  {erro}
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setEditando(null)}
+                  disabled={salvando}
+                  className="px-4 py-2 rounded-xl border border-cinza-borda"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={salvarEdicao}
+                  disabled={salvando}
+                  className="btn-primario disabled:opacity-40"
+                >
+                  {salvando ? "Salvando…" : "Salvar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
