@@ -187,7 +187,7 @@ export async function buscarMotoristas() {
   const { data, error } = await supabase
     .from("profiles")
     .select(
-      "id, nome, role, ativo, exige_foto, senha_visivel, features, mostra_saldo_app, criado_em"
+      "id, nome, role, ativo, exige_foto, senha_visivel, features, mostra_saldo_app, protegido, criado_em"
     )
     .order("nome");
   if (error) throw error;

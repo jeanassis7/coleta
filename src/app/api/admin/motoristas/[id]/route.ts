@@ -43,6 +43,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const updates: Record<string, unknown> = {};
   if (typeof body.ativo === "boolean") updates.ativo = body.ativo;
   if (typeof body.exige_foto === "boolean") updates.exige_foto = body.exige_foto;
+  // Blindagem contra apagar (0049). Ligar/desligar é livre pro admin — a
+  // trava de verdade é no DELETE, que recusa perfil protegido.
+  if (typeof body.protegido === "boolean") updates.protegido = body.protegido;
   // O saldo no app é UMA experiência só: a tela de aceite de adiantamento
   // (gated por features.saldo) e o card "Seu dinheiro" (mostra_saldo_app).
   // Ligar só metade deixaria o motorista com card sem tela de aceite —
@@ -137,7 +140,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   // A checagem é no servidor porque esconder o botão não impede a chamada.
   const { data: alvo } = await adminClient
     .from("profiles")
-    .select("role")
+    .select("role, protegido, nome")
     .eq("id", id)
     .maybeSingle();
   if (alvo?.role === "admin") {
@@ -145,6 +148,17 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       {
         error:
           "Admin não pode ser deletado pelo painel. Mude o papel pra motorista antes, se for isso mesmo.",
+      },
+      { status: 400 }
+    );
+  }
+  // Perfil PROTEGIDO (0049): motorista de verdade nunca se apaga — nem no
+  // modo forçado. O erase total é só pra perfil simulado, que nasce
+  // desprotegido. Decisão do Evaner, 21/08/2026.
+  if (alvo?.protegido) {
+    return NextResponse.json(
+      {
+        error: `${alvo.nome} é um perfil PROTEGIDO — motorista de verdade se desativa, não se apaga. Se for mesmo pra apagar (não é), desmarque a proteção no cadastro primeiro.`,
       },
       { status: 400 }
     );
@@ -194,7 +208,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
   if (forcado && resumo.length > 0) {
     // Contas a pagar amarradas ao que é dele (nota assinada por trigger,
-    // coleta paga pela sede) ou registradas por ele — morrem primeiro.
+    // coleta paga pela sede, despesa faturada) ou registradas por ele —
+    // morrem primeiro.
+    const despesaIds = (despesasDele ?? []).map((d) => d.id);
     const orConta = [
       `registrado_por.eq.${id}`,
       abastIds.length
@@ -202,6 +218,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
         : null,
       coletaIds.length
         ? `and(origem_tipo.eq.coleta,origem_id.in.(${coletaIds.join(",")}))`
+        : null,
+      despesaIds.length
+        ? `and(origem_tipo.eq.despesa,origem_id.in.(${despesaIds.join(",")}))`
         : null,
     ].filter(Boolean) as string[];
     const { error: eContas } = await adminClient
@@ -219,6 +238,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       () => adminClient.from("cargas").delete().eq("motorista_id", id),
       () => adminClient.from("acertos").delete().eq("motorista_id", id),
       () => adminClient.from("adiantamentos").delete().eq("motorista_id", id),
+      // 0047: devolução de troco referencia o perfil — sem apagar, a FK trava.
+      () => adminClient.from("devolucoes_motorista").delete().eq("motorista_id", id),
     ];
     for (const passo of passos) {
       const { error } = await passo();

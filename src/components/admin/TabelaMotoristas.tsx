@@ -15,6 +15,8 @@ interface Motorista {
   exige_foto: boolean;
   senha_visivel: string | null;
   mostra_saldo_app?: boolean | null;
+  /** Blindado contra apagar (0049) — motorista de verdade nunca se apaga. */
+  protegido?: boolean;
   criado_em: string;
 }
 
@@ -162,6 +164,12 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
             >
               Saldo no app
             </th>
+            <th
+              className="py-2 pr-3"
+              title="Perfil protegido não pode ser apagado pelo painel, nem no modo forçado. Pros de verdade; perfil de teste fica desmarcado e o apagar-tudo funciona."
+            >
+              🔒
+            </th>
             <th className="py-2 pr-3">Ações</th>
           </tr>
         </thead>
@@ -284,6 +292,18 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   disabled={loadingId === m.id || m.role !== "motorista"}
                   onChange={(e) =>
                     atualizar(m.id, { mostra_saldo_app: e.target.checked })
+                  }
+                  className="w-5 h-5 cursor-pointer"
+                />
+              </td>
+              <td className="py-3 pr-3">
+                <input
+                  type="checkbox"
+                  checked={!!m.protegido}
+                  disabled={loadingId === m.id || m.role === "admin"}
+                  title="Protegido: não pode ser apagado, nem forçado."
+                  onChange={(e) =>
+                    atualizar(m.id, { protegido: e.target.checked })
                   }
                   className="w-5 h-5 cursor-pointer"
                 />
