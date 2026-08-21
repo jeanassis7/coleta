@@ -44,6 +44,15 @@ Material em `dados-historicos/` (fora do git): `MAPA-BACKFILL.md`,
   7.057,76 de 27/07, "a posteriori" por decisão do Evaner).
 - **Caixa pós-backfill**: BB 78.952,71 · Dinheiro em mãos 315,00 (+ Conta
   teste 10.000 que o Evaner vai apagar). Conferir com o banco real.
+- **FOTO SEMANAL DO CAIXA (0051, 21/08 à noite)**: toda segunda 06:00 BR o
+  pg_cron do banco fotografa o giro (mesmas linhas do card Patrimônio) em
+  `fotos_caixa` — imutável, testemunha do sistema fechado. Primeira foto:
+  31/08 (guard no cron). Tabela na tela do Caixa, embaixo de tudo. O card
+  Patrimônio ganhou "A receber dos compradores" e "(−) Contas a pagar em
+  aberto". **Preço de referência FIXO em R$ 2,80 no código** (decisão do
+  Evaner: menos burlável) — mudar = editar `PRECO_REFERENCIA_LITRO`
+  (caixa.ts) E `tirar_foto_caixa` (0051), nos dois lugares; o "mudar" da
+  tela foi removido e a config `preco_referencia_litro` ficou inerte.
 - **Achados abertos** (anotados na conferência): Dívidas PF 12.363,24
   planilha×resumo; VISSOTO 7.057,76; devolução órfã 1.691,35 (jan/26,
   provável cheque de dez/25).

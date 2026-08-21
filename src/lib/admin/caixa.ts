@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import { buscarMotoristasComSaldo } from "@/lib/admin/queries";
 
 /**
@@ -199,9 +200,18 @@ export async function buscarDinheiroNaMao(): Promise<DinheiroNaMao[]> {
 // PATRIMÔNIO (R87) — o caixa mostra o patrimônio INTEIRO, não só as contas
 // ============================================================================
 
+/**
+ * Preço de referência do óleo, R$/litro — FIXO NO CÓDIGO por decisão do
+ * Evaner (21/08/2026): "se eu quiser mudar eu mudo pelo código, muito melhor
+ * e menos burlável". Mudar = editar AQUI e na função tirar_foto_caixa
+ * (migration 0051), nos DOIS lugares. As fotos antigas guardam o preço do
+ * dia delas — mudança futura não reescreve o passado.
+ */
+export const PRECO_REFERENCIA_LITRO = 2.8;
+
 export interface Patrimonio {
-  /** R$/litro editável — conta de cabeça, um valor só pra fino e grosso. */
-  precoReferenciaLitro: number | null;
+  /** R$/litro fixo no código — um valor só pra fino e grosso. */
+  precoReferenciaLitro: number;
   /** kg em estoque (fino + grosso) e o equivalente em litros. */
   estoqueKg: number;
   estoqueLitros: number;
@@ -214,25 +224,27 @@ export interface Patrimonio {
    *  não estão na mão de ninguém. Sem esta linha o patrimônio subestimava
    *  exatamente esse valor enquanto o motorista não abria o app. */
   adiantamentosPendentes: number;
-  /** As duas linhas de óleo valoradas pelo preço de referência (0 sem preço). */
+  /** As duas linhas de óleo valoradas pelo preço de referência. */
   valorEstoque: number;
   valorOleoCaminhoes: number;
+  /** Venda entregue que ainda não virou dinheiro nem cheque (só saldo
+   *  POSITIVO dos compradores — crédito de comprador não é ativo). */
+  aReceberCompradores: number;
+  /** Dívida certa (status a_pagar; prevista fica fora — é palpite).
+   *  Entra NEGATIVA no total: giro honesto desconta o que já se deve. */
+  contasAPagarAbertas: number;
 }
 
 export async function buscarPatrimonio(): Promise<Patrimonio> {
   const supabase = await getSupabaseServer();
   const [
-    { data: cfg },
     { data: estoque, error: eEstoque },
     { data: coletasAbertas, error: eColetas },
     { data: cheques, error: eCheques },
     { data: adPendentes, error: eAd },
+    { data: saldoCompradores, error: eComp },
+    { data: contasAbertas, error: eContas },
   ] = await Promise.all([
-    supabase
-      .from("configuracoes")
-      .select("valor")
-      .eq("chave", "preco_referencia_litro")
-      .maybeSingle(),
     supabase.rpc("estoque_atual"),
     // Óleo nos caminhões: coletas de cargas AINDA ATIVAS (o join limita o
     // volume — nunca passa de umas centenas de linhas, é 1 carga por
@@ -249,13 +261,17 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
       .in("status", ["em_carteira", "depositado"]),
     // Enviado e não aceito: saiu do caixa, não chegou na mão — está "no ar".
     supabase.from("adiantamentos").select("valor").eq("status", "pendente"),
+    supabase.rpc("saldo_compradores"),
+    supabase.from("contas_a_pagar").select("valor").eq("status", "a_pagar"),
   ]);
   if (eEstoque) throw eEstoque;
   if (eColetas) throw eColetas;
   if (eCheques) throw eCheques;
   if (eAd) throw eAd;
+  if (eComp) throw eComp;
+  if (eContas) throw eContas;
 
-  const preco = cfg?.valor != null ? Number(cfg.valor) : null;
+  const preco = PRECO_REFERENCIA_LITRO;
   const estoqueKg = ((estoque as { saldo_kg: number }[]) ?? []).reduce(
     (s, l) => s + Number(l.saldo_kg || 0),
     0
@@ -273,6 +289,13 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     (s, a) => s + Number(a.valor || 0),
     0
   );
+  const aReceberCompradores = ((saldoCompradores as { saldo: number }[]) ?? [])
+    .filter((c) => Number(c.saldo) > 0)
+    .reduce((s, c) => s + Number(c.saldo), 0);
+  const contasAPagarAbertas = ((contasAbertas as { valor: number }[]) ?? []).reduce(
+    (s, c) => s + Number(c.valor || 0),
+    0
+  );
 
   const n2 = (v: number) => Math.round(v * 100) / 100;
   return {
@@ -282,9 +305,37 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     oleoCaminhoesLitros: n2(oleoCaminhoesLitros),
     chequesAbertos: n2(chequesAbertos),
     adiantamentosPendentes: n2(adiantamentosPendentes),
-    valorEstoque: preco ? n2(estoqueLitros * preco) : 0,
-    valorOleoCaminhoes: preco ? n2(oleoCaminhoesLitros * preco) : 0,
+    valorEstoque: n2(estoqueLitros * preco),
+    valorOleoCaminhoes: n2(oleoCaminhoesLitros * preco),
+    aReceberCompradores: n2(aReceberCompradores),
+    contasAPagarAbertas: n2(contasAPagarAbertas),
   };
+}
+
+export interface FotoCaixaLinha {
+  data: string;
+  chave: string;
+  label: string;
+  ordem: number;
+  valor: number;
+}
+
+/**
+ * As fotos semanais do caixa (0051) — toda segunda o banco fotografa o giro
+ * e guarda aqui. Cresce pra sempre: selectTudo, nunca truncar.
+ */
+export async function buscarFotosCaixa(): Promise<FotoCaixaLinha[]> {
+  const supabase = await getSupabaseServer();
+  const rows = await selectTudo<FotoCaixaLinha>((de, ate) =>
+    supabase
+      .from("fotos_caixa")
+      .select("data, chave, label, ordem, valor")
+      .order("data")
+      .order("ordem")
+      .order("chave")
+      .range(de, ate)
+  );
+  return rows.map((f) => ({ ...f, valor: Number(f.valor) }));
 }
 
 export interface Lancamento {

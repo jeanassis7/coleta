@@ -5,13 +5,15 @@ import {
   buscarTransferencias,
   buscarPatrimonio,
   buscarMovimentosAvulsos,
+  buscarFotosCaixa,
 } from "@/lib/admin/caixa";
 import { CaixaPainel } from "@/components/admin/CaixaPainel";
+import { FotosCaixaTabela } from "@/components/admin/FotosCaixa";
 
 export const dynamic = "force-dynamic";
 
 export default async function CaixaPage() {
-  const [contas, saldos, naMao, transferencias, patrimonio, avulsos] =
+  const [contas, saldos, naMao, transferencias, patrimonio, avulsos, fotos] =
     await Promise.all([
       // Inativas incluídas: a tela precisa delas pra oferecer "reativar".
       // Os dropdowns de lançamento continuam só com as ativas (filtro no painel).
@@ -21,6 +23,7 @@ export default async function CaixaPage() {
       buscarTransferencias(50),
       buscarPatrimonio(),
       buscarMovimentosAvulsos(50),
+      buscarFotosCaixa(),
     ]);
 
   return (
@@ -61,6 +64,10 @@ export default async function CaixaPage() {
           patrimonio={patrimonio}
         />
       )}
+
+      <div className="mt-6">
+        <FotosCaixaTabela fotos={fotos} />
+      </div>
     </div>
   );
 }
