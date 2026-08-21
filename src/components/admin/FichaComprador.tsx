@@ -21,6 +21,7 @@ const FORMA_ROTULO: Record<string, string> = {
   dinheiro: "Dinheiro",
   transferencia: "Transferência",
   cheque: "Cheque",
+  abatimento: "Abatimento (desconto combinado)",
 };
 
 function hojeBr(): string {
@@ -265,9 +266,9 @@ function FormPagamento({
   onFim: () => void;
 }) {
   const router = useRouter();
-  const [forma, setForma] = useState<"pix" | "dinheiro" | "transferencia" | "cheque">(
-    "pix"
-  );
+  const [forma, setForma] = useState<
+    "pix" | "dinheiro" | "transferencia" | "cheque" | "abatimento"
+  >("pix");
   const [valorCentavos, setValorCentavos] = useState<number | null>(
     sugestao > 0 ? Math.round(sugestao * 100) : null
   );
@@ -276,6 +277,7 @@ function FormPagamento({
   const [emitente, setEmitente] = useState("");
   const [numero, setNumero] = useState("");
   const [bomPara, setBomPara] = useState("");
+  const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   // Cheque não entra em conta: fica no papel até compensar.
@@ -283,11 +285,14 @@ function FormPagamento({
 
   async function salvar() {
     if (!valorCentavos || valorCentavos <= 0) return setErro("Informe o valor");
-    if (forma !== "cheque" && !contaId) {
+    if (!["cheque", "abatimento"].includes(forma) && !contaId) {
       return setErro("Diga em qual conta o dinheiro entrou");
     }
     if (forma === "cheque" && (!banco.trim() || !emitente.trim() || !bomPara)) {
       return setErro("Cheque precisa de banco, emitente e a data do 'bom para'");
+    }
+    if (forma === "abatimento" && motivo.trim().length < 3) {
+      return setErro("Diga o motivo do abatimento (ex.: quebra de peso combinada)");
     }
     setErro(null);
     setSalvando(true);
@@ -300,7 +305,8 @@ function FormPagamento({
           forma,
           valor: centavosParaReais(valorCentavos),
           data,
-          conta_id: forma === "cheque" ? null : contaId,
+          conta_id: ["cheque", "abatimento"].includes(forma) ? null : contaId,
+          ...(forma === "abatimento" ? { observacao: motivo.trim() } : {}),
           ...(forma === "cheque"
             ? {
                 banco: banco.trim(),
@@ -336,6 +342,7 @@ function FormPagamento({
               ["dinheiro", "Dinheiro"],
               ["transferencia", "Transferência"],
               ["cheque", "Cheque"],
+              ["abatimento", "Abatimento"],
             ] as const
           ).map(([v, r]) => (
             <button
@@ -374,13 +381,36 @@ function FormPagamento({
         </div>
       </div>
 
-      {forma !== "cheque" && (
+      {!["cheque", "abatimento"].includes(forma) && (
         <SelectConta
           contas={contas}
           valor={contaId}
           onChange={setContaId}
           label="Em qual conta o dinheiro entrou"
         />
+      )}
+
+      {forma === "abatimento" && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
+          <p className="text-sm">
+            <strong>Abatimento</strong> baixa a dívida do comprador{" "}
+            <strong>sem dinheiro entrar</strong> — pro "pagou 49.700 nos
+            50.000 e combinamos que tá quitado" (quebra de peso, óleo com
+            água). Não entra no caixa nem na receita.
+          </p>
+          <div>
+            <label className="block text-xs text-cinza-suave mb-1">
+              Motivo (obrigatório)
+            </label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="ex: quebra de peso combinada"
+            />
+          </div>
+        </div>
       )}
 
       {forma === "cheque" && (

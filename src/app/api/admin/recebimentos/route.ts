@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (!comprador_id) {
     return NextResponse.json({ error: "comprador não informado" }, { status: 400 });
   }
-  if (!["pix", "dinheiro", "transferencia", "cheque"].includes(forma)) {
+  if (!["pix", "dinheiro", "transferencia", "cheque", "abatimento"].includes(forma)) {
     return NextResponse.json({ error: "forma de pagamento inválida" }, { status: 400 });
   }
   if (!Number.isFinite(valor) || valor <= 0) {
@@ -39,13 +39,26 @@ export async function POST(req: NextRequest) {
 
   // Cheque NÃO entra em conta: o dinheiro fica no papel, na gaveta, e só
   // vira saldo quando compensa — e aí a conta é registrada no próprio
-  // cheque. Nas outras formas o dinheiro entrou em algum lugar agora.
+  // cheque. ABATIMENTO também não: é perdão/desconto combinado (0047) —
+  // baixa a dívida do comprador SEM dinheiro entrar; sem ele, zerar um
+  // comprador exigia um recebimento falso que inflava a conta financeira e
+  // a receita. Nas outras formas o dinheiro entrou em algum lugar agora.
   const conta_id = body.conta_id ? String(body.conta_id) : null;
-  if (forma !== "cheque" && !conta_id) {
+  if (!["cheque", "abatimento"].includes(forma) && !conta_id) {
     return NextResponse.json(
       { error: "diga em qual conta o dinheiro entrou" },
       { status: 400 }
     );
+  }
+
+  if (forma === "abatimento") {
+    const motivo = String(body.observacao || "").trim();
+    if (motivo.length < 3) {
+      return NextResponse.json(
+        { error: "abatimento precisa do motivo (ex.: quebra de peso combinada)" },
+        { status: 400 }
+      );
+    }
   }
 
   const client = getSupabaseAdmin(admin.id);
