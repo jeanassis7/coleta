@@ -40,6 +40,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         ? null
         : Number(body.proxima_km);
   }
+  if (body.proxima_data !== undefined) {
+    if (body.proxima_data && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.proxima_data))) {
+      return NextResponse.json({ error: "data da próxima troca inválida" }, { status: 400 });
+    }
+    updates.proxima_data = body.proxima_data || null;
+  }
   if (body.fornecedor !== undefined) {
     updates.fornecedor = body.fornecedor
       ? String(body.fornecedor).trim()
@@ -89,9 +95,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 /**
  * DELETE: apaga o lançamento.
  *
- * A conta a pagar gerada por ele NÃO é apagada junto de propósito: se já foi
- * paga, apagar reescreveria o caixa. Quem quiser desfazer as duas coisas
- * apaga a conta na tela dela, onde vê o status antes.
+ * A conta AINDA NÃO PAGA morre junto — dívida de uma manutenção que não
+ * existe mais é dívida-fantasma (mesmo comportamento do abastecimento).
+ * A conta JÁ PAGA fica de pé: o dinheiro saiu de verdade, e apagar
+ * reescreveria o caixa — quem apagou fica sabendo pelo aviso.
  */
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   const admin = await exigirAdmin();
@@ -99,20 +106,33 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
   const client = getSupabaseAdmin(admin.id);
-  const { count } = await client
+
+  const { data: contaPaga } = await client
     .from("contas_a_pagar")
-    .select("id", { count: "exact", head: true })
+    .select("id")
     .eq("origem_tipo", "manutencao")
-    .eq("origem_id", id);
+    .eq("origem_id", id)
+    .eq("status", "paga")
+    .maybeSingle();
+
+  const { data: contasAbertas, error: eConta } = await client
+    .from("contas_a_pagar")
+    .delete()
+    .eq("origem_tipo", "manutencao")
+    .eq("origem_id", id)
+    .in("status", ["prevista", "a_pagar"])
+    .select("id");
+  if (eConta) return NextResponse.json({ error: eConta.message }, { status: 400 });
 
   const { error } = await client.from("manutencoes").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   return NextResponse.json({
     ok: true,
-    aviso:
-      (count ?? 0) > 0
-        ? "A conta a pagar dessa manutenção continua lá — apague por Contas a pagar se for o caso."
+    aviso: contaPaga
+      ? "O pagamento dessa manutenção JÁ FOI FEITO — ele continua no histórico e no DRE; confira se o estorno com a oficina aconteceu de verdade."
+      : (contasAbertas?.length ?? 0) > 0
+        ? "A conta a pagar dessa manutenção foi removida junto — a dívida não existe mais."
         : null,
   });
 }

@@ -48,6 +48,64 @@ export function HistoricoManutencao({
   const [modalApagar, setModalApagar] = useState<Manutencao | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  // Editar um lançamento: valor/descrição/fornecedor arrastam a conta a
+  // pagar amarrada (enquanto não paga) no servidor.
+  const [editando, setEditando] = useState<Manutencao | null>(null);
+  const [edData, setEdData] = useState("");
+  const [edDescricao, setEdDescricao] = useState("");
+  const [edValorCentavos, setEdValorCentavos] = useState<number | null>(null);
+  const [edKm, setEdKm] = useState("");
+  const [edProximaKm, setEdProximaKm] = useState("");
+  const [edProximaData, setEdProximaData] = useState("");
+  const [edFornecedor, setEdFornecedor] = useState("");
+
+  function abrirEdicao(m: Manutencao) {
+    setErro(null);
+    setAviso(null);
+    setEditando(m);
+    setEdData(m.data);
+    setEdDescricao(m.descricao);
+    setEdValorCentavos(Math.round(m.valor * 100));
+    setEdKm(m.km != null ? String(m.km) : "");
+    setEdProximaKm(m.proxima_km != null ? String(m.proxima_km) : "");
+    setEdProximaData(m.proxima_data || "");
+    setEdFornecedor(m.fornecedor || "");
+  }
+
+  async function salvarEdicao() {
+    if (!editando) return;
+    if (!edData) return setErro("Quando foi?");
+    if (edDescricao.trim().length < 2) return setErro("Descreva o que foi feito.");
+    if (!edValorCentavos) return setErro("Quanto custou?");
+    setErro(null);
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/admin/manutencoes/${editando.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: edData,
+          descricao: edDescricao.trim(),
+          valor: centavosParaReais(edValorCentavos),
+          km: edKm.trim() === "" ? null : Number(edKm),
+          proxima_km: edProximaKm.trim() === "" ? null : Number(edProximaKm),
+          proxima_data: edProximaData || null,
+          fornecedor: edFornecedor.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || "Falha ao salvar.");
+        return;
+      }
+      if (json.aviso) setAviso(json.aviso);
+      setEditando(null);
+      router.refresh();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!data) return setErro("Quando foi?");
@@ -390,12 +448,20 @@ export function HistoricoManutencao({
                     R$ {real(m.valor)}
                   </td>
                   <td className="py-2 pr-3">
-                    <button
-                      onClick={() => setModalApagar(m)}
-                      className="text-alerta hover:underline"
-                    >
-                      Apagar
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => abrirEdicao(m)}
+                        className="text-verde hover:underline"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => setModalApagar(m)}
+                        className="text-alerta hover:underline"
+                      >
+                        Apagar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -407,13 +473,130 @@ export function HistoricoManutencao({
       {modalApagar && (
         <ModalConfirmar
           titulo="Apagar manutenção"
-          descricao={`Apagar "${modalApagar.descricao}" de ${formatData(modalApagar.data)}?`}
+          descricao={`Apagar "${modalApagar.descricao}" de ${formatData(modalApagar.data)}? Se tiver conta a pagar em aberto amarrada, ela é removida junto; conta já paga fica (o dinheiro saiu de verdade).`}
           confirmarLabel="Apagar"
           perigo
           carregando={salvando}
           onConfirmar={() => apagar(modalApagar)}
           onFechar={() => setModalApagar(null)}
         />
+      )}
+
+      {editando && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h2 className="text-lg font-bold">
+                Editar — {labelManutencao(editando.tipo)}
+              </h2>
+              <p className="text-sm text-cinza-suave mt-1">
+                Valor, descrição e oficina corrigem a conta a pagar amarrada
+                junto (enquanto ela não foi paga). Como foi pago não se troca —
+                errou isso, apague e relance.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Quando</label>
+                <input
+                  type="date"
+                  value={edData}
+                  onChange={(e) => setEdData(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Custou</label>
+                <InputDinheiro
+                  centavos={edValorCentavos}
+                  onChange={setEdValorCentavos}
+                  grande={false}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Descrição</label>
+              <input
+                value={edDescricao}
+                onChange={(e) => setEdDescricao(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Km</label>
+                <input
+                  type="number"
+                  value={edKm}
+                  onChange={(e) => setEdKm(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Onde fez <span className="text-cinza-suave">(opcional)</span>
+                </label>
+                <input
+                  value={edFornecedor}
+                  onChange={(e) => setEdFornecedor(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              {editando.tipo === "troca_oleo" && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Próxima troca (km)
+                    </label>
+                    <input
+                      type="number"
+                      value={edProximaKm}
+                      onChange={(e) => setEdProximaKm(e.target.value)}
+                      className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      ou até a data
+                    </label>
+                    <input
+                      type="date"
+                      value={edProximaData}
+                      onChange={(e) => setEdProximaData(e.target.value)}
+                      className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {erro && (
+              <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                {erro}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setEditando(null)}
+                disabled={salvando}
+                className="px-4 py-2 rounded-xl border border-cinza-borda"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEdicao}
+                disabled={salvando}
+                className="btn-primario disabled:opacity-40"
+              >
+                {salvando ? "Salvando…" : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
