@@ -7,6 +7,43 @@
 
 ---
 
+## BACKFILL 2026 — RODOU EM 21/08/2026 ✅
+
+O histórico do ano inteiro (planilhas do Evaner: fluxo, cheques, fundições,
+descarregamentos + holerites e guias) foi importado pra produção após
+auditoria completa dele, linha a linha. **O DRE de jan–ago/2026 está aceso.**
+Material em `dados-historicos/` (fora do git): `MAPA-BACKFILL.md`,
+`CONFERENCIA-BACKFILL.xlsx` (auditada), `dados-import.json` e
+`backfill-manifesto.json` (ids de tudo que entrou — NÃO apagar).
+
+- **Números**: 1.031 contas pagas · 288 recebimentos · 265 cheques · 31
+  vendas (85% fino / 15% grosso) · 131 cargas+descargas históricas · 15
+  adiantamentos da virada (pendentes de aceite no app) · comprador "CHEQUES
+  2025 — VIRADA" · caminhões inativos ANTIGO-NEI e ANTIGO-FUMACA · PARANA
+  ALUMÍNIO renomeado "PR ALUMÍNIO / LAZZARIN".
+- **Marca e desfazer**: toda observacao carrega `[backfill-2026 <ref>]`.
+  Desfazer TUDO: `node scripts/backfill-desfazer.mjs --sim-eu-confirmo`.
+  Rodar de novo: NÃO (o script recusa com manifesto presente).
+- **Regras aplicadas**: despesa histórica = conta paga retroativa; folha
+  quebrada em Salário × Comissão pelos holerites (regra 4.6 do manual);
+  guias DARF/FGTS = Encargos de funcionário; dinheiro-em-mãos até o início
+  do app = custo oleo_motorista, depois = adiantamento retroativo;
+  empréstimos recebidos FORA do DRE; cheques de 2025 = agregado mensal no
+  comprador próprio; datas pré-corte (20/08) não mexem no caixa.
+- **Esperado/conhecido**: estoque mostra número sem sentido (fino 267t,
+  grosso −74t) ATÉ a ABERTURA do inventário — que zera a régua (regra de
+  ouro: depois da última descarga do regime antigo). PROLUMINAS (−308k) e
+  FILTROVILLE (−2,7k) aparecem com "crédito" porque não há controle de kg
+  das vendas deles — só recebimentos. VISSOTO −1.536,02 (mistério dos
+  7.057,76 de 27/07, "a posteriori" por decisão do Evaner).
+- **Caixa pós-backfill**: BB 78.952,71 · Dinheiro em mãos 315,00 (+ Conta
+  teste 10.000 que o Evaner vai apagar). Conferir com o banco real.
+- **Achados abertos** (anotados na conferência): Dívidas PF 12.363,24
+  planilha×resumo; VISSOTO 7.057,76; devolução órfã 1.691,35 (jan/26,
+  provável cheque de dez/25).
+
+---
+
 ## Resumo em uma frase
 
 **Módulos 1, 2, 3 (frota e documentos) e o módulo FINANCEIRO estão no ar.**
