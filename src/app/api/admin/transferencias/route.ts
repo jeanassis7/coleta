@@ -37,6 +37,10 @@ export async function POST(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
     return NextResponse.json({ error: "data inválida" }, { status: 400 });
   }
+  const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (data > hojeBr) {
+    return NextResponse.json({ error: "a data está no futuro" }, { status: 400 });
+  }
 
   const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("transferencias").insert({

@@ -79,12 +79,28 @@ export async function POST(req: NextRequest) {
       nota_numero: body.nota_numero ? String(body.nota_numero).trim() : null,
       foto_ticket_path: body.foto_ticket_path || null,
       observacao: body.observacao ? String(body.observacao).trim() : null,
+      // Idempotência (0048): a tela manda o mesmo client_id enquanto o
+      // formulário estiver aberto — o segundo clique depois de uma falha
+      // parcial NÃO cria a venda de novo (estoque saindo 2×, dívida dobrada).
+      client_id: body.client_id ? String(body.client_id) : null,
       registrado_por: admin.id,
     })
     .select()
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    // 23505 = unique violation no client_id: a venda JÁ FOI gravada num
+    // clique anterior. Reenviar não é erro — é retry.
+    if (error.code === "23505") {
+      return NextResponse.json({
+        ok: true,
+        avisos: [
+          "essa venda já tinha sido registrada (clique repetido) — nada foi duplicado; confira a lista e lance o pagamento na ficha do comprador se faltou",
+        ],
+      });
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
   const avisos: string[] = [];
 

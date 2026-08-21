@@ -25,7 +25,11 @@ const TRANSICOES: Record<
   },
   compensar: { de: ["depositado"], para: "compensado", carimbo: "compensado_em" },
   devolver: {
-    de: ["em_carteira", "depositado", "repassado"],
+    // 'compensado' entrou pela devolução TARDIA (alínea 22/48, estorno):
+    // o banco tira o dinheiro de volta dias depois de compensar. O braço do
+    // caixa só soma status='compensado', então o valor sai da conta sozinho;
+    // a dívida do comprador renasce como em qualquer devolução.
+    de: ["em_carteira", "depositado", "repassado", "compensado"],
     para: "devolvido",
     carimbo: "devolvido_em",
   },

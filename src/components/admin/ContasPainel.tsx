@@ -797,11 +797,21 @@ function ModalPagar({
                 </option>
               ))}
             </select>
-            {cheque && Math.abs(cheque.valor - conta.valor) > 0.009 && (
+            {cheque && cheque.valor - conta.valor > 0.009 && (
+              <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-1">
+                O cheque é de {formatBRL(cheque.valor)} e a conta é de{" "}
+                {formatBRL(conta.valor)}: sobra{" "}
+                <strong>{formatBRL(cheque.valor - conta.valor)}</strong> de
+                troco com o fornecedor. Quando o troco voltar, lance como{" "}
+                <strong>Entrada avulsa</strong> no Caixa (tipo Reembolso) —
+                senão esse dinheiro fica fora do sistema.
+              </p>
+            )}
+            {cheque && conta.valor - cheque.valor > 0.009 && (
               <p className="text-xs text-cinza-suave mt-1">
                 O cheque é de {formatBRL(cheque.valor)} e a conta é de{" "}
-                {formatBRL(conta.valor)} — a diferença você acerta com o
-                fornecedor por fora.
+                {formatBRL(conta.valor)} — a diferença que você completar por
+                outra forma merece um lançamento próprio.
               </p>
             )}
           </div>

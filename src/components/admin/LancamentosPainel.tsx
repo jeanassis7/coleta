@@ -339,11 +339,23 @@ export function LancamentosPainel({
         {categoria === "salario" && pessoaId && (() => {
           const doDele = vales.filter((v) => v.motorista_id === pessoaId);
           if (doDele.length === 0) return null;
+          const somaMarcados = doDele
+            .filter((v) => valesMarcados.includes(v.acerto_id))
+            .reduce((s, v) => s + v.valor, 0);
           return (
             <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
               <p className="text-sm font-medium">
                 Esse pagamento quita algum vale?
               </p>
+              {somaMarcados !== 0 && (
+                <p className="text-xs">
+                  Vales marcados somam <strong>{formatBRL(Math.abs(somaMarcados))}</strong>{" "}
+                  {somaMarcados > 0 ? "de DESCONTO" : "a SOMAR"} — confira se o
+                  valor lançado já é o líquido (salário{" "}
+                  {somaMarcados > 0 ? "−" : "+"} vales). O sistema marca a
+                  quitação; a conta de somar/subtrair ainda é sua.
+                </p>
+              )}
               <p className="text-xs text-cinza-suave">
                 Vales vieram de acertos e ainda não foram descontados de
                 nenhum salário. Valor negativo é o contrário: a empresa deve a

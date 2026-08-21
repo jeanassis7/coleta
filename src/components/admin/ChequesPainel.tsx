@@ -346,7 +346,9 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
                         Compensou
                       </button>
                     )}
-                    {["em_carteira", "depositado", "repassado"].includes(c.status) && (
+                    {["em_carteira", "depositado", "repassado", "compensado"].includes(
+                      c.status
+                    ) && (
                       <button
                         onClick={() => setAcao({ cheque: c, tipo: "devolver" })}
                         className="text-alerta hover:underline"
@@ -397,7 +399,7 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
               ? `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)}. Marcar como depositado não é o mesmo que compensado — o dinheiro só entra no caixa quando você confirmar que caiu.`
               : acao.tipo === "compensar"
                 ? `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)}. A partir daqui esse dinheiro é caixa de verdade.`
-                : `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)} de ${acao.cheque.emitente}. A dívida de ${acao.cheque.comprador_nome} volta automaticamente${acao.cheque.status === "repassado" ? `, e o trâmite é direto entre o emitente e ${acao.cheque.repassado_para}` : ""}.`
+                : `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)} de ${acao.cheque.emitente}. A dívida de ${acao.cheque.comprador_nome} volta automaticamente${acao.cheque.status === "repassado" ? `, e o trâmite é direto entre o emitente e ${acao.cheque.repassado_para}` : ""}${acao.cheque.status === "compensado" ? ". Devolução TARDIA: o valor SAI do saldo da conta em que tinha compensado" : ""}.`
           }
           confirmarLabel={
             acao.tipo === "depositar"

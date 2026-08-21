@@ -118,6 +118,10 @@ function FormVenda({
   const [nomeFoto, setNomeFoto] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Um id por ABERTURA do formulário (0048): se a primeira tentativa falhar
+  // na entrada à vista e o Jean clicar de novo, o servidor reconhece o
+  // reenvio e não duplica a venda.
+  const [clientId] = useState(() => crypto.randomUUID());
   const [avisoEstoque, setAvisoEstoque] = useState(false);
   const [avisoPagamento, setAvisoPagamento] = useState(false);
 
@@ -217,6 +221,7 @@ function FormVenda({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          client_id: clientId,
           comprador_id: compradorId,
           data,
           peso_total_kg: pesoNum,

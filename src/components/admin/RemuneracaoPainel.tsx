@@ -26,11 +26,14 @@ export function RemuneracaoPainel({
   vigencias,
   pessoas,
   comissao,
+  pagoPorPessoa,
   periodo,
 }: {
   vigencias: Vigencia[];
   pessoas: { id: string; nome: string }[];
   comissao: ComissaoMotorista[];
+  /** Comissão JÁ PAGA (contas pagas da categoria) no período, por pessoa. */
+  pagoPorPessoa: Record<string, number>;
   periodo: { inicio: string; fim: string };
 }) {
   const router = useRouter();
@@ -145,26 +148,42 @@ export function RemuneracaoPainel({
                   <th className="py-2 pr-3">Motorista</th>
                   <th className="py-2 pr-3 text-right">Litros</th>
                   <th className="py-2 pr-3">Regra usada</th>
-                  <th className="py-2 pr-3 text-right">A pagar</th>
+                  <th className="py-2 pr-3 text-right">Calculado</th>
+                  <th
+                    className="py-2 pr-3 text-right"
+                    title="Lançamentos pagos na categoria Comissão com data de pagamento dentro deste período. A comissão de um mês costuma ser paga no seguinte — mude o período pra conferir o pagamento dela."
+                  >
+                    Pago no período
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {comissao.map((c) => (
-                  <tr key={c.motorista_id} className="border-b border-cinza-borda">
-                    <td className="py-2 pr-3 font-medium">{c.nome}</td>
-                    <td className="py-2 pr-3 text-right font-mono">
-                      {c.litros.toLocaleString("pt-BR")} L
-                    </td>
-                    <td className="py-2 pr-3 text-cinza-suave">
-                      {c.regra
-                        ? `${formatBRL(c.regra.valor)} a cada ${c.regra.litros_base} L`
-                        : "—"}
-                    </td>
-                    <td className="py-2 pr-3 text-right font-mono font-semibold">
-                      {formatBRL(c.valor)}
-                    </td>
-                  </tr>
-                ))}
+                {comissao.map((c) => {
+                  const pago = pagoPorPessoa[c.motorista_id] ?? 0;
+                  return (
+                    <tr key={c.motorista_id} className="border-b border-cinza-borda">
+                      <td className="py-2 pr-3 font-medium">{c.nome}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {c.litros.toLocaleString("pt-BR")} L
+                      </td>
+                      <td className="py-2 pr-3 text-cinza-suave">
+                        {c.regra
+                          ? `${formatBRL(c.regra.valor)} a cada ${c.regra.litros_base} L`
+                          : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono font-semibold">
+                        {formatBRL(c.valor)}
+                      </td>
+                      <td
+                        className={`py-2 pr-3 text-right font-mono ${
+                          pago > 0 ? "" : "text-cinza-suave"
+                        }`}
+                      >
+                        {pago > 0 ? formatBRL(pago) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -183,6 +202,12 @@ export function RemuneracaoPainel({
 
       {/* ------------------------------------------------- nova vigência */}
       <div className="card">
+        <p className="text-xs text-cinza-suave mb-3">
+          Hoje só a vigência de <strong>comissão</strong> alimenta cálculo (a
+          tabela acima). Salário, bônus e transferência a sócio ficam aqui
+          como <strong>registro</strong> do combinado — o pagamento continua
+          sendo lançado na mão, em Lançamentos.
+        </p>
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h2 className="text-lg font-semibold">Valores vigentes</h2>
           <button

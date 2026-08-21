@@ -80,15 +80,30 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       .eq("id", id)
       .maybeSingle();
 
-    // Só mexe na previsão que AINDA NÃO foi paga. Se a anterior já virou
+    // Só mexe na conta que AINDA NÃO foi paga. Se a anterior já virou
     // 'paga', ela é histórico do ano passado — e a nova é a renovação.
-    const { data: pendente } = await client
+    //
+    // 'a_pagar' TAMBÉM conta como pendente: quando o Jean confirma o valor
+    // da previsão (prevista → a_pagar) e depois edita o documento, o filtro
+    // antigo (só 'prevista') não achava nada e criava uma SEGUNDA conta da
+    // mesma coisa — dívida real + previsão fantasma, e o maybeSingle() com
+    // duas linhas passava a falhar em silêncio e criar mais uma a cada
+    // edição. `limit(1)` em vez de maybeSingle: nunca explode com N linhas.
+    const { data: pendentes, error: ePend } = await client
       .from("contas_a_pagar")
-      .select("id")
+      .select("id, status")
       .eq("origem_tipo", "documento")
       .eq("origem_id", id)
-      .eq("status", "prevista")
-      .maybeSingle();
+      .in("status", ["prevista", "a_pagar"])
+      .order("criado_em", { ascending: true })
+      .limit(1);
+    if (ePend) {
+      return NextResponse.json({
+        ok: true,
+        aviso: `documento salvo, mas não consegui conferir a conta prevista: ${ePend.message}`,
+      });
+    }
+    const pendente = (pendentes ?? [])[0] ?? null;
 
     const temValor = doc?.valor != null && Number(doc.valor) > 0;
 

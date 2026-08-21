@@ -336,7 +336,9 @@ function FormCompra({
               </select>
               <p className="text-xs text-cinza-suave mt-1">
                 O cheque sai da carteira amarrado a esta compra (repasse) —
-                não sai dinheiro de conta nenhuma.
+                não sai dinheiro de conta nenhuma. Se o cheque valer MAIS que
+                a compra, lance o troco que voltar como{" "}
+                <strong>Entrada avulsa</strong> no Caixa (tipo Reembolso).
               </p>
             </div>
           )}

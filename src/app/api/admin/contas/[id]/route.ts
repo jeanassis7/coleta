@@ -349,6 +349,14 @@ export async function PATCH(
   }
   const pagoEm =
     body.pago_em && /^\d{4}-\d{2}-\d{2}$/.test(body.pago_em) ? body.pago_em : hoje;
+  // Dedo errado no ano tirava dinheiro do saldo de HOJE por um pagamento
+  // de 2027. Mesma regra do adiantamento — dinheiro só sai quando sai.
+  if (pagoEm > hoje) {
+    return NextResponse.json(
+      { error: "a data do pagamento está no futuro" },
+      { status: 400 }
+    );
+  }
 
   let chequeId: string | null = null;
   if (forma === "cheque") {
