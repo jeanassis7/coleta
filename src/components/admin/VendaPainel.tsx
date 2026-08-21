@@ -76,7 +76,7 @@ export function VendaPainel({
         />
       )}
 
-      <TabelaVendas vendas={vendas} veiculos={veiculos} />
+      <TabelaVendas vendas={vendas} veiculos={veiculos} compradores={compradores} />
     </>
   );
 }
@@ -651,9 +651,11 @@ function FormVenda({
 function TabelaVendas({
   vendas,
   veiculos,
+  compradores,
 }: {
   vendas: Venda[];
   veiculos: Array<{ id: string; placa: string; marca: string; tipo: string }>;
+  compradores: Comprador[];
 }) {
   const router = useRouter();
   const [apagando, setApagando] = useState<Venda | null>(null);
@@ -662,15 +664,73 @@ function TabelaVendas({
   // venda — é o que permite o custo total da viagem por kg.
   const [gastoDe, setGastoDe] = useState<Venda | null>(null);
   const [loading, setLoading] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  // Editar os campos SIMPLES: data, comprador, preço, nota, obs. Peso e
+  // mistura ficam de fora (mexem no estoque) — o servidor também recusa.
+  const [editando, setEditando] = useState<Venda | null>(null);
+  const [edData, setEdData] = useState("");
+  const [edCompradorId, setEdCompradorId] = useState("");
+  const [edPrecoCentavos, setEdPrecoCentavos] = useState<number | null>(null);
+  const [edNota, setEdNota] = useState("");
+  const [edObs, setEdObs] = useState("");
+  const [erroEdicao, setErroEdicao] = useState<string | null>(null);
 
   async function apagar(v: Venda) {
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/vendas/${v.id}`, { method: "DELETE" });
-      if (res.ok) router.refresh();
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (json.aviso) setAviso(json.aviso);
+        router.refresh();
+      } else {
+        setAviso(json.error || "Falha ao apagar.");
+      }
     } finally {
       setLoading(false);
       setApagando(null);
+    }
+  }
+
+  function abrirEdicao(v: Venda) {
+    setErroEdicao(null);
+    setEditando(v);
+    setEdData(v.data);
+    setEdCompradorId(v.comprador_id);
+    setEdPrecoCentavos(reaisParaCentavos(v.preco_kg));
+    setEdNota(v.nota_numero || "");
+    setEdObs(v.observacao || "");
+  }
+
+  async function salvarEdicao() {
+    if (!editando) return;
+    if (!edPrecoCentavos || edPrecoCentavos <= 0) {
+      return setErroEdicao("Informe o preço por kg");
+    }
+    setLoading(true);
+    setErroEdicao(null);
+    try {
+      const res = await fetch(`/api/admin/vendas/${editando.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: edData,
+          comprador_id: edCompradorId,
+          preco_kg: centavosParaReais(edPrecoCentavos),
+          nota_numero: edNota.trim() || null,
+          observacao: edObs.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErroEdicao(json.error || "Falha ao salvar.");
+        return;
+      }
+      setEditando(null);
+      router.refresh();
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -686,6 +746,11 @@ function TabelaVendas({
 
   return (
     <div className="card overflow-x-auto">
+      {aviso && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm mb-3">
+          {aviso}
+        </div>
+      )}
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-cinza-suave border-b border-cinza-borda">
@@ -739,6 +804,12 @@ function TabelaVendas({
                     </button>
                   )}
                   <button
+                    onClick={() => abrirEdicao(v)}
+                    className="text-verde hover:underline"
+                  >
+                    Editar
+                  </button>
+                  <button
                     onClick={() => setApagando(v)}
                     className="text-alerta hover:underline"
                   >
@@ -771,6 +842,114 @@ function TabelaVendas({
           onConfirmar={() => apagar(apagando)}
           onFechar={() => setApagando(null)}
         />
+      )}
+
+      {editando && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h2 className="text-lg font-bold">Editar venda</h2>
+              <p className="text-sm text-cinza-suave mt-1">
+                {kg(editando.peso_total_kg)} ({editando.kg_fino.toLocaleString("pt-BR")} fino
+                {editando.kg_grosso > 0
+                  ? ` + ${editando.kg_grosso.toLocaleString("pt-BR")} grosso`
+                  : ""}
+                ). Peso e mistura não se editam — mexem no estoque; errou o
+                peso, apague e relance. Mudar o preço recalcula o total, e o
+                saldo do comprador acompanha sozinho.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Data</label>
+                <input
+                  type="date"
+                  value={edData}
+                  onChange={(e) => setEdData(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Comprador</label>
+                <select
+                  value={edCompradorId}
+                  onChange={(e) => setEdCompradorId(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                >
+                  {compradores.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Preço por kg
+                </label>
+                <InputDinheiro
+                  centavos={edPrecoCentavos}
+                  onChange={setEdPrecoCentavos}
+                  grande={false}
+                />
+                {edPrecoCentavos ? (
+                  <p className="text-xs text-cinza-suave mt-1">
+                    Total:{" "}
+                    {formatBRL(
+                      Math.round(
+                        editando.peso_total_kg * centavosParaReais(edPrecoCentavos) * 100
+                      ) / 100
+                    )}
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Nº da nota <span className="text-cinza-suave">(opcional)</span>
+                </label>
+                <input
+                  value={edNota}
+                  onChange={(e) => setEdNota(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Observação <span className="text-cinza-suave">(opcional)</span>
+              </label>
+              <input
+                value={edObs}
+                onChange={(e) => setEdObs(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              />
+            </div>
+
+            {erroEdicao && (
+              <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                {erroEdicao}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setEditando(null)}
+                disabled={loading}
+                className="px-4 py-2 rounded-xl border border-cinza-borda"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEdicao}
+                disabled={loading}
+                className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
+              >
+                {loading ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
