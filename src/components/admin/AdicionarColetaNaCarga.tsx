@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 /**
  * "+ Adicionar coleta" no detalhe da carga.
@@ -36,6 +37,36 @@ export function AdicionarColetaNaCarga({
   const [certTipo, setCertTipo] = useState<"integral" | "parcial" | "nao">("nao");
   const [litrosCert, setLitrosCert] = useState("");
   const [observacao, setObservacao] = useState("");
+  const [avisoOk, setAvisoOk] = useState<string | null>(null);
+
+  // Quem pagou esse óleo — antes era um passo em dois (criar debitando o
+  // motorista e marcar a sede no detalhe depois; esquecer o segundo passo
+  // cobrava dele um óleo que a empresa pagou).
+  const [pagamento, setPagamento] = useState<
+    "motorista" | "sede" | "sede_ja_pagou"
+  >("motorista");
+  const [vencimento, setVencimento] = useState("");
+  const [sedeForma, setSedeForma] = useState<"pix" | "dinheiro" | "deposito">("pix");
+  const [sedePagoEm, setSedePagoEm] = useState(
+    new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  );
+  const [sedeContaId, setSedeContaId] = useState("");
+  const [contasSede, setContasSede] = useState<
+    { id: string; nome: string; tipo: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (pagamento !== "sede_ja_pagou" || contasSede.length > 0) return;
+    (async () => {
+      const supabase = getSupabaseBrowser();
+      const { data } = await supabase
+        .from("contas_financeiras")
+        .select("id, nome, tipo")
+        .eq("ativa", true)
+        .order("nome");
+      setContasSede((data as { id: string; nome: string; tipo: string }[]) ?? []);
+    })();
+  }, [pagamento, contasSede.length]);
 
   async function salvar() {
     const litrosNum = Number(litros.trim().replace(",", "."));
@@ -55,6 +86,9 @@ export function AdicionarColetaNaCarga({
     ) {
       return setErro("Quantos litros foram no certificado parcial?");
     }
+    if (pagamento === "sede_ja_pagou" && !sedeContaId) {
+      return setErro("A sede já pagou? Diga de qual conta o dinheiro saiu.");
+    }
     setErro(null);
     setSalvando(true);
     try {
@@ -70,6 +104,15 @@ export function AdicionarColetaNaCarga({
           litros_certificado: certTipo === "parcial" ? litrosCertNum : null,
           observacao: observacao.trim() || null,
           criado_em: quando ? new Date(quando).toISOString() : undefined,
+          pagamento,
+          ...(pagamento === "sede" && vencimento ? { vencimento } : {}),
+          ...(pagamento === "sede_ja_pagou"
+            ? {
+                forma_pagamento: sedeForma,
+                conta_id: sedeContaId,
+                pago_em: sedePagoEm,
+              }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -83,7 +126,9 @@ export function AdicionarColetaNaCarga({
       setObservacao("");
       setCertTipo("nao");
       setLitrosCert("");
+      setPagamento("motorista");
       setAberto(false);
+      if (data.aviso) setAvisoOk(data.aviso);
       router.refresh();
     } finally {
       setSalvando(false);
@@ -92,12 +137,19 @@ export function AdicionarColetaNaCarga({
 
   if (!aberto) {
     return (
-      <button
-        onClick={() => setAberto(true)}
-        className="px-4 py-2 bg-white border-2 border-verde text-verde rounded-xl font-medium hover:bg-verde hover:text-white transition-colors text-sm"
-      >
-        + Adicionar coleta
-      </button>
+      <div className="space-y-2">
+        {avisoOk && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
+            Coleta adicionada. {avisoOk}
+          </div>
+        )}
+        <button
+          onClick={() => setAberto(true)}
+          className="px-4 py-2 bg-white border-2 border-verde text-verde rounded-xl font-medium hover:bg-verde hover:text-white transition-colors text-sm"
+        >
+          + Adicionar coleta
+        </button>
+      </div>
     );
   }
 
@@ -106,10 +158,11 @@ export function AdicionarColetaNaCarga({
       <div>
         <h3 className="font-semibold">Adicionar coleta nessa carga</h3>
         <p className="text-sm text-cinza-suave">
-          Pro caso do motorista ter coletado e esquecido de lançar no app. O
-          valor <strong>desconta do saldo de {motoristaNome}</strong>, porque o
-          dinheiro saiu da mão dele. Se quem pagou foi a empresa, o lugar certo é{" "}
-          <strong>Compra direta</strong>.
+          Pro caso do motorista ter coletado e esquecido de lançar no app.
+          Escolha abaixo <strong>de quem saiu o dinheiro</strong> — do bolso
+          de {motoristaNome} (desconta do saldo dele) ou da sede. Óleo que o
+          gestor negociou e que <strong>não passou por coleta</strong> continua
+          sendo <strong>Compra direta</strong>.
         </p>
       </div>
 
@@ -215,6 +268,107 @@ export function AdicionarColetaNaCarga({
           value={observacao}
           onChange={(e) => setObservacao(e.target.value)}
         />
+      </div>
+
+      <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-2">
+        <label className="block text-sm font-medium">Quem pagou esse óleo</label>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["motorista", `Bolso de ${motoristaNome}`],
+              ["sede", "Sede vai pagar"],
+              ["sede_ja_pagou", "Sede JÁ pagou"],
+            ] as const
+          ).map(([v, r]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setPagamento(v)}
+              className={`px-3 py-2 rounded-xl border-2 text-sm ${
+                pagamento === v
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        {pagamento === "motorista" && (
+          <p className="text-xs text-cinza-suave">
+            O valor desconta do saldo dele — o dinheiro saiu da mão dele.
+          </p>
+        )}
+        {pagamento === "sede" && (
+          <div>
+            <label className="block text-xs text-cinza-suave mb-1">
+              Quando vence (em branco = dia 1 do mês que vem)
+            </label>
+            <input
+              type="date"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={vencimento}
+              onChange={(e) => setVencimento(e.target.value)}
+            />
+            <p className="text-xs text-cinza-suave mt-1">
+              Nasce a conta a pagar do fornecedor. Não desconta do motorista.
+            </p>
+          </div>
+        )}
+        {pagamento === "sede_ja_pagou" && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-cinza-suave mb-1">
+                  Como pagou
+                </label>
+                <select
+                  value={sedeForma}
+                  onChange={(e) =>
+                    setSedeForma(e.target.value as "pix" | "dinheiro" | "deposito")
+                  }
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                >
+                  <option value="pix">Pix</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="deposito">Depósito</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-cinza-suave mb-1">
+                  Quando pagou
+                </label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                  value={sedePagoEm}
+                  onChange={(e) => setSedePagoEm(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-cinza-suave mb-1">
+                De qual conta saiu
+              </label>
+              <select
+                value={sedeContaId}
+                onChange={(e) => setSedeContaId(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              >
+                <option value="">Escolha a conta…</option>
+                {contasSede.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-cinza-suave">
+              A conta do fornecedor nasce já PAGA — desconta do caixa e entra
+              no DRE no dia do pagamento.
+            </p>
+          </div>
+        )}
       </div>
 
       {erro && (

@@ -35,7 +35,7 @@ export async function PATCH(
       .update({ status: "cancelada" })
       .eq("id", id)
       .in("status", ["prevista", "a_pagar"])
-      .select();
+      .select("id, origem_tipo, origem_id");
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     if (!data?.length) {
       return NextResponse.json(
@@ -43,7 +43,28 @@ export async function PATCH(
         { status: 409 }
       );
     }
-    return NextResponse.json({ ok: true });
+    // Conta de coleta paga pela sede cancelada = "essa dívida não existe".
+    // Então quem pagou foi o motorista: a coleta volta a descontar do saldo
+    // dele. Sem isso o flag ficava de pé sem conta nenhuma — o valor não
+    // descontava de ninguém, não devia a ninguém e sumia do DRE.
+    let aviso: string | null = null;
+    const cancelada = data[0];
+    if (cancelada.origem_tipo === "coleta" && cancelada.origem_id) {
+      const { error: eFlag } = await client
+        .from("coletas")
+        .update({ pago_pela_sede: false })
+        .eq("id", cancelada.origem_id);
+      aviso = eFlag
+        ? `a coleta de origem não foi desmarcada (${eFlag.message}) — confira no detalhe dela`
+        : "a coleta voltou a descontar do saldo do motorista (a sede não deve mais esse óleo)";
+    } else if (
+      cancelada.origem_tipo === "abastecimento" ||
+      cancelada.origem_tipo === "despesa"
+    ) {
+      aviso =
+        "atenção: o lançamento de origem continua como 'assinou a nota' e agora está sem dívida — se quem pagou foi o motorista, edite o lançamento pra 'pagou na hora'";
+    }
+    return NextResponse.json({ ok: true, ...(aviso ? { aviso } : {}) });
   }
 
   // Corrigir valor/vencimento de uma conta AINDA NÃO PAGA é seguro por
@@ -348,7 +369,7 @@ export async function DELETE(
   //    ter sido descontado de salário nenhum (o FK só limpava o ponteiro).
   const { data: conta } = await client
     .from("contas_a_pagar")
-    .select("cheque_id, status")
+    .select("cheque_id, status, origem_tipo, origem_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -383,5 +404,20 @@ export async function DELETE(
 
   const { error } = await client.from("contas_a_pagar").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Conta de coleta da sede apagada: a coleta não pode ficar com o flag de
+  // pé sem conta nenhuma (o valor evaporaria — nem motorista, nem dívida,
+  // nem DRE). Ela volta a descontar do motorista, e o aviso conta.
+  if (conta?.origem_tipo === "coleta" && conta.origem_id) {
+    const { error: eFlag } = await client
+      .from("coletas")
+      .update({ pago_pela_sede: false })
+      .eq("id", conta.origem_id);
+    desfeito.push(
+      eFlag
+        ? `a coleta de origem não foi desmarcada (${eFlag.message})`
+        : "a coleta de origem voltou a descontar do saldo do motorista"
+    );
+  }
   return NextResponse.json({ ok: true, desfeito });
 }

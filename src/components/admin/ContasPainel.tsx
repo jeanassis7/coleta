@@ -410,6 +410,7 @@ function TabelaContas({
   const [cancelando, setCancelando] = useState<ContaAPagar | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [avisoOk, setAvisoOk] = useState<string | null>(null);
 
   async function cancelar(c: ContaAPagar) {
     setLoading(true);
@@ -421,7 +422,12 @@ function TabelaContas({
       });
       const r = await res.json();
       if (!res.ok) setErro(r.error || "erro");
-      else router.refresh();
+      else {
+        // O servidor pode ter desfeito coisa amarrada (ex.: coleta da sede
+        // voltou a descontar do motorista) — a tela conta.
+        if (r.aviso) setAvisoOk(r.aviso);
+        router.refresh();
+      }
     } finally {
       setLoading(false);
       setCancelando(null);
@@ -444,6 +450,11 @@ function TabelaContas({
 
   return (
     <div className="card overflow-x-auto">
+      {avisoOk && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-2 text-sm mb-3">
+          {avisoOk}
+        </div>
+      )}
       {erro && (
         <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm mb-3">
           {erro}

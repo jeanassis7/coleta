@@ -117,10 +117,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       !!ps &&
       !!ps.conta_id &&
       ["pix", "dinheiro", "deposito"].includes(String(ps.forma));
+    // "Já pagou" sem data = pagou HOJE (cair no vencimento default jogaria
+    // o pagamento pro mês que vem — um pagamento feito no futuro).
     const pagoEmSede =
       ps?.pago_em && /^\d{4}-\d{2}-\d{2}$/.test(String(ps.pago_em))
         ? String(ps.pago_em)
-        : vencimento;
+        : new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
     if (valor > 0) {
       const { error: eConta } = await adminClient.from("contas_a_pagar").insert({
@@ -196,26 +198,151 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
   }
 
-  // Corrigir o VALOR de uma coleta já marcada como paga pela sede corrige a
-  // dívida com o fornecedor junto (só enquanto não foi paga).
+  // Corrigir VALOR ou NOME de uma coleta já marcada como paga pela sede
+  // corrige a dívida com o fornecedor junto — cobrindo os três estados:
+  //   • conta ABERTA: acompanha valor e fornecedor;
+  //   • conta que NUNCA NASCEU (coleta marcada com R$ 0 — doação — e
+  //     corrigida depois): nasce agora, senão o dinheiro evapora — não
+  //     desconta do motorista, não vira dívida e não entra no DRE;
+  //   • conta JÁ PAGA: fica quieta (é história), mas a divergência deixa
+  //     de ser silenciosa — a tela avisa.
+  const avisos: string[] = [];
   if (
-    updates.valor_pago !== undefined &&
     antes?.pago_pela_sede === true &&
-    updates.pago_pela_sede !== false
+    updates.pago_pela_sede !== false &&
+    !marcandoAgora &&
+    (updates.valor_pago !== undefined || updates.local_nome !== undefined)
   ) {
-    const { error: eAjuste } = await adminClient
+    const valorNovo =
+      updates.valor_pago !== undefined
+        ? Number(updates.valor_pago)
+        : Number(antes?.valor_pago ?? 0);
+    const nomeNovo = String(updates.local_nome ?? antes?.local_nome ?? "").trim();
+
+    const { data: contasDaColeta } = await adminClient
       .from("contas_a_pagar")
-      .update({ valor: Number(updates.valor_pago) })
+      .select("id, status, valor")
       .eq("origem_tipo", "coleta")
       .eq("origem_id", id)
-      .in("status", ["prevista", "a_pagar"]);
-    if (eAjuste) {
-      return NextResponse.json({
-        ok: true,
-        aviso: `coleta salva, mas a conta do fornecedor não acompanhou o valor: ${eAjuste.message}`,
+      .in("status", ["prevista", "a_pagar", "paga"]);
+    const contaPaga = (contasDaColeta ?? []).find((c) => c.status === "paga");
+    const contaAberta = (contasDaColeta ?? []).find((c) => c.status !== "paga");
+
+    if (contaPaga) {
+      if (
+        updates.valor_pago !== undefined &&
+        Math.round(Number(contaPaga.valor) * 100) !== Math.round(valorNovo * 100)
+      ) {
+        avisos.push(
+          `a conta dessa coleta já foi PAGA com R$ ${Number(contaPaga.valor).toFixed(2).replace(".", ",")} — o valor novo NÃO altera o pagamento; se pagou errado, apague o pagamento em Lançamentos e refaça`
+        );
+      }
+    } else if (contaAberta) {
+      if (valorNovo > 0) {
+        const ajuste: Record<string, unknown> = { valor: valorNovo };
+        if (updates.local_nome !== undefined) {
+          ajuste.fornecedor = nomeNovo || null;
+          ajuste.descricao = `Óleo — ${nomeNovo || "fornecedor"}`;
+        }
+        const { error: eAjuste } = await adminClient
+          .from("contas_a_pagar")
+          .update(ajuste)
+          .eq("id", contaAberta.id);
+        if (eAjuste) {
+          avisos.push(
+            `a conta do fornecedor não acompanhou a correção: ${eAjuste.message}`
+          );
+        }
+      } else {
+        // Virou doação (R$ 0): a dívida deixa de existir.
+        await adminClient.from("contas_a_pagar").delete().eq("id", contaAberta.id);
+        avisos.push("valor zerado (doação): a dívida com o fornecedor foi removida");
+      }
+    } else if (valorNovo > 0 && updates.valor_pago !== undefined) {
+      // A coleta era da sede com R$ 0 e ganhou valor: a dívida nasce AGORA.
+      const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const venc = new Date(
+        Date.UTC(hojeBr.getUTCFullYear(), hojeBr.getUTCMonth() + 1, 1)
+      )
+        .toISOString()
+        .slice(0, 10);
+      const { error: eNova } = await adminClient.from("contas_a_pagar").insert({
+        descricao: `Óleo — ${nomeNovo || "fornecedor"}`,
+        fornecedor: nomeNovo || null,
+        categoria: "oleo_sede",
+        valor: valorNovo,
+        vencimento: venc,
+        status: "a_pagar",
+        origem_tipo: "coleta",
+        origem_id: id,
+        registrado_por: admin.id,
       });
+      if (eNova) {
+        avisos.push(`a dívida com o fornecedor não nasceu: ${eNova.message}`);
+      } else {
+        avisos.push(
+          `a dívida com o fornecedor nasceu agora (R$ ${valorNovo.toFixed(2).replace(".", ",")}, vence dia 1 do mês que vem — ajuste em Contas a pagar se for outro combinado)`
+        );
+      }
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    ...(avisos.length > 0 ? { aviso: avisos.join(". ") } : {}),
+  });
+}
+
+/**
+ * DELETE — apaga a coleta E desfaz a conta amarrada (paga pela sede).
+ *
+ * Antes o drawer deletava direto do navegador: a conta a pagar ficava órfã
+ * (a empresa "devendo" por um óleo que não existe mais) e o delete nem
+ * entrava no /admin/log (o trigger só registra com service key). Agora todo
+ * caminho passa por aqui.
+ */
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  const admin = await exigirAdmin();
+  if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const { id } = await params;
+  const adminClient = getSupabaseAdmin(admin.id);
+
+  const { data: coleta } = await adminClient
+    .from("coletas")
+    .select("foto_path")
+    .eq("id", id)
+    .maybeSingle();
+
+  // Conta ABERTA morre junto; conta PAGA fica (o dinheiro saiu de verdade)
+  // e quem apagou fica sabendo — mesmo padrão do abastecimento.
+  const { data: contaPaga } = await adminClient
+    .from("contas_a_pagar")
+    .select("id")
+    .eq("origem_tipo", "coleta")
+    .eq("origem_id", id)
+    .eq("status", "paga")
+    .maybeSingle();
+  const { error: eConta } = await adminClient
+    .from("contas_a_pagar")
+    .delete()
+    .eq("origem_tipo", "coleta")
+    .eq("origem_id", id)
+    .in("status", ["prevista", "a_pagar"]);
+  if (eConta) return NextResponse.json({ error: eConta.message }, { status: 400 });
+
+  const { error } = await adminClient.from("coletas").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  if (coleta?.foto_path) {
+    await adminClient.storage.from("fotos-coletas").remove([coleta.foto_path]);
+  }
+  return NextResponse.json({
+    ok: true,
+    ...(contaPaga
+      ? {
+          aviso:
+            "a conta dessa coleta JÁ FOI PAGA — o pagamento continua no histórico e no DRE; confira se o acerto com o fornecedor aconteceu de verdade",
+        }
+      : {}),
+  });
 }

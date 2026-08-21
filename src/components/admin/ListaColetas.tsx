@@ -16,6 +16,7 @@ interface Coleta {
   certificado_tipo: string;
   litros_certificado: number | null;
   observacao: string | null;
+  pago_pela_sede?: boolean;
   latitude: number | null;
   longitude: number | null;
   gps_accuracy: number | null;
@@ -71,7 +72,7 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
         setResultadoApagar("Erro: " + data.error);
       } else {
         setResultadoApagar(
-          `${data.apagadas} coleta(s) apagadas${data.fotos_apagadas > 0 ? ` (${data.fotos_apagadas} fotos)` : ""}.`
+          `${data.apagadas} coleta(s) apagadas${data.fotos_apagadas > 0 ? ` (${data.fotos_apagadas} fotos)` : ""}.${data.aviso ? ` ${data.aviso}.` : ""}`
         );
         setMarcadas(new Set());
         router.refresh();
@@ -166,6 +167,14 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
                     </p>
                     <p className="text-base text-cinza-suave">
                       {formatLitros(c.litros)} · {formatBRL(c.valor_pago)} · R$ {custoLitro.toFixed(2).replace(".", ",")}/L
+                      {c.pago_pela_sede && (
+                        <span
+                          className="ml-2 inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-medium align-middle"
+                          title="O escritório paga o fornecedor direto — não desconta do saldo do motorista."
+                        >
+                          🏢 sede
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-base shrink-0">

@@ -61,6 +61,9 @@ export function DrawerDetalhe({
   // alert() é proibido nesse projeto (regra do Evaner: todo aviso é do
   // próprio app). Este componente ainda usava — trocado por bloco inline.
   const [erro, setErro] = useState<string | null>(null);
+  // Aviso NÃO-erro que o servidor manda junto do ok (ex.: "a dívida com o
+  // fornecedor nasceu agora") — descartar deixava a proteção invisível.
+  const [avisoOk, setAvisoOk] = useState<string | null>(null);
   // Óleo que o escritório paga direto no fornecedor. O valor conta no custo
   // do óleo mas NÃO desconta do saldo do motorista, porque ele não pagou.
   const [pagoPelaSede, setPagoPelaSede] = useState(!!coleta.pago_pela_sede);
@@ -106,14 +109,25 @@ export function DrawerDetalhe({
   async function excluir() {
     if (confirmTexto !== coleta.local_nome) return;
     setExcluindo(true);
-    const supabase = getSupabaseBrowser();
-    if (coleta.foto_path) {
-      await supabase.storage.from("fotos-coletas").remove([coleta.foto_path]);
-    }
-    const { error } = await supabase.from("coletas").delete().eq("id", coleta.id);
-    if (error) {
-      setErro("Falha ao excluir: " + error.message);
+    // Pela API, não direto no banco: o servidor desfaz a conta a pagar
+    // amarrada (coleta paga pela sede) e o delete entra no /admin/log —
+    // o caminho antigo (supabase direto do navegador) não fazia nem um
+    // nem outro.
+    const res = await fetch(`/api/admin/coletas/${coleta.id}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setErro("Falha ao excluir: " + data.error);
       setExcluindo(false);
+      return;
+    }
+    if (data.aviso) {
+      // Fica aberto mostrando o aviso — fechar calado esconderia que uma
+      // conta paga ficou no histórico.
+      setAvisoOk(`Excluída. ${data.aviso}.`);
+      setExcluindo(false);
+      router.refresh();
       return;
     }
     onClose();
@@ -132,7 +146,9 @@ export function DrawerDetalhe({
       setErro("Nome do local não pode ficar vazio");
       return;
     }
-    if (!valor || valor <= 0) {
+    // Zero é válido: doação (R2, 0031). A tela recusava o que a API e o
+    // banco já aceitavam.
+    if (valor == null || Number.isNaN(valor) || valor < 0) {
       setErro("Valor inválido");
       return;
     }
@@ -192,6 +208,12 @@ export function DrawerDetalhe({
     }
 
     setEditando(false);
+    if (data.aviso) {
+      // Fica aberto mostrando o que o servidor fez/deixou de fazer.
+      setAvisoOk(`Salvo. ${data.aviso}.`);
+      router.refresh();
+      return;
+    }
     onClose();
     router.refresh();
   }
@@ -210,6 +232,11 @@ export function DrawerDetalhe({
         </div>
 
         <div className="p-4 space-y-4">
+          {avisoOk && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
+              {avisoOk}
+            </div>
+          )}
           {!editando ? (
             <>
               <dl className="space-y-2 text-base">
@@ -217,6 +244,14 @@ export function DrawerDetalhe({
                 <Linha label="Local" valor={coleta.local_nome} />
                 <Linha label="Litros" valor={formatLitros(coleta.litros)} />
                 <Linha label="Valor pago" valor={formatBRL(coleta.valor_pago)} />
+                <Linha
+                  label="Quem pagou"
+                  valor={
+                    coleta.pago_pela_sede
+                      ? "🏢 Sede (não desconta do motorista)"
+                      : "Motorista (do saldo dele)"
+                  }
+                />
                 <Linha
                   label="R$/litro"
                   valor={`R$ ${custoLitro.toFixed(2).replace(".", ",")}`}

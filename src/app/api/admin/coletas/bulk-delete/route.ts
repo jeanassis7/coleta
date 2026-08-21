@@ -41,7 +41,26 @@ export async function POST(req: NextRequest) {
     await adminClient.storage.from("fotos-coletas").remove(paths);
   }
 
-  // 2. Apaga as coletas
+  // 2. Contas amarradas (coleta paga pela sede): as ABERTAS morrem junto —
+  // dívida de óleo que deixou de existir é dívida-fantasma. As PAGAS ficam
+  // (o dinheiro da empresa saiu de verdade) e o aviso conta quantas.
+  const { data: contasPagas } = await adminClient
+    .from("contas_a_pagar")
+    .select("id")
+    .eq("origem_tipo", "coleta")
+    .in("origem_id", ids)
+    .eq("status", "paga");
+  const { error: eContas } = await adminClient
+    .from("contas_a_pagar")
+    .delete()
+    .eq("origem_tipo", "coleta")
+    .in("origem_id", ids)
+    .in("status", ["prevista", "a_pagar"]);
+  if (eContas) {
+    return NextResponse.json({ error: eContas.message }, { status: 400 });
+  }
+
+  // 3. Apaga as coletas
   const { error } = await adminClient.from("coletas").delete().in("id", ids);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -51,5 +70,10 @@ export async function POST(req: NextRequest) {
     ok: true,
     apagadas: ids.length,
     fotos_apagadas: paths.length,
+    ...((contasPagas?.length ?? 0) > 0
+      ? {
+          aviso: `${contasPagas!.length} coleta(s) paga(s) pela sede tinham conta JÁ PAGA — os pagamentos continuam no histórico e no DRE`,
+        }
+      : {}),
   });
 }

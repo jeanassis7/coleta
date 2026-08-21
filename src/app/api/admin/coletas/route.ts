@@ -12,9 +12,16 @@ import { exigirAdmin } from "@/lib/auth/exigir-admin";
  *
  * Regras herdadas da coleta normal:
  *   • pertence ao motorista da carga
- *   • o valor DESCONTA do saldo dele (o dinheiro saiu da mão dele)
+ *   • por padrão o valor DESCONTA do saldo dele (o dinheiro saiu da mão dele)
  *   • sem GPS e sem foto (não foi capturada em campo)
  *   • lancado_por_admin guarda quem digitou, pra auditoria
+ *
+ * `pagamento` diz de quem o dinheiro saiu (antes era um passo em dois —
+ * criar debitando o motorista e marcar a sede no drawer depois; esquecer o
+ * segundo passo cobrava do motorista um óleo que a empresa pagou):
+ *   • "motorista" (padrão) — desconta do saldo dele;
+ *   • "sede"              — vira conta a pagar (vencimento opcional);
+ *   • "sede_ja_pagou"     — a conta nasce PAGA (forma + conta + data).
  */
 export async function POST(req: NextRequest) {
   const admin = await exigirAdmin();
@@ -65,6 +72,25 @@ export async function POST(req: NextRequest) {
     litros_certificado = Math.round(n * 100) / 100;
   }
 
+  // Quem pagou esse óleo
+  const pagamento = ["motorista", "sede", "sede_ja_pagou"].includes(
+    String(body.pagamento)
+  )
+    ? String(body.pagamento)
+    : "motorista";
+  const pagoPelaSede = pagamento !== "motorista";
+  if (pagamento === "sede_ja_pagou") {
+    if (
+      !body.conta_id ||
+      !["pix", "dinheiro", "deposito"].includes(String(body.forma_pagamento))
+    ) {
+      return NextResponse.json(
+        { error: "\"sede já pagou\" precisa da forma (pix/dinheiro/depósito) e de qual conta o dinheiro saiu" },
+        { status: 400 }
+      );
+    }
+  }
+
   const client = getSupabaseAdmin(admin.id);
   const { data: carga } = await client
     .from("cargas")
@@ -75,20 +101,73 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "carga não encontrada" }, { status: 404 });
   }
 
-  const { error } = await client.from("coletas").insert({
-    motorista_id: carga.motorista_id,
-    carga_id: carga.id,
-    litros: Math.round(litros * 100) / 100,
-    local_nome,
-    valor_pago,
-    certificado_tipo,
-    litros_certificado,
-    observacao,
-    gps_capturado: false,
-    criado_em: criado_em || carga.iniciada_em,
-    client_id: randomUUID(),
-    lancado_por_admin: admin.id,
-  });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  const { data: criada, error } = await client
+    .from("coletas")
+    .insert({
+      motorista_id: carga.motorista_id,
+      carga_id: carga.id,
+      litros: Math.round(litros * 100) / 100,
+      local_nome,
+      valor_pago,
+      certificado_tipo,
+      litros_certificado,
+      observacao,
+      gps_capturado: false,
+      criado_em: criado_em || carga.iniciada_em,
+      client_id: randomUUID(),
+      lancado_por_admin: admin.id,
+      pago_pela_sede: pagoPelaSede,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !criada) {
+    return NextResponse.json({ error: error?.message || "erro" }, { status: 400 });
+  }
+
+  // A dívida com o fornecedor nasce junto (mesma regra do drawer). Valor 0
+  // é doação: sede marcada, dívida nenhuma.
+  if (pagoPelaSede && valor_pago > 0) {
+    const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const vencDefault = new Date(
+      Date.UTC(hojeBr.getUTCFullYear(), hojeBr.getUTCMonth() + 1, 1)
+    )
+      .toISOString()
+      .slice(0, 10);
+    const vencimento = /^\d{4}-\d{2}-\d{2}$/.test(String(body.vencimento || ""))
+      ? String(body.vencimento)
+      : vencDefault;
+    const jaPagou = pagamento === "sede_ja_pagou";
+    // "Já pagou" sem data = pagou HOJE (não no vencimento do mês que vem).
+    const hojeIso = hojeBr.toISOString().slice(0, 10);
+    const pagoEm =
+      jaPagou && /^\d{4}-\d{2}-\d{2}$/.test(String(body.pago_em || ""))
+        ? String(body.pago_em)
+        : hojeIso;
+
+    const { error: eConta } = await client.from("contas_a_pagar").insert({
+      descricao: `Óleo — ${local_nome}`,
+      fornecedor: local_nome,
+      categoria: "oleo_sede",
+      valor: valor_pago,
+      vencimento: jaPagou ? pagoEm : vencimento,
+      status: jaPagou ? "paga" : "a_pagar",
+      ...(jaPagou
+        ? {
+            pago_em: pagoEm,
+            forma_pagamento: String(body.forma_pagamento),
+            conta_id: String(body.conta_id),
+          }
+        : {}),
+      origem_tipo: "coleta",
+      origem_id: criada.id,
+      registrado_por: admin.id,
+    });
+    if (eConta) {
+      return NextResponse.json({
+        ok: true,
+        aviso: `coleta salva, mas a conta do fornecedor não nasceu: ${eConta.message} — marque de novo pelo detalhe da coleta`,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
