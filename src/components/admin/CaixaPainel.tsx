@@ -45,6 +45,22 @@ export function CaixaPainel({
   const [formConta, setFormConta] = useState(false);
   const [apagarTransf, setApagarTransf] = useState<TransferenciaLista | null>(null);
 
+  // --- edição de conta ---
+  const [editando, setEditando] = useState<ContaFinanceira | null>(null);
+  const [edNome, setEdNome] = useState("");
+  const [edBanco, setEdBanco] = useState("");
+  const [edSaldo, setEdSaldo] = useState<number | null>(null);
+  const [edSaldoEm, setEdSaldoEm] = useState("");
+  const [confirmarDesativar, setConfirmarDesativar] = useState(false);
+  const [confirmarApagarConta, setConfirmarApagarConta] = useState(false);
+
+  // Os dropdowns de lançamento só mostram conta ativa; a lista completa
+  // (com inativas) existe pra editar e reativar.
+  const contasAtivas = contas.filter((c) => c.ativa);
+  const contasInativas = contas.filter((c) => !c.ativa);
+  const contaPorId = new Map(contas.map((c) => [c.id, c]));
+  const saldoPorConta = new Map(saldos.map((s) => [s.conta_id, s.saldo]));
+
   // --- transferência ---
   const [origem, setOrigem] = useState("");
   const [destino, setDestino] = useState("");
@@ -117,6 +133,45 @@ export function CaixaPainel({
     }
   }
 
+  function abrirEdicao(c: ContaFinanceira) {
+    setEditando(c);
+    setEdNome(c.nome);
+    setEdBanco(c.banco ?? "");
+    setEdSaldo(reaisParaCentavos(c.saldo_inicial));
+    setEdSaldoEm(c.saldo_inicial_em);
+    setFormConta(false);
+    setFormTransf(false);
+  }
+
+  async function salvarEdicao(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editando) return;
+    if (!edNome.trim()) return setErro("A conta precisa de um nome.");
+    const ok = await chamar(
+      `/api/admin/contas-financeiras/${editando.id}`,
+      {
+        nome: edNome.trim(),
+        banco: editando.tipo === "banco" ? edBanco.trim() || null : null,
+        saldo_inicial: edSaldo != null ? centavosParaReais(edSaldo) : 0,
+        saldo_inicial_em: edSaldoEm,
+      },
+      "PATCH"
+    );
+    if (ok) setEditando(null);
+  }
+
+  async function mudarAtiva(conta: ContaFinanceira, ativa: boolean) {
+    const ok = await chamar(
+      `/api/admin/contas-financeiras/${conta.id}`,
+      { ativa },
+      "PATCH"
+    );
+    if (ok) {
+      setConfirmarDesativar(false);
+      setEditando(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {erro && (
@@ -139,8 +194,19 @@ export function CaixaPainel({
             >
               {formatBRL(c.saldo)}
             </div>
-            <div className="text-xs text-cinza-suave mt-1">
-              entrou {formatBRL(c.entradas)} · saiu {formatBRL(c.saidas)}
+            <div className="text-xs text-cinza-suave mt-1 flex items-center justify-between gap-2">
+              <span>
+                entrou {formatBRL(c.entradas)} · saiu {formatBRL(c.saidas)}
+              </span>
+              <button
+                onClick={() => {
+                  const conta = contaPorId.get(c.conta_id);
+                  if (conta) abrirEdicao(conta);
+                }}
+                className="text-verde hover:underline font-medium"
+              >
+                editar
+              </button>
             </div>
           </div>
         ))}
@@ -262,15 +328,15 @@ export function CaixaPainel({
         <button
           onClick={() => {
             setFormTransf((v) => !v);
-            if (contas.length >= 2 && !origem) {
-              setOrigem(contas[0].id);
-              setDestino(contas[1].id);
+            if (contasAtivas.length >= 2 && !origem) {
+              setOrigem(contasAtivas[0].id);
+              setDestino(contasAtivas[1].id);
             }
           }}
           className="btn-primario"
-          disabled={contas.length < 2}
+          disabled={contasAtivas.length < 2}
           title={
-            contas.length < 2
+            contasAtivas.length < 2
               ? "Cadastre pelo menos duas contas pra poder transferir"
               : undefined
           }
@@ -302,7 +368,7 @@ export function CaixaPainel({
                 onChange={(e) => setOrigem(e.target.value)}
                 className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
               >
-                {contas.map((c) => (
+                {contasAtivas.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.nome}
                   </option>
@@ -316,7 +382,7 @@ export function CaixaPainel({
                 onChange={(e) => setDestino(e.target.value)}
                 className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
               >
-                {contas.map((c) => (
+                {contasAtivas.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.nome}
                   </option>
@@ -435,6 +501,158 @@ export function CaixaPainel({
             {salvando ? "Salvando…" : "Cadastrar conta"}
           </button>
         </form>
+      )}
+
+      {/* --------------------------------------------------- editar conta */}
+      {editando && (
+        <form onSubmit={salvarEdicao} className="card space-y-3">
+          <h2 className="text-lg font-semibold">
+            Editar conta — {editando.nome}
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nome</label>
+              <input
+                value={edNome}
+                onChange={(e) => setEdNome(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              />
+            </div>
+            {editando.tipo === "banco" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Banco <span className="text-cinza-suave">(opcional)</span>
+                </label>
+                <input
+                  value={edBanco}
+                  onChange={(e) => setEdBanco(e.target.value)}
+                  className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Saldo de partida
+              </label>
+              <InputDinheiro
+                centavos={edSaldo}
+                onChange={setEdSaldo}
+                grande={false}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Esse saldo é de que dia
+              </label>
+              <input
+                type="date"
+                value={edSaldoEm}
+                onChange={(e) => setEdSaldoEm(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              />
+            </div>
+          </div>
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
+            Mudar o <strong>saldo de partida</strong> ou a <strong>data</strong>{" "}
+            recalcula o saldo da conta desde o começo. Use pra corrigir um
+            cadastro que nasceu errado — não pra "acertar" uma diferença de
+            hoje (isso esconderia o motivo da diferença).
+          </div>
+          <div className="flex items-center gap-4 flex-wrap">
+            <button type="submit" disabled={salvando} className="btn-primario">
+              {salvando ? "Salvando…" : "Salvar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditando(null)}
+              className="px-4 py-2 rounded-xl border border-cinza-borda text-sm"
+            >
+              Cancelar
+            </button>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setConfirmarDesativar(true)}
+              className="text-alerta hover:underline text-sm"
+            >
+              Desativar conta
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmarApagarConta(true)}
+              className="text-alerta hover:underline text-sm"
+            >
+              Apagar
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* --------------------------------------------------- contas desativadas */}
+      {contasInativas.length > 0 && (
+        <div className="card">
+          <h2 className="text-lg font-semibold mb-1">Contas desativadas</h2>
+          <p className="text-sm text-cinza-suave mb-3">
+            Fora dos lançamentos e do saldo. O histórico delas continua de pé.
+          </p>
+          <div className="space-y-1">
+            {contasInativas.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between text-sm border-b border-cinza-borda py-2"
+              >
+                <span>
+                  {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
+                </span>
+                <button
+                  onClick={() => mudarAtiva(c, true)}
+                  disabled={salvando}
+                  className="text-verde hover:underline font-medium"
+                >
+                  Reativar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {editando && confirmarDesativar && (
+        <ModalConfirmar
+          titulo={`Desativar ${editando.nome}`}
+          descricao={
+            (saldoPorConta.get(editando.id) ?? 0) !== 0
+              ? `Essa conta está com saldo de ${formatBRL(
+                  saldoPorConta.get(editando.id) ?? 0
+                )}. Desativada, ela some do painel e do total do patrimônio — o saldo vai junto. O certo é primeiro transferir o dinheiro pra outra conta e desativar quando zerar.`
+              : "A conta sai dos lançamentos e do saldo. O histórico continua de pé, e dá pra reativar quando quiser."
+          }
+          confirmarLabel="Desativar mesmo assim"
+          perigo
+          carregando={salvando}
+          onConfirmar={() => mudarAtiva(editando, false)}
+          onFechar={() => setConfirmarDesativar(false)}
+        />
+      )}
+
+      {editando && confirmarApagarConta && (
+        <ModalConfirmar
+          titulo={`Apagar ${editando.nome}`}
+          descricao="Só dá pra apagar conta que nunca teve movimento — se tiver qualquer lançamento, o sistema recusa e o caminho é desativar. Use pra desfazer um cadastro errado."
+          confirmarLabel="Apagar"
+          perigo
+          carregando={salvando}
+          onConfirmar={async () => {
+            const ok = await chamar(
+              `/api/admin/contas-financeiras/${editando.id}`,
+              null,
+              "DELETE"
+            );
+            setConfirmarApagarConta(false);
+            if (ok) setEditando(null);
+          }}
+          onFechar={() => setConfirmarApagarConta(false)}
+        />
       )}
 
       {/* --------------------------------------------------- transferências */}

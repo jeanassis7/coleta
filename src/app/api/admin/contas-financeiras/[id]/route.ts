@@ -73,6 +73,11 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     client.from("acertos").select("id", { count: "exact", head: true }).eq("conta_id", id),
     client.from("transferencias").select("id", { count: "exact", head: true }).eq("conta_origem_id", id),
     client.from("transferencias").select("id", { count: "exact", head: true }).eq("conta_destino_id", id),
+    // Estes dois entraram depois das outras seis e ficaram fora do guarda:
+    // conta usada só por cheque compensado ou compra direta passava daqui e
+    // morria no erro cru de FK do Postgres.
+    client.from("cheques").select("id", { count: "exact", head: true }).eq("conta_id", id),
+    client.from("compras_diretas").select("id", { count: "exact", head: true }).eq("conta_id", id),
   ]);
   const total = usos.reduce((s, u) => s + (u.count ?? 0), 0);
 

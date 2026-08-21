@@ -11,7 +11,9 @@ export const dynamic = "force-dynamic";
 
 export default async function CaixaPage() {
   const [contas, saldos, naMao, transferencias, patrimonio] = await Promise.all([
-    buscarContasFinanceiras(),
+    // Inativas incluídas: a tela precisa delas pra oferecer "reativar".
+    // Os dropdowns de lançamento continuam só com as ativas (filtro no painel).
+    buscarContasFinanceiras({ incluirInativas: true }),
     buscarSaldoContas(),
     buscarDinheiroNaMao(),
     buscarTransferencias(50),
