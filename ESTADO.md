@@ -251,9 +251,42 @@ commit por item, regra única: **editar/apagar arrasta o dinheiro amarrado**:
    remove a conta espelho.
 
 Verificação: typecheck + build limpos, e2e-modulo1 56/56, e2e-modulo2 tudo
-verde. O resto da varredura (entrada avulsa/aporte, ajuste de caixa,
-pagamento parcial, juros, abatimento de comprador, compra a prazo etc.)
-**aguarda decisão do Evaner** — não mexer sem ordem.
+verde.
+
+### A rodada FINAL da varredura (21/08, tarde) — "o restante pode implementar"
+
+O Evaner autorizou o resto da varredura inteiro (e decidiu o item 41:
+apagar forçado continua levando tudo — é o erase de perfil simulado — e a
+blindagem virou a coluna `profiles.protegido`, marcada nos 3 motoristas
+reais + Valdecir). **Migrations 0047-0050 aplicadas.** O que entrou:
+
+- **0047 (caixa fecha de verdade):** `entradas_avulsas` (aporte,
+  empréstimo, reembolso, rendimento, venda de bem — entra no caixa, FORA
+  do DRE), `ajustes_caixa` (inventário do dinheiro, com motivo),
+  `devolucoes_motorista` (troco no meio do ciclo, sem resetar o corte),
+  `despesas.pago_na_hora` + trigger da nota assinada de despesa,
+  `conta_id` em despesas/abastecimentos (sede paga direto), forma
+  `abatimento` no recebimento, e as duas funções de saldo redefinidas.
+- **0048** venda com `client_id` (clique duplo não duplica). **0049**
+  perfil protegido. **0050** o custo da compra "no caminhão"
+  (`entra_no_estoque=false`) entra no custo da descarga da carga.
+- **Telas:** Caixa ganhou Entrada avulsa + Ajuste + linha "A caminho"
+  (adiantamento pendente) no patrimônio; Adiantamentos ganhou Devolução e
+  Estornar (aceito, com guarda de ciclo); coleta retroativa nasce com o
+  pagador (bolso/sede/sede-já-pagou) e o pacote inteiro da coleta da sede
+  fechou (delete desfaz a conta, valor-0 corrigido nasce a dívida, badge
+  "sede", conta cancelada desmarca a coleta); despesa ganhou ASSINEI A NOTA
+  no app do motorista e no painel; avulso do painel exige conta e aparece
+  nas listas (LEFT join); ModalPagar ganhou parcial + juros/multa
+  (categoria nova `juros_multas`) + vales; conta manual pede pessoa;
+  compra direta a prazo; cheque compensado pode "voltar" (devolução
+  tardia); documento não duplica mais a conta; datas futuras bloqueadas em
+  toda saída; Remuneração mostra calculado × pago; contas com selectTudo.
+- **De fora, com justificativa:** item 31 (cheque sem comprador —
+  invasivo, sem caso real) e 36 (acerto retroativo — o Desfazer cobre).
+
+Verificação da rodada final: typecheck + build limpos, e2e-modulo1 56/56,
+e2e-modulo2 tudo verde. VARREDURA-DINHEIRO.md ganhou o placar no topo.
 
 ### Aberto sem causa raiz
 

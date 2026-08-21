@@ -1,5 +1,16 @@
 # Varredura — o sistema fechado de dinheiro
 
+> **PLACAR 21/08/2026 — encerrada.** A rodada de edição fechou os itens
+> 12, 15-21, 39, 40, 42; a rodada final (autorização "o restante pode
+> implementar") fechou 1-11, 13, 14, 23-30, 32 (versão leve), 33-35, 37,
+> 38 (nota), 43-47 — migrations 0047-0050. O **41 virou decisão**: apagar
+> forçado leva tudo MESMO (é o erase de perfil simulado), e a blindagem é a
+> coluna `profiles.protegido` (0049) nos perfis reais. Ficaram DE FORA, com
+> justificativa: **31** (cheque desamarrado de comprador — invasivo, sem
+> caso real) e **36** (acerto retroativo — exige recalcular saldo num
+> instante passado; o "Desfazer último acerto" cobre o erro comum). O texto
+> abaixo fica como registro do diagnóstico.
+
 > **20/08/2026.** Pedido do Evaner antes dos lançamentos reais: *"de algum
 > lugar tem que ir pra outro — varredura COMPLETA de que aba e que parte o
 > dinheiro pode ir pra outro lugar que falta campos ou formas."*
