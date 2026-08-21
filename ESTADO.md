@@ -18,7 +18,9 @@ Material em `dados-historicos/` (fora do git): `MAPA-BACKFILL.md`,
 
 - **Números**: 1.031 contas pagas · 288 recebimentos · 265 cheques · 31
   vendas (85% fino / 15% grosso) · 131 cargas+descargas históricas · 15
-  adiantamentos da virada (pendentes de aceite no app) · comprador "CHEQUES
+  adiantamentos da virada (ACEITOS em lote por decisão do Evaner — a prova é
+  a devolução física no acerto; aceite real vale só daqui pra frente) ·
+  comprador "CHEQUES
   2025 — VIRADA" · caminhões inativos ANTIGO-NEI e ANTIGO-FUMACA · PARANA
   ALUMÍNIO renomeado "PR ALUMÍNIO / LAZZARIN".
 - **Marca e desfazer**: toda observacao carrega `[backfill-2026 <ref>]`.
@@ -30,9 +32,9 @@ Material em `dados-historicos/` (fora do git): `MAPA-BACKFILL.md`,
   do app = custo oleo_motorista, depois = adiantamento retroativo;
   empréstimos recebidos FORA do DRE; cheques de 2025 = agregado mensal no
   comprador próprio; datas pré-corte (20/08) não mexem no caixa.
-- **Esperado/conhecido**: estoque mostra número sem sentido (fino 267t,
-  grosso −74t) ATÉ a ABERTURA do inventário — que zera a régua (regra de
-  ouro: depois da última descarga do regime antigo). PROLUMINAS (−308k) e
+- **Esperado/conhecido**: estoque foi ZERADO (abertura 0/0 em 21/08, pedido
+  do Evaner — o histórico vira só história); a contagem real entra depois
+  pelo INVENTÁRIO na tela de estoque. PROLUMINAS (−308k) e
   FILTROVILLE (−2,7k) aparecem com "crédito" porque não há controle de kg
   das vendas deles — só recebimentos. VISSOTO −1.536,02 (mistério dos
   7.057,76 de 27/07, "a posteriori" por decisão do Evaner).
