@@ -113,16 +113,6 @@ export interface MovimentoAvulso {
   conta_nome: string;
 }
 
-export const ROTULO_ENTRADA_AVULSA: Record<string, string> = {
-  aporte: "Aporte de sócio",
-  emprestimo: "Empréstimo recebido",
-  reembolso: "Reembolso",
-  rendimento: "Rendimento",
-  venda_ativo: "Venda de bem",
-  outra: "Outra entrada",
-  ajuste: "Ajuste de caixa",
-};
-
 /**
  * Entradas avulsas + ajustes de caixa (0047), juntos e por data — é a
  * lista "o que mexeu no caixa sem ser operação" da tela de Caixa.

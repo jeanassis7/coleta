@@ -5,14 +5,25 @@ import { useRouter } from "next/navigation";
 import { InputDinheiro, centavosParaReais, reaisParaCentavos } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "./Modais";
 import { formatBRL, formatData } from "@/lib/format";
-import {
-  ROTULO_ENTRADA_AVULSA,
-  type ContaFinanceira,
-  type SaldoConta,
-  type DinheiroNaMao,
-  type Patrimonio,
-  type MovimentoAvulso,
+import type {
+  ContaFinanceira,
+  SaldoConta,
+  DinheiroNaMao,
+  Patrimonio,
+  MovimentoAvulso,
 } from "@/lib/admin/caixa";
+
+// Local de propósito: importar um VALOR de caixa.ts puxaria o módulo
+// server-only (getSupabaseServer) pro bundle do cliente e o build quebra.
+const ROTULO_ENTRADA_AVULSA: Record<string, string> = {
+  aporte: "Aporte de sócio",
+  emprestimo: "Empréstimo recebido",
+  reembolso: "Reembolso",
+  rendimento: "Rendimento",
+  venda_ativo: "Venda de bem",
+  outra: "Outra entrada",
+  ajuste: "Ajuste de caixa",
+};
 
 type TransferenciaLista = {
   id: string;
