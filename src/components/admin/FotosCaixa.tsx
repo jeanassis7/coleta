@@ -1,57 +1,78 @@
 import type { FotoCaixaLinha } from "@/lib/admin/caixa";
 
 /**
- * O histórico do caixa — a foto de toda segunda-feira, lado a lado.
- * Versão automática da aba "ACOMPANHAMENTO DE CAIXA" da planilha antiga:
- * linhas = o que compõe o giro, colunas = as segundas.
+ * Histórico do caixa — a foto de toda segunda-feira, lado a lado.
+ * Linhas = os componentes do giro; colunas = as segundas, começando em
+ * 31/08/2026 e andando de 7 em 7 dias. Célula vazia = foto ainda não
+ * tirada (coluna futura) ou foto que falhou naquela segunda.
  *
- * FOTO É IMUTÁVEL: corrigir o passado não reescreve coluna antiga. Se um
- * dia a foto divergir do recálculo, isso denuncia que mexeram no passado —
- * ela é a testemunha do sistema fechado de dinheiro.
+ * Sem texto de explicação, por pedido do Evaner (21/08): só o título e a
+ * tabela. A foto em si é imutável (0051) — isso vive no banco, não aqui.
  */
+
+const PRIMEIRA_FOTO = "2026-08-31";
 
 const n2 = (v: number) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export function FotosCaixaTabela({ fotos }: { fotos: FotoCaixaLinha[] }) {
-  if (fotos.length === 0) {
-    return (
-      <div className="card">
-        <h2 className="text-lg font-semibold mb-1">Histórico do caixa</h2>
-        <p className="text-sm text-cinza-suave">
-          Toda segunda-feira às 6h o sistema tira uma <strong>foto</strong> do
-          patrimônio acima e guarda aqui, coluna a coluna — sozinho, sem
-          ninguém precisar abrir nada. A primeira foto sai na{" "}
-          <strong>segunda-feira, 31/08</strong>. A foto nunca muda depois de
-          tirada: corrigir o passado não reescreve o histórico.
-        </p>
-      </div>
-    );
+/** As segundas de 31/08 até hoje (BR) — sempre pelo menos a primeira. */
+function segundasProgramadas(): string[] {
+  const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const datas: string[] = [];
+  const d = new Date(`${PRIMEIRA_FOTO}T00:00:00Z`);
+  while (datas.length === 0 || d.toISOString().slice(0, 10) <= hojeBr) {
+    datas.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 7);
   }
+  return datas;
+}
 
-  const datas = [...new Set(fotos.map((f) => f.data))].sort();
-  // As linhas na ordem da foto mais RECENTE (contas podem nascer/sumir com o
-  // tempo — a foto nova manda na ordem; linha que só existe em foto antiga
-  // continua aparecendo, no fim do bloco dela).
-  const linhas: { chave: string; label: string; ordem: number }[] = [];
-  for (const data of [...datas].reverse()) {
-    for (const f of fotos.filter((x) => x.data === data)) {
-      if (!linhas.some((l) => l.chave === f.chave))
-        linhas.push({ chave: f.chave, label: f.label, ordem: f.ordem });
+/** Esqueleto das linhas antes da primeira foto — espelha a função do banco. */
+const LINHAS_PADRAO = (contasNomes: string[]) => [
+  ...contasNomes.map((nome, i) => ({ chave: `conta-nome:${nome}`, label: nome, ordem: 10 + i / 100 })),
+  { chave: "maos_motoristas", label: "Em mãos de motoristas", ordem: 20 },
+  { chave: "estoque", label: "Valor em estoque", ordem: 30 },
+  { chave: "oleo_caminhoes", label: "Óleo nos caminhões", ordem: 40 },
+  { chave: "cheques_aberto", label: "Cheques em aberto", ordem: 50 },
+  { chave: "a_receber", label: "A receber dos compradores", ordem: 60 },
+  { chave: "contas_a_pagar", label: "(−) Contas a pagar em aberto", ordem: 70 },
+  { chave: "total", label: "TOTAL", ordem: 99 },
+];
+
+export function FotosCaixaTabela({
+  fotos,
+  contasNomes,
+}: {
+  fotos: FotoCaixaLinha[];
+  contasNomes: string[];
+}) {
+  // Colunas: as segundas programadas + qualquer data que já tenha foto.
+  const datas = [...new Set([...segundasProgramadas(), ...fotos.map((f) => f.data)])].sort();
+
+  // Linhas: das fotos quando existem (a mais recente manda na ordem);
+  // esqueleto padrão enquanto não há nenhuma.
+  let linhas: { chave: string; label: string; ordem: number }[];
+  if (fotos.length > 0) {
+    linhas = [];
+    const datasComFoto = [...new Set(fotos.map((f) => f.data))].sort().reverse();
+    for (const data of datasComFoto) {
+      for (const f of fotos.filter((x) => x.data === data)) {
+        if (!linhas.some((l) => l.chave === f.chave))
+          linhas.push({ chave: f.chave, label: f.label, ordem: f.ordem });
+      }
     }
+  } else {
+    linhas = LINHAS_PADRAO(contasNomes);
   }
   linhas.sort((a, b) => a.ordem - b.ordem || a.label.localeCompare(b.label));
+
   const valor = new Map(fotos.map((f) => [`${f.data}|${f.chave}`, f.valor]));
 
   return (
     <div className="card">
-      <h2 className="text-lg font-semibold mb-1">Histórico do caixa</h2>
-      <p className="text-sm text-cinza-suave mb-3">
-        A foto de toda segunda-feira, 6h — tirada pelo próprio sistema.
-        Imutável: corrigir o passado não reescreve coluna antiga.
-      </p>
+      <h2 className="text-lg font-semibold mb-3">Histórico do caixa</h2>
       <div className="overflow-x-auto">
         <table className="text-sm min-w-max w-full">
           <thead>
@@ -90,11 +111,7 @@ export function FotosCaixaTabela({ fotos }: { fotos: FotoCaixaLinha[] }) {
                           v != null && v < 0 ? "text-alerta" : ""
                         } ${total ? "font-bold py-2.5" : ""}`}
                       >
-                        {v == null ? (
-                          <span className="text-cinza-suave/50">—</span>
-                        ) : (
-                          n2(v)
-                        )}
+                        {v == null ? <span className="text-cinza-suave/40">—</span> : n2(v)}
                       </td>
                     );
                   })}

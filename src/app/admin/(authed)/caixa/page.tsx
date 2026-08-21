@@ -66,7 +66,7 @@ export default async function CaixaPage() {
       )}
 
       <div className="mt-6">
-        <FotosCaixaTabela fotos={fotos} />
+        <FotosCaixaTabela fotos={fotos} contasNomes={saldos.map((s) => s.nome)} />
       </div>
     </div>
   );
