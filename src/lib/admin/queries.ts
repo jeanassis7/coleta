@@ -400,20 +400,21 @@ export async function buscarAbastecimentos(
   opts: FiltrosOperacaoParams = {}
 ): Promise<AbastecimentoAdmin[]> {
   const supabase = await getSupabaseServer();
+  // SEM `!inner`: o lançamento avulso do painel tem motorista e carga NULOS
+  // e o inner join descartava a linha — o botão "+ Lançar pelo painel"
+  // criava algo que nunca aparecia na própria tela (nem podia ser editado).
   let q = supabase
     .from("abastecimentos")
     .select(
-      `id, carga_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora, tipo,
-       profiles!abastecimentos_motorista_id_fkey!inner(nome),
-       cargas!inner(caminhao_id, caminhoes(placa))`
+      `id, carga_id, caminhao_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora, tipo,
+       profiles!abastecimentos_motorista_id_fkey(nome),
+       cargas(caminhao_id, caminhoes(placa)),
+       caminhao_direto:caminhoes!abastecimentos_caminhao_id_fkey(placa)`
     )
     .order("criado_em", { ascending: false })
     .limit(1000);
   if (opts.motorista && opts.motorista !== "todos") {
     q = q.eq("motorista_id", opts.motorista);
-  }
-  if (opts.caminhao && opts.caminhao !== "todos") {
-    q = q.eq("cargas.caminhao_id", opts.caminhao);
   }
   const intervalo = resolveIntervaloOperacao(opts);
   if (intervalo) {
@@ -428,6 +429,7 @@ export async function buscarAbastecimentos(
   type Row = {
     id: string;
     carga_id: string;
+    caminhao_id: string | null;
     posto_nome: string;
     litros: number;
     valor: number;
@@ -437,23 +439,35 @@ export async function buscarAbastecimentos(
     pago_na_hora: boolean;
     tipo: "diesel" | "arla" | null;
     profiles: { nome: string } | null;
-    cargas: { caminhoes: { placa: string } | null } | null;
+    cargas: { caminhao_id: string | null; caminhoes: { placa: string } | null } | null;
+    caminhao_direto: { placa: string } | null;
   };
   const rows = (data as unknown as Row[]) || [];
-  return rows.map((r) => ({
-    id: r.id,
-    carga_id: r.carga_id,
-    motorista_nome: r.profiles?.nome || "—",
-    caminhao_placa: r.cargas?.caminhoes?.placa || "—",
-    posto_nome: r.posto_nome,
-    litros: Number(r.litros),
-    valor: Number(r.valor),
-    km_atual: r.km_atual,
-    foto_path: r.foto_path,
-    criado_em: r.criado_em,
-    pago_na_hora: r.pago_na_hora !== false,
-    tipo: r.tipo === "arla" ? "arla" : "diesel",
-  }));
+  return rows
+    .filter(
+      // O filtro de caminhão vale pros dois mundos: carga do motorista OU
+      // veículo direto do avulso (não dá pra filtrar embed com left join).
+      (r) =>
+        !opts.caminhao ||
+        opts.caminhao === "todos" ||
+        r.caminhao_id === opts.caminhao ||
+        r.cargas?.caminhao_id === opts.caminhao
+    )
+    .map((r) => ({
+      id: r.id,
+      carga_id: r.carga_id,
+      motorista_nome: r.profiles?.nome || "Painel",
+      caminhao_placa:
+        r.cargas?.caminhoes?.placa || r.caminhao_direto?.placa || "—",
+      posto_nome: r.posto_nome,
+      litros: Number(r.litros),
+      valor: Number(r.valor),
+      km_atual: r.km_atual,
+      foto_path: r.foto_path,
+      criado_em: r.criado_em,
+      pago_na_hora: r.pago_na_hora !== false,
+      tipo: r.tipo === "arla" ? "arla" : "diesel",
+    }));
 }
 
 export interface DespesaAdmin {
@@ -465,6 +479,8 @@ export interface DespesaAdmin {
   descricao: string;
   foto_path: string | null;
   criado_em: string;
+  /** false = assinou a nota / faturado — não saiu do bolso do motorista. */
+  pago_na_hora: boolean;
 }
 
 /** Despesas (almoço, hotel, lavagem…), mais recente primeiro. */
@@ -472,20 +488,20 @@ export async function buscarDespesas(
   opts: FiltrosOperacaoParams = {}
 ): Promise<DespesaAdmin[]> {
   const supabase = await getSupabaseServer();
+  // SEM `!inner` — mesmo motivo do abastecimento: o avulso do painel tem
+  // motorista e carga nulos e sumia da própria tela.
   let q = supabase
     .from("despesas")
     .select(
-      `id, carga_id, valor, descricao, foto_path, criado_em,
-       profiles!despesas_motorista_id_fkey!inner(nome),
-       cargas!inner(caminhao_id, caminhoes(placa))`
+      `id, carga_id, caminhao_id, valor, descricao, foto_path, criado_em, pago_na_hora,
+       profiles!despesas_motorista_id_fkey(nome),
+       cargas(caminhao_id, caminhoes(placa)),
+       caminhao_direto:caminhoes!despesas_caminhao_id_fkey(placa)`
     )
     .order("criado_em", { ascending: false })
     .limit(1000);
   if (opts.motorista && opts.motorista !== "todos") {
     q = q.eq("motorista_id", opts.motorista);
-  }
-  if (opts.caminhao && opts.caminhao !== "todos") {
-    q = q.eq("cargas.caminhao_id", opts.caminhao);
   }
   const intervalo = resolveIntervaloOperacao(opts);
   if (intervalo) {
@@ -500,24 +516,37 @@ export async function buscarDespesas(
   type Row = {
     id: string;
     carga_id: string;
+    caminhao_id: string | null;
     valor: number;
     descricao: string;
     foto_path: string | null;
     criado_em: string;
+    pago_na_hora: boolean;
     profiles: { nome: string } | null;
-    cargas: { caminhoes: { placa: string } | null } | null;
+    cargas: { caminhao_id: string | null; caminhoes: { placa: string } | null } | null;
+    caminhao_direto: { placa: string } | null;
   };
   const rows = (data as unknown as Row[]) || [];
-  return rows.map((r) => ({
-    id: r.id,
-    carga_id: r.carga_id,
-    motorista_nome: r.profiles?.nome || "—",
-    caminhao_placa: r.cargas?.caminhoes?.placa || "—",
-    valor: Number(r.valor),
-    descricao: r.descricao,
-    foto_path: r.foto_path,
-    criado_em: r.criado_em,
-  }));
+  return rows
+    .filter(
+      (r) =>
+        !opts.caminhao ||
+        opts.caminhao === "todos" ||
+        r.caminhao_id === opts.caminhao ||
+        r.cargas?.caminhao_id === opts.caminhao
+    )
+    .map((r) => ({
+      id: r.id,
+      carga_id: r.carga_id,
+      motorista_nome: r.profiles?.nome || "Painel",
+      caminhao_placa:
+        r.cargas?.caminhoes?.placa || r.caminhao_direto?.placa || "—",
+      valor: Number(r.valor),
+      descricao: r.descricao,
+      foto_path: r.foto_path,
+      criado_em: r.criado_em,
+      pago_na_hora: r.pago_na_hora !== false,
+    }));
 }
 
 // ============================================================================

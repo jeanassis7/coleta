@@ -58,6 +58,7 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
             .from("despesas")
             .select("valor")
             .eq("motorista_id", motoristaId)
+            .eq("pago_na_hora", true)
             .gt("criado_em", corte),
           supabase
             .from("abastecimentos")

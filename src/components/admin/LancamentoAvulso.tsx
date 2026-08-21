@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { formatBRL } from "@/lib/format";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
 
@@ -55,8 +56,26 @@ export function LancamentoAvulso({
   const [km, setKm] = useState("");
   const [pagoNaHora, setPagoNaHora] = useState(true);
   const [vencimento, setVencimento] = useState("");
+  // Pagou na hora = o pix/cartão DA EMPRESA pagou: sem dizer a conta, o
+  // gasto entrava no DRE e não saía de caixa nenhum.
+  const [contaId, setContaId] = useState("");
+  const [contas, setContas] = useState<
+    { id: string; nome: string; tipo: string }[]
+  >([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const supabase = getSupabaseBrowser();
+      const { data: lista } = await supabase
+        .from("contas_financeiras")
+        .select("id, nome, tipo")
+        .eq("ativa", true)
+        .order("nome");
+      setContas((lista as { id: string; nome: string; tipo: string }[]) ?? []);
+    })();
+  }, []);
 
   async function salvar() {
     if (!caminhaoId) return setErro("Escolha o veículo");
@@ -68,6 +87,9 @@ export function LancamentoAvulso({
       if (posto.trim().length < 2) return setErro("Diga o nome do posto");
       if (!Number(litros.replace(",", "."))) return setErro("Informe os litros");
       if (!Number(km)) return setErro("Informe o km do veículo");
+    }
+    if (pagoNaHora && !contaId) {
+      return setErro("Diga de qual conta da empresa o dinheiro saiu");
     }
 
     setErro(null);
@@ -82,6 +104,9 @@ export function LancamentoAvulso({
           venda_id: vendaId,
           criado_em: data,
           valor: centavosParaReais(valorCentavos),
+          pago_na_hora: pagoNaHora,
+          conta_id: pagoNaHora ? contaId : null,
+          vencimento: pagoNaHora ? null : vencimento || null,
           ...(tipo === "despesa"
             ? { descricao: descricao.trim() }
             : {
@@ -89,8 +114,6 @@ export function LancamentoAvulso({
                 tipo_abastecimento: tipoAbast,
                 litros: Number(litros.replace(",", ".")),
                 km_atual: Number(km),
-                pago_na_hora: pagoNaHora,
-                vencimento: vencimento || null,
               }),
         }),
       });
@@ -246,52 +269,71 @@ export function LancamentoAvulso({
           />
         </div>
 
-        {tipo === "abastecimento" && (
-          <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-2">
-            <p className="text-sm font-medium">Como pagou?</p>
-            <div className="flex gap-2">
-              {(
-                [
-                  [true, "Pagou agora"],
-                  [false, "Assinou a nota"],
-                ] as const
-              ).map(([v, r]) => (
-                <button
-                  key={String(v)}
-                  type="button"
-                  onClick={() => setPagoNaHora(v)}
-                  className={`flex-1 px-4 py-2 rounded-xl border-2 text-sm ${
-                    pagoNaHora === v
-                      ? "bg-verde text-white border-verde"
-                      : "bg-white border-cinza-borda"
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            {!pagoNaHora && (
-              <div>
-                <label className="block text-xs text-cinza-suave mb-1">
-                  Quando vence a fatura do posto (opcional)
-                </label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-                  value={vencimento}
-                  onChange={(e) => setVencimento(e.target.value)}
-                />
-                <p className="text-xs text-cinza-suave mt-1">
-                  A conta a pagar do posto nasce junto —{" "}
-                  {valorCentavos
-                    ? formatBRL(centavosParaReais(valorCentavos))
-                    : "o valor"}{" "}
-                  vai aparecer em Contas a pagar.
-                </p>
-              </div>
-            )}
+        <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-2">
+          <p className="text-sm font-medium">Como pagou?</p>
+          <div className="flex gap-2">
+            {(
+              [
+                [true, "Pagou agora"],
+                [false, "Assinou a nota"],
+              ] as const
+            ).map(([v, r]) => (
+              <button
+                key={String(v)}
+                type="button"
+                onClick={() => setPagoNaHora(v)}
+                className={`flex-1 px-4 py-2 rounded-xl border-2 text-sm ${
+                  pagoNaHora === v
+                    ? "bg-verde text-white border-verde"
+                    : "bg-white border-cinza-borda"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
           </div>
-        )}
+          {pagoNaHora ? (
+            <div>
+              <label className="block text-xs text-cinza-suave mb-1">
+                De qual conta da empresa saiu
+              </label>
+              <select
+                value={contaId}
+                onChange={(e) => setContaId(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              >
+                <option value="">Escolha a conta…</option>
+                {contas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-cinza-suave mt-1">
+                O gasto sai do saldo dessa conta no Caixa — dinheiro não some.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs text-cinza-suave mb-1">
+                Quando vence a fatura (opcional)
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                value={vencimento}
+                onChange={(e) => setVencimento(e.target.value)}
+              />
+              <p className="text-xs text-cinza-suave mt-1">
+                A conta a pagar nasce junto —{" "}
+                {valorCentavos
+                  ? formatBRL(centavosParaReais(valorCentavos))
+                  : "o valor"}{" "}
+                vai aparecer em Contas a pagar.
+              </p>
+            </div>
+          )}
+        </div>
 
         {erro && (
           <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">

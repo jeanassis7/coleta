@@ -24,6 +24,9 @@ export default function DespesaPage() {
 
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [descricao, setDescricao] = useState("");
+  // O combustível já tinha os dois botões; a despesa não — e a borracharia
+  // que fia obrigava a lançar como se tivesse pago do bolso (saldo errado).
+  const [pagoNaHora, setPagoNaHora] = useState(true);
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
 
@@ -77,6 +80,7 @@ export default function DespesaPage() {
       carga_id: carga.id,
       valor,
       descricao: descricao.trim(),
+      pago_na_hora: pagoNaHora,
       latitude: gpsJa?.ok ? gpsJa.latitude : null,
       longitude: gpsJa?.ok ? gpsJa.longitude : null,
       gps_pendente: gpsJa === null,
@@ -155,6 +159,41 @@ export default function DespesaPage() {
             placeholder=""
             required
           />
+        </div>
+
+        {/* Mesma pergunta do abastecimento — sobre o ATO, não contabilidade */}
+        <div>
+          <label className="block text-xl font-semibold mb-3">
+            💵 Como pagou?
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(true)}
+              className={`rounded-2xl py-6 px-2 border-2 text-center transition-colors ${
+                pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <span className="block text-lg font-bold leading-tight">
+                PAGUEI AGORA
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(false)}
+              className={`rounded-2xl py-6 px-2 border-2 text-center transition-colors ${
+                !pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <span className="block text-lg font-bold leading-tight">
+                ASSINEI A NOTA
+              </span>
+            </button>
+          </div>
         </div>
 
         {motoristaId && (

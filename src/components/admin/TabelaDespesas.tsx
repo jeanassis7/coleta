@@ -29,6 +29,7 @@ export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
         setAviso("Erro: " + data.error);
         setTimeout(() => setAviso(null), 8000);
       } else {
+        if (data.aviso) setAviso(data.aviso);
         router.refresh();
       }
     } finally {
@@ -72,7 +73,17 @@ export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
                 {d.motorista_nome}
               </td>
               <td className="py-2 pr-3 font-mono">{d.caminhao_placa}</td>
-              <td className="py-2 pr-3">{d.descricao}</td>
+              <td className="py-2 pr-3">
+                {d.descricao}
+                {!d.pago_na_hora && (
+                  <span
+                    className="ml-2 inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-medium align-middle"
+                    title="Assinou a nota / faturado: não saiu do bolso do motorista. A conta a pagar nasceu sozinha — está em Contas a pagar."
+                  >
+                    assinou a nota
+                  </span>
+                )}
+              </td>
               <td className="py-2 pr-3 text-right font-mono">{formatBRL(d.valor)}</td>
               <td className="py-2 pr-3 text-center">
                 <VisualizadorFoto
@@ -116,7 +127,11 @@ export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
       )}
 
       {editando && (
-        <ModalEditarDespesa despesa={editando} onFechar={() => setEditando(null)} />
+        <ModalEditarDespesa
+          despesa={editando}
+          onFechar={() => setEditando(null)}
+          onAviso={setAviso}
+        />
       )}
 
       {apagando && (
@@ -137,15 +152,18 @@ export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
 function ModalEditarDespesa({
   despesa,
   onFechar,
+  onAviso,
 }: {
   despesa: DespesaAdmin;
   onFechar: () => void;
+  onAviso: (aviso: string | null) => void;
 }) {
   const router = useRouter();
   const [descricao, setDescricao] = useState(despesa.descricao);
   const [valorCentavos, setValorCentavos] = useState<number | null>(
     reaisParaCentavos(despesa.valor)
   );
+  const [pagoNaHora, setPagoNaHora] = useState(despesa.pago_na_hora);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -161,6 +179,7 @@ function ModalEditarDespesa({
         body: JSON.stringify({
           descricao: descricao.trim(),
           valor: centavosParaReais(valorCentavos),
+          pago_na_hora: pagoNaHora,
         }),
       });
       const data = await res.json();
@@ -168,6 +187,7 @@ function ModalEditarDespesa({
         setErro(data.error || "erro");
         return;
       }
+      onAviso(data.aviso || null);
       router.refresh();
       onFechar();
     } finally {
@@ -198,6 +218,40 @@ function ModalEditarDespesa({
             onChange={setValorCentavos}
             grande={false}
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Como foi pago</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(true)}
+              className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              Pagou na hora
+            </button>
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(false)}
+              className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                !pagoNaHora
+                  ? "bg-amber-500 text-white border-amber-500"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              Assinou a nota
+            </button>
+          </div>
+          {pagoNaHora !== despesa.pago_na_hora && (
+            <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-2">
+              {pagoNaHora
+                ? "Trocando pra PAGOU NA HORA: volta a descontar do saldo do motorista e a conta a pagar é removida. Se a conta já foi paga, o sistema recusa."
+                : "Trocando pra ASSINOU A NOTA: sai do saldo do motorista e vira dívida em Contas a pagar (vencimento dia 1 do mês que vem)."}
+            </p>
+          )}
         </div>
         {erro && (
           <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">

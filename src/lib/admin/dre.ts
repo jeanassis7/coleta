@@ -109,10 +109,13 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   ] = await Promise.all([
     // Receita = o que ENTROU. Cheque fica de fora aqui e entra pela
     // compensação, na consulta seguinte — senão o mesmo dinheiro dobra.
+    // ABATIMENTO também fica de fora: baixa a dívida do comprador sem
+    // dinheiro entrar (perdão/desconto combinado, 0047) — receita que
+    // nunca virou caixa não é receita sob regime de caixa.
     supabase
       .from("recebimentos")
       .select("valor, forma")
-      .neq("forma", "cheque")
+      .not("forma", "in", '("cheque","abatimento")')
       .gte("data", inicio)
       .lte("data", fim),
     supabase
@@ -146,7 +149,11 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
       .gte("criado_em", de)
       .lte("criado_em", ate),
     supabase.from("manutencoes").select("id, valor, tipo").gte("data", inicio).lte("data", fim),
-    supabase.from("despesas").select("valor").gte("criado_em", de).lte("criado_em", ate),
+    supabase
+      .from("despesas")
+      .select("id, valor, pago_na_hora")
+      .gte("criado_em", de)
+      .lte("criado_em", ate),
     // Só PAGA, e pela data em que foi paga. É o extrato.
     supabase
       .from("contas_a_pagar")
@@ -253,7 +260,17 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   // Despesa que o motorista lançou em campo é custo de viagem — é o que ela
   // é na prática (pedágio, refeição, pequeno reparo na estrada), e o
   // dinheiro saiu da mão dele naquele dia.
-  const despesaMotorista = soma(despesas as { valor: number }[], (d) => d.valor);
+  //
+  // ANTI-DOBRA (0047): despesa de NOTA ASSINADA virou conta a pagar — conta
+  // quando a conta for paga, não aqui. Sem o filtro, a linha custos_viagem
+  // somava a despesa E a conta paga da mesma despesa.
+  type Despesa = { id: string; valor: number; pago_na_hora: boolean };
+  const despesaMotorista = soma(
+    ((despesas as Despesa[]) ?? []).filter(
+      (d) => d.pago_na_hora !== false && !jaTemConta.has(d.id)
+    ),
+    (d) => d.valor
+  );
 
   // ------------------------------------------------------------- montagem
   // Toda categoria de conta paga que entrou em alguma linha é riscada daqui;

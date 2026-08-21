@@ -138,6 +138,9 @@ export interface DespesaLocal {
   carga_id: string;
   valor: number;
   descricao: string;
+  /** false = assinou a nota / faturado (não sai do saldo dele; vira conta a
+   *  pagar pelo trigger da 0047). undefined = true, pra fila antiga. */
+  pago_na_hora?: boolean;
   latitude: number | null;
   longitude: number | null;
   gps_pendente: boolean;

@@ -40,8 +40,26 @@ export async function POST(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(criado_em)) {
     return NextResponse.json({ error: "data inválida" }, { status: 400 });
   }
+  const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (criado_em > hojeBr) {
+    return NextResponse.json({ error: "a data está no futuro" }, { status: 400 });
+  }
   // Meio-dia pra a data não escorregar pro dia anterior no fuso BR.
   const quando = new Date(`${criado_em}T12:00:00-03:00`).toISOString();
+
+  // Sem motorista, o dinheiro só pode ter saído de dois lugares: de uma
+  // CONTA da empresa (pagou na hora — pix/cartão da sede) ou de lugar
+  // nenhum ainda (assinou a nota → conta a pagar). O buraco antigo era
+  // aceitar "pagou na hora" sem conta: o gasto entrava no DRE e não saía
+  // de caixa nenhum — o saldo do sistema inflava pra sempre.
+  const pagoNaHora = body.pago_na_hora !== false;
+  const conta_id = body.conta_id ? String(body.conta_id) : null;
+  if (pagoNaHora && !conta_id) {
+    return NextResponse.json(
+      { error: "diga de qual conta da empresa o dinheiro saiu (ou marque 'assinou a nota')" },
+      { status: 400 }
+    );
+  }
 
   const client = getSupabaseAdmin(admin.id);
   const comum = {
@@ -53,6 +71,8 @@ export async function POST(req: NextRequest) {
     valor: n2(valor),
     foto_path: body.foto_path || null,
     criado_em: quando,
+    pago_na_hora: pagoNaHora,
+    conta_id: pagoNaHora ? conta_id : null,
   };
 
   if (tipo === "despesa") {
@@ -60,8 +80,32 @@ export async function POST(req: NextRequest) {
     if (descricao.length < 2) {
       return NextResponse.json({ error: "descreva a despesa" }, { status: 400 });
     }
-    const { error } = await client.from("despesas").insert({ ...comum, descricao });
+    const { data: desp, error } = await client
+      .from("despesas")
+      .insert({ ...comum, descricao })
+      .select("id")
+      .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+    // Nota assinada de despesa: a conta nasce pelo trigger da 0047. Aqui só
+    // se ajusta o vencimento, se o Jean informou um.
+    if (!pagoNaHora && desp) {
+      const venc = String(body.vencimento || "").trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(venc)) {
+        const { error: eConta } = await client
+          .from("contas_a_pagar")
+          .update({ vencimento: venc })
+          .eq("origem_tipo", "despesa")
+          .eq("origem_id", desp.id)
+          .eq("status", "a_pagar");
+        if (eConta) {
+          return NextResponse.json({
+            ok: true,
+            aviso: `despesa salva, mas não consegui ajustar o vencimento da conta: ${eConta.message}`,
+          });
+        }
+      }
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -87,7 +131,6 @@ export async function POST(req: NextRequest) {
       tipo: body.tipo_abastecimento === "arla" ? "arla" : "diesel",
       litros: n2(litros),
       km_atual: Math.round(km_atual),
-      pago_na_hora: body.pago_na_hora !== false,
     })
     .select("id")
     .maybeSingle();

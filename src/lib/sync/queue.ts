@@ -300,6 +300,8 @@ async function sincronizarDespesas(
       motorista_id: d.motorista_id,
       valor: d.valor,
       descricao: d.descricao,
+      // Fila antiga não tem o campo — vale o comportamento de sempre (pagou).
+      pago_na_hora: d.pago_na_hora !== false,
       foto_path: fotoPath,
       latitude: d.latitude,
       longitude: d.longitude,
