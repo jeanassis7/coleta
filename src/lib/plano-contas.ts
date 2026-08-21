@@ -172,6 +172,10 @@ export const PLANO_CONTAS: LinhaPlano[] = [
   // ------------------------------------------------------------- financeiro
   { chave: "emprestimos", label: "Empréstimos e financiamentos", grupo: "financeiro", fonte: "lancamento" },
   { chave: "dividas_pf", label: "Dívidas PF", grupo: "financeiro", fonte: "lancamento" },
+  // Boleto de R$ 1.000 pago com R$ 1.043,20: antes os R$ 43,20 entravam
+  // disfarçados na categoria original (poluindo a linha) ou o caixa não
+  // fechava. O ModalPagar lança a diferença aqui sozinho.
+  { chave: "juros_multas", label: "Juros e multas", grupo: "financeiro", fonte: "lancamento" },
 
   // --------------------------------------------------------------- impostos
   { chave: "impostos", label: "Impostos", grupo: "impostos", fonte: "lancamento" },

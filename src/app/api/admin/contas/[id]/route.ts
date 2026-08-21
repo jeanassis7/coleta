@@ -279,6 +279,64 @@ export async function PATCH(
     return NextResponse.json({ error: "forma de pagamento inválida" }, { status: 400 });
   }
 
+  // A conta inteira, ANTES: o pagamento parcial e o vale precisam saber
+  // valor, categoria e dono.
+  const { data: contaAlvo, error: eAlvo } = await client
+    .from("contas_a_pagar")
+    .select(
+      "id, valor, categoria, pessoa_id, fornecedor, descricao, vencimento, origem_tipo, origem_id, status"
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (eAlvo) return NextResponse.json({ error: eAlvo.message }, { status: 400 });
+  if (!contaAlvo) return NextResponse.json({ error: "conta não encontrada" }, { status: 404 });
+
+  // -------------------------------------------------- pagamento PARCIAL
+  // "Paguei metade hoje, metade mês que vem." A conta original vira PAGA
+  // pelo valor pago (caixa e DRE exatos) e o RESTO nasce como conta nova,
+  // em aberto, com o mesmo vencimento/categoria/dono — a dívida não perde
+  // o fio. Cheque fica de fora: o papel quita inteiro.
+  const valorConta = Number(contaAlvo.valor);
+  let valorParcial: number | null = null;
+  if (body.valor_pago !== undefined && body.valor_pago !== null) {
+    const vp = Number(body.valor_pago);
+    if (!Number.isFinite(vp) || vp <= 0) {
+      return NextResponse.json({ error: "valor pago inválido" }, { status: 400 });
+    }
+    if (forma === "cheque") {
+      return NextResponse.json(
+        { error: "pagamento parcial não funciona com cheque — o papel quita o valor inteiro" },
+        { status: 400 }
+      );
+    }
+    if (Math.round(vp * 100) < Math.round(valorConta * 100)) {
+      valorParcial = n2(vp);
+    } else if (Math.round(vp * 100) > Math.round(valorConta * 100)) {
+      return NextResponse.json(
+        { error: "valor pago maior que a conta — se pagou juros/multa, use o campo próprio" },
+        { status: 400 }
+      );
+    }
+  }
+
+  // ------------------------------------------------------- juros e multa
+  // A diferença de um boleto atrasado tem categoria própria (juros_multas)
+  // — entrar disfarçada na categoria original poluía a linha do DRE.
+  let juros = 0;
+  if (body.juros !== undefined && body.juros !== null) {
+    const j = Number(body.juros);
+    if (!Number.isFinite(j) || j < 0) {
+      return NextResponse.json({ error: "juros inválidos" }, { status: 400 });
+    }
+    if (j > 0 && forma === "cheque") {
+      return NextResponse.json(
+        { error: "juros junto de cheque não — lance os juros como um lançamento próprio" },
+        { status: 400 }
+      );
+    }
+    juros = n2(j);
+  }
+
   // Pagar COM cheque não tira dinheiro de conta nenhuma: quitou com o papel,
   // que sai da carteira e vira 'repassado'. Nas outras formas o dinheiro saiu
   // de algum lugar agora, e sem dizer de onde o caixa não fecha.
@@ -331,6 +389,8 @@ export async function PATCH(
       pago_em: pagoEm,
       cheque_id: chequeId,
       conta_id: forma === "cheque" ? null : contaId,
+      // Parcial: a conta original passa a valer o que foi pago DE VERDADE.
+      ...(valorParcial !== null ? { valor: valorParcial } : {}),
     })
     .eq("id", id)
     .in("status", ["prevista", "a_pagar"])
@@ -350,7 +410,94 @@ export async function PATCH(
       { status: 409 }
     );
   }
-  return NextResponse.json({ ok: true });
+
+  const avisos: string[] = [];
+
+  // O resto da dívida continua em aberto, como conta nova.
+  if (valorParcial !== null) {
+    const resto = n2(valorConta - valorParcial);
+    const { error: eResto } = await client.from("contas_a_pagar").insert({
+      descricao: `${contaAlvo.descricao} (restante)`,
+      fornecedor: contaAlvo.fornecedor,
+      categoria: contaAlvo.categoria,
+      valor: resto,
+      vencimento: contaAlvo.vencimento,
+      status: "a_pagar",
+      pessoa_id: contaAlvo.pessoa_id,
+      origem_tipo: contaAlvo.origem_tipo,
+      origem_id: contaAlvo.origem_id,
+      registrado_por: admin.id,
+    });
+    if (eResto) {
+      avisos.push(
+        `ATENÇÃO: paguei os R$ ${valorParcial.toFixed(2).replace(".", ",")} mas o RESTANTE de R$ ${resto.toFixed(2).replace(".", ",")} não virou conta (${eResto.message}) — crie a conta do resto na mão`
+      );
+    } else {
+      avisos.push(
+        `o restante de R$ ${resto.toFixed(2).replace(".", ",")} continua em aberto como conta nova`
+      );
+    }
+  }
+
+  // Juros/multa entram como pagamento próprio, na categoria certa.
+  if (juros > 0) {
+    const { error: eJuros } = await client.from("contas_a_pagar").insert({
+      descricao: `Juros/multa — ${contaAlvo.descricao}`,
+      fornecedor: contaAlvo.fornecedor,
+      categoria: "juros_multas",
+      valor: juros,
+      vencimento: pagoEm,
+      pago_em: pagoEm,
+      status: "paga",
+      forma_pagamento: forma,
+      conta_id: contaId,
+      registrado_por: admin.id,
+    });
+    if (eJuros) {
+      avisos.push(
+        `os juros de R$ ${juros.toFixed(2).replace(".", ",")} não foram lançados (${eJuros.message}) — lance na mão em Lançamentos (categoria Juros e multas)`
+      );
+    } else {
+      avisos.push(
+        `R$ ${juros.toFixed(2).replace(".", ",")} de juros/multa lançados em "Juros e multas"`
+      );
+    }
+  }
+
+  // Vales de acerto quitados por este pagamento (só Salário com pessoa —
+  // mesma regra da tela de Lançamentos, senão as duas portas divergiam).
+  let valesQuitados = 0;
+  const valesMarcados: string[] = Array.isArray(body.vales_quitados)
+    ? body.vales_quitados.map(String)
+    : [];
+  if (valesMarcados.length > 0) {
+    if (contaAlvo.categoria !== "salario" || !contaAlvo.pessoa_id) {
+      avisos.push(
+        "os vales marcados NÃO foram quitados — vale só desconta em pagamento de Salário com a pessoa escolhida"
+      );
+    } else {
+      const { data: mexidos } = await client
+        .from("acertos")
+        .update({ vale_quitado_em: pagoEm, vale_quitado_por: id })
+        .in("id", valesMarcados)
+        .eq("motorista_id", contaAlvo.pessoa_id)
+        .is("vale_quitado_em", null)
+        .select("id");
+      valesQuitados = mexidos?.length ?? 0;
+      const deFora = valesMarcados.length - valesQuitados;
+      if (deFora > 0) {
+        avisos.push(
+          `${deFora} vale(s) marcado(s) ficou(aram) DE FORA — ou já quitado(s) por outro pagamento, ou não é(são) dessa pessoa; confira em Adiantamentos`
+        );
+      }
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    valesQuitados,
+    ...(avisos.length > 0 ? { avisos } : {}),
+  });
 }
 
 export async function DELETE(

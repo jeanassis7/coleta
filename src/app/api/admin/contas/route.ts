@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
-import { linhaPlano } from "@/lib/plano-contas";
+import { linhaPlano, pedePessoa, pessoaOpcional } from "@/lib/plano-contas";
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
 // A lista velha de 7 valores foi substituída pelo plano de contas (importado
@@ -43,6 +43,16 @@ export async function POST(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimento)) {
     return NextResponse.json({ error: "vencimento inválido" }, { status: 400 });
   }
+  // Mesma regra da tela de Lançamentos (as duas portas da mesma tabela
+  // divergiam): categoria que pede pessoa não nasce "sem pessoa" — senão o
+  // DRE não abre por pessoa e o vale do salário nunca acha o dono.
+  const pessoa_id = body.pessoa_id ? String(body.pessoa_id) : null;
+  if (pedePessoa(categoria) && !pessoaOpcional(categoria) && !pessoa_id) {
+    return NextResponse.json(
+      { error: `"${linha.label}" precisa dizer de quem é` },
+      { status: 400 }
+    );
+  }
 
   // Divide sem perder centavo: a última parcela absorve a sobra do
   // arredondamento (1000 em 3x = 333,33 + 333,33 + 333,34).
@@ -72,6 +82,7 @@ export async function POST(req: NextRequest) {
       valor: i === parcelas - 1 ? n2(base + sobra) : base,
       vencimento: vencimentoParcela(i),
       status: prevista ? "prevista" : "a_pagar",
+      pessoa_id: pedePessoa(categoria) ? pessoa_id : null,
       origem_tipo: body.origem_tipo || null,
       origem_id: body.origem_id || null,
       parcela: parcelas > 1 ? i + 1 : null,

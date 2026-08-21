@@ -1451,6 +1451,7 @@ export interface ContaAPagar {
   forma_pagamento: FormaPagamento | null;
   pago_em: string | null;
   cheque_id: string | null;
+  pessoa_id: string | null;
   origem_tipo: string | null;
   origem_id: string | null;
   recorrente_id: string | null;
@@ -1472,13 +1473,32 @@ export interface ResumoContas {
 
 export async function buscarContasAPagar(): Promise<ContaAPagar[]> {
   const supabase = await getSupabaseServer();
-  const { data, error } = await supabase
-    .from("contas_a_pagar")
-    .select("*")
-    .order("vencimento", { ascending: true })
-    .limit(500);
-  if (error) throw error;
-  return ((data as ContaAPagar[]) || []).map((c) => ({
+  // As ABERTAS vêm inteiras (selectTudo): todo lançamento pago também mora
+  // nesta tabela, e o limit(500) antigo por vencimento fazia as contas em
+  // aberto de vencimento futuro SUMIREM da tela conforme o histórico
+  // crescia — enquanto o card de resumo (RPC sem limite) mostrava o total
+  // certo. As PAGAS ficam num recorte recente: o extrato completo é a tela
+  // de Lançamentos.
+  const [abertas, { data: pagas, error: ePagas }] = await Promise.all([
+    selectTudo<ContaAPagar>((de, ate) =>
+      supabase
+        .from("contas_a_pagar")
+        .select("*")
+        .in("status", ["a_pagar", "prevista"])
+        .order("vencimento", { ascending: true })
+        .order("id")
+        .range(de, ate)
+    ),
+    supabase
+      .from("contas_a_pagar")
+      .select("*")
+      .eq("status", "paga")
+      .order("pago_em", { ascending: false })
+      .order("id")
+      .limit(300),
+  ]);
+  if (ePagas) throw ePagas;
+  return [...abertas, ...(((pagas as ContaAPagar[]) || []))].map((c) => ({
     ...c,
     valor: Number(c.valor),
   }));

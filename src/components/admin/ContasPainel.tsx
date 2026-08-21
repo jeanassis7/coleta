@@ -10,7 +10,12 @@ import {
   reaisParaCentavos,
 } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "@/components/admin/Modais";
-import { CATEGORIAS_LANCAVEIS, labelCategoria } from "@/lib/plano-contas";
+import {
+  CATEGORIAS_LANCAVEIS,
+  labelCategoria,
+  pedePessoa,
+  pessoaOpcional,
+} from "@/lib/plano-contas";
 import type {
   ContaAPagar,
   DespesaRecorrente,
@@ -18,6 +23,12 @@ import type {
   ResumoContas,
   FormaPagamento,
 } from "@/lib/admin/queries";
+import type { ValePendente } from "@/lib/admin/caixa";
+
+export interface PessoaOpcaoConta {
+  id: string;
+  nome: string;
+}
 
 // As categorias vêm do PLANO DE CONTAS (as lançáveis) — a mesma lista da
 // tela de Lançamentos. A lista antiga (combustivel/oleo/fixa/folha...) era
@@ -54,6 +65,9 @@ export function ContasPainel({
   chequesCarteira,
   resumo,
   contasFinanceiras,
+  pessoas,
+  vales,
+  deveMotoristas,
 }: {
   contas: ContaAPagar[];
   recorrentes: DespesaRecorrente[];
@@ -61,6 +75,12 @@ export function ContasPainel({
   resumo: ResumoContas;
   /** Contas financeiras — de qual caixa o pagamento saiu. */
   contasFinanceiras: ContaOpcao[];
+  /** O QUEM das categorias que pedem pessoa (salário, comissão…). */
+  pessoas: PessoaOpcaoConta[];
+  /** Vales de acerto pendentes — pagamento de Salário desconta por aqui. */
+  vales: ValePendente[];
+  /** Saldos NEGATIVOS de motoristas: dívida da empresa que não é conta. */
+  deveMotoristas: number;
 }) {
   const [aba, setAba] = useState<Aba>("a_pagar");
   const [novaConta, setNovaConta] = useState(false);
@@ -112,6 +132,15 @@ export function ContasPainel({
           </div>
         </div>
       </div>
+
+      {deveMotoristas > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm mb-4">
+          Além das contas acima, a empresa está devendo{" "}
+          <strong>{formatBRL(deveMotoristas)}</strong> a motorista(s) com
+          saldo negativo (gastaram do próprio bolso) — acerta-se em
+          Adiantamentos (pagar agora ou somar no salário).
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-4">
         {(
@@ -166,12 +195,15 @@ export function ContasPainel({
               </button>
             </div>
           )}
-          {novaConta && <FormConta onFim={() => setNovaConta(false)} />}
+          {novaConta && (
+            <FormConta pessoas={pessoas} onFim={() => setNovaConta(false)} />
+          )}
           <TabelaContas
             contas={daAba}
             aba={aba}
             chequesCarteira={chequesCarteira}
             contasFinanceiras={contasFinanceiras}
+            vales={vales}
           />
         </>
       )}
@@ -222,11 +254,20 @@ function BotaoGerarMes() {
   );
 }
 
-function FormConta({ onFim }: { onFim: () => void }) {
+function FormConta({
+  pessoas,
+  onFim,
+}: {
+  pessoas: PessoaOpcaoConta[];
+  onFim: () => void;
+}) {
   const router = useRouter();
   const [descricao, setDescricao] = useState("");
   const [fornecedor, setFornecedor] = useState("");
-  const [categoria, setCategoria] = useState("outra");
+  // O default precisa EXISTIR no plano — "outra" não existia e o select
+  // renderizava sem seleção, com 400 no salvar.
+  const [categoria, setCategoria] = useState(CATEGORIAS_LANCAVEIS[0].chave);
+  const [pessoaId, setPessoaId] = useState("");
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [vencimento, setVencimento] = useState(hojeBr());
   const [parcelas, setParcelas] = useState("1");
@@ -239,6 +280,9 @@ function FormConta({ onFim }: { onFim: () => void }) {
   async function salvar() {
     if (descricao.trim().length < 2) return setErro("Descreva a conta");
     if (!valorCentavos || valorCentavos <= 0) return setErro("Informe o valor");
+    if (pedePessoa(categoria) && !pessoaOpcional(categoria) && !pessoaId) {
+      return setErro("Essa categoria pede a pessoa — escolha de quem é");
+    }
     setErro(null);
     setSalvando(true);
     try {
@@ -249,6 +293,7 @@ function FormConta({ onFim }: { onFim: () => void }) {
           descricao: descricao.trim(),
           fornecedor: fornecedor.trim() || null,
           categoria,
+          pessoa_id: pedePessoa(categoria) ? pessoaId || null : null,
           valor: centavosParaReais(valorCentavos),
           vencimento,
           parcelas: nParcelas,
@@ -309,6 +354,27 @@ function FormConta({ onFim }: { onFim: () => void }) {
             ))}
           </select>
         </div>
+        {pedePessoa(categoria) && (
+          <div>
+            <label className="block text-sm font-medium mb-1">De quem</label>
+            <select
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={pessoaId}
+              onChange={(e) => setPessoaId(e.target.value)}
+            >
+              <option value="">
+                {pessoaOpcional(categoria)
+                  ? "Empresa toda (guia coletiva)"
+                  : "Escolha…"}
+              </option>
+              {pessoas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium mb-1">Valor total</label>
           <InputDinheiro
@@ -397,11 +463,13 @@ function TabelaContas({
   aba,
   chequesCarteira,
   contasFinanceiras,
+  vales,
 }: {
   contas: ContaAPagar[];
   aba: Aba;
   chequesCarteira: Cheque[];
   contasFinanceiras: ContaOpcao[];
+  vales: ValePendente[];
 }) {
   const router = useRouter();
   const [pagando, setPagando] = useState<ContaAPagar | null>(null);
@@ -553,6 +621,8 @@ function TabelaContas({
           conta={pagando}
           chequesCarteira={chequesCarteira}
           contasFinanceiras={contasFinanceiras}
+          vales={vales}
+          onAviso={setAvisoOk}
           onFechar={() => setPagando(null)}
         />
       )}
@@ -584,11 +654,15 @@ function ModalPagar({
   conta,
   chequesCarteira,
   contasFinanceiras,
+  vales,
+  onAviso,
   onFechar,
 }: {
   conta: ContaAPagar;
   chequesCarteira: Cheque[];
   contasFinanceiras: ContaOpcao[];
+  vales: ValePendente[];
+  onAviso: (aviso: string | null) => void;
   onFechar: () => void;
 }) {
   const router = useRouter();
@@ -597,10 +671,22 @@ function ModalPagar({
   const [chequeId, setChequeId] = useState("");
   // Pagar COM cheque não tira dinheiro de conta nenhuma — quitou com o papel.
   const [contaFinId, setContaFinId] = useState("");
+  // Pagamento parcial: a conta vira paga pelo que foi pago e o resto nasce
+  // como conta nova, em aberto.
+  const [parcial, setParcial] = useState(false);
+  const [valorPagoCentavos, setValorPagoCentavos] = useState<number | null>(null);
+  // Juros/multa de atraso — vão pra categoria própria (Juros e multas).
+  const [jurosCentavos, setJurosCentavos] = useState<number | null>(null);
+  // Vales de acerto que este pagamento (de Salário) desconta.
+  const [valesMarcados, setValesMarcados] = useState<string[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const cheque = chequesCarteira.find((c) => c.id === chequeId);
+  const valesDaPessoa =
+    conta.categoria === "salario" && conta.pessoa_id
+      ? vales.filter((v) => v.motorista_id === conta.pessoa_id)
+      : [];
 
   async function pagar() {
     if (forma === "cheque" && !chequeId) {
@@ -608,6 +694,17 @@ function ModalPagar({
     }
     if (forma !== "cheque" && !contaFinId) {
       return setErro("Diga de qual conta saiu o dinheiro");
+    }
+    if (parcial) {
+      if (forma === "cheque") {
+        return setErro("Pagamento parcial não funciona com cheque — o papel quita inteiro");
+      }
+      if (!valorPagoCentavos || valorPagoCentavos <= 0) {
+        return setErro("Quanto foi pago agora?");
+      }
+      if (centavosParaReais(valorPagoCentavos) >= conta.valor) {
+        return setErro("O parcial precisa ser MENOR que a conta — senão é pagamento normal");
+      }
     }
     setErro(null);
     setSalvando(true);
@@ -622,12 +719,22 @@ function ModalPagar({
           cheque_id: forma === "cheque" ? chequeId : null,
           conta_id: forma === "cheque" ? null : contaFinId,
           repassado_para: conta.fornecedor || conta.descricao,
+          ...(parcial && valorPagoCentavos
+            ? { valor_pago: centavosParaReais(valorPagoCentavos) }
+            : {}),
+          ...(jurosCentavos && forma !== "cheque"
+            ? { juros: centavosParaReais(jurosCentavos) }
+            : {}),
+          ...(valesMarcados.length > 0 ? { vales_quitados: valesMarcados } : {}),
         }),
       });
       const r = await res.json();
       if (!res.ok) {
         setErro(r.error || "erro");
         return;
+      }
+      if (Array.isArray(r.avisos) && r.avisos.length > 0) {
+        onAviso(r.avisos.join(". ") + ".");
       }
       router.refresh();
       onFechar();
@@ -717,6 +824,94 @@ function ModalPagar({
             onChange={setContaFinId}
             label="De qual conta saiu"
           />
+        )}
+
+        {forma !== "cheque" && (
+          <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-3">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={parcial}
+                onChange={(e) => setParcial(e.target.checked)}
+                className="mt-1"
+              />
+              <span className="text-sm">
+                <strong>Paguei só uma parte</strong>
+                <span className="block text-xs text-cinza-suave">
+                  A conta fica paga pelo valor de agora e o RESTO continua em
+                  aberto, como conta nova — a dívida não perde o fio.
+                </span>
+              </span>
+            </label>
+            {parcial && (
+              <div>
+                <label className="block text-xs text-cinza-suave mb-1">
+                  Quanto foi pago agora
+                </label>
+                <InputDinheiro
+                  centavos={valorPagoCentavos}
+                  onChange={setValorPagoCentavos}
+                  grande={false}
+                />
+                {valorPagoCentavos != null &&
+                  valorPagoCentavos > 0 &&
+                  centavosParaReais(valorPagoCentavos) < conta.valor && (
+                    <p className="text-xs text-cinza-suave mt-1">
+                      Fica em aberto:{" "}
+                      {formatBRL(conta.valor - centavosParaReais(valorPagoCentavos))}
+                    </p>
+                  )}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-cinza-suave mb-1">
+                Juros/multa pagos junto{" "}
+                <span className="text-cinza-suave">(opcional)</span>
+              </label>
+              <InputDinheiro
+                centavos={jurosCentavos}
+                onChange={setJurosCentavos}
+                grande={false}
+              />
+              <p className="text-xs text-cinza-suave mt-1">
+                A diferença de boleto atrasado entra na categoria própria
+                (Juros e multas) — não polui a linha original do DRE.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {valesDaPessoa.length > 0 && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
+            <p className="text-sm font-medium">Esse pagamento quita algum vale?</p>
+            <p className="text-xs text-cinza-suave">
+              Vales vieram de acertos e ainda não foram descontados de nenhum
+              salário. Negativo = a empresa deve e o valor SOMA no pagamento.
+            </p>
+            {valesDaPessoa.map((v) => (
+              <label
+                key={v.acerto_id}
+                className="flex items-center gap-2 cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={valesMarcados.includes(v.acerto_id)}
+                  onChange={(e) =>
+                    setValesMarcados((a) =>
+                      e.target.checked
+                        ? [...a, v.acerto_id]
+                        : a.filter((x) => x !== v.acerto_id)
+                    )
+                  }
+                  className="w-5 h-5 cursor-pointer"
+                />
+                <span>
+                  <strong>{formatBRL(v.valor)}</strong> — acerto de{" "}
+                  {formatData(v.corte_em)}
+                </span>
+              </label>
+            ))}
+          </div>
         )}
 
         {erro && (
@@ -951,7 +1146,9 @@ function FormRecorrente({ onFim }: { onFim: () => void }) {
   const router = useRouter();
   const [descricao, setDescricao] = useState("");
   const [fornecedor, setFornecedor] = useState("");
-  const [categoria, setCategoria] = useState("fixa");
+  // "fixa" não é chave do plano — o select renderizava sem seleção e o
+  // salvar voltava 400 sem apontar o campo.
+  const [categoria, setCategoria] = useState(CATEGORIAS_LANCAVEIS[0].chave);
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [dia, setDia] = useState("10");
   const [periodicidade, setPeriodicidade] = useState<"mensal" | "anual">("mensal");
