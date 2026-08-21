@@ -101,6 +101,83 @@ export async function buscarTransferencias(
   }));
 }
 
+export interface MovimentoAvulso {
+  id: string;
+  origem: "entrada" | "ajuste";
+  /** tipo da entrada (aporte, emprestimo…) ou "ajuste". */
+  tipo: string;
+  /** Ajuste pode ser negativo (falta na gaveta). */
+  valor: number;
+  data: string;
+  descricao: string;
+  conta_nome: string;
+}
+
+export const ROTULO_ENTRADA_AVULSA: Record<string, string> = {
+  aporte: "Aporte de sócio",
+  emprestimo: "Empréstimo recebido",
+  reembolso: "Reembolso",
+  rendimento: "Rendimento",
+  venda_ativo: "Venda de bem",
+  outra: "Outra entrada",
+  ajuste: "Ajuste de caixa",
+};
+
+/**
+ * Entradas avulsas + ajustes de caixa (0047), juntos e por data — é a
+ * lista "o que mexeu no caixa sem ser operação" da tela de Caixa.
+ */
+export async function buscarMovimentosAvulsos(
+  limite = 50
+): Promise<MovimentoAvulso[]> {
+  const supabase = await getSupabaseServer();
+  const [{ data: entradas, error: e1 }, { data: ajustes, error: e2 }, contas] =
+    await Promise.all([
+      supabase
+        .from("entradas_avulsas")
+        .select("id, tipo, valor, data, descricao, conta_id")
+        .order("data", { ascending: false })
+        .limit(limite),
+      supabase
+        .from("ajustes_caixa")
+        .select("id, valor, data, motivo, conta_id")
+        .order("data", { ascending: false })
+        .limit(limite),
+      buscarContasFinanceiras({ incluirInativas: true }),
+    ]);
+  if (e1) throw e1;
+  if (e2) throw e2;
+  const nome = new Map(contas.map((c) => [c.id, c.nome]));
+  const lista: MovimentoAvulso[] = [
+    ...((entradas ?? []) as {
+      id: string; tipo: string; valor: number; data: string;
+      descricao: string; conta_id: string;
+    }[]).map((e) => ({
+      id: e.id,
+      origem: "entrada" as const,
+      tipo: e.tipo,
+      valor: Number(e.valor),
+      data: e.data,
+      descricao: e.descricao,
+      conta_nome: nome.get(e.conta_id) ?? "—",
+    })),
+    ...((ajustes ?? []) as {
+      id: string; valor: number; data: string; motivo: string; conta_id: string;
+    }[]).map((a) => ({
+      id: a.id,
+      origem: "ajuste" as const,
+      tipo: "ajuste",
+      valor: Number(a.valor),
+      data: a.data,
+      descricao: a.motivo,
+      conta_nome: nome.get(a.conta_id) ?? "—",
+    })),
+  ];
+  return lista
+    .sort((a, b) => (a.data < b.data ? 1 : -1))
+    .slice(0, limite);
+}
+
 export interface DinheiroNaMao {
   motorista_id: string;
   nome: string;
@@ -143,6 +220,10 @@ export interface Patrimonio {
   /** Cheques em carteira + depositados. Devolvido fica FORA (a dívida do
    *  comprador já renasceu — contar o papel seria contar duas vezes). */
   chequesAbertos: number;
+  /** Adiantamentos ENVIADOS e ainda não aceitos: já saíram do caixa, ainda
+   *  não estão na mão de ninguém. Sem esta linha o patrimônio subestimava
+   *  exatamente esse valor enquanto o motorista não abria o app. */
+  adiantamentosPendentes: number;
   /** As duas linhas de óleo valoradas pelo preço de referência (0 sem preço). */
   valorEstoque: number;
   valorOleoCaminhoes: number;
@@ -155,6 +236,7 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     { data: estoque, error: eEstoque },
     { data: coletasAbertas, error: eColetas },
     { data: cheques, error: eCheques },
+    { data: adPendentes, error: eAd },
   ] = await Promise.all([
     supabase
       .from("configuracoes")
@@ -175,10 +257,13 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
       .from("cheques")
       .select("valor")
       .in("status", ["em_carteira", "depositado"]),
+    // Enviado e não aceito: saiu do caixa, não chegou na mão — está "no ar".
+    supabase.from("adiantamentos").select("valor").eq("status", "pendente"),
   ]);
   if (eEstoque) throw eEstoque;
   if (eColetas) throw eColetas;
   if (eCheques) throw eCheques;
+  if (eAd) throw eAd;
 
   const preco = cfg?.valor != null ? Number(cfg.valor) : null;
   const estoqueKg = ((estoque as { saldo_kg: number }[]) ?? []).reduce(
@@ -194,6 +279,10 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     (s, c) => s + Number(c.valor || 0),
     0
   );
+  const adiantamentosPendentes = ((adPendentes as { valor: number }[]) ?? []).reduce(
+    (s, a) => s + Number(a.valor || 0),
+    0
+  );
 
   const n2 = (v: number) => Math.round(v * 100) / 100;
   return {
@@ -202,6 +291,7 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     estoqueLitros: n2(estoqueLitros),
     oleoCaminhoesLitros: n2(oleoCaminhoesLitros),
     chequesAbertos: n2(chequesAbertos),
+    adiantamentosPendentes: n2(adiantamentosPendentes),
     valorEstoque: preco ? n2(estoqueLitros * preco) : 0,
     valorOleoCaminhoes: preco ? n2(oleoCaminhoesLitros * preco) : 0,
   };

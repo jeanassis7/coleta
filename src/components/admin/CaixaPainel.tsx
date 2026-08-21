@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { InputDinheiro, centavosParaReais, reaisParaCentavos } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "./Modais";
 import { formatBRL, formatData } from "@/lib/format";
-import type {
-  ContaFinanceira,
-  SaldoConta,
-  DinheiroNaMao,
-  Patrimonio,
+import {
+  ROTULO_ENTRADA_AVULSA,
+  type ContaFinanceira,
+  type SaldoConta,
+  type DinheiroNaMao,
+  type Patrimonio,
+  type MovimentoAvulso,
 } from "@/lib/admin/caixa";
 
 type TransferenciaLista = {
@@ -26,12 +28,14 @@ export function CaixaPainel({
   saldos,
   naMao,
   transferencias,
+  movimentosAvulsos,
   patrimonio,
 }: {
   contas: ContaFinanceira[];
   saldos: SaldoConta[];
   naMao: DinheiroNaMao[];
   transferencias: TransferenciaLista[];
+  movimentosAvulsos: MovimentoAvulso[];
   patrimonio: Patrimonio;
 }) {
   const router = useRouter();
@@ -74,6 +78,24 @@ export function CaixaPainel({
   const [banco, setBanco] = useState("");
   const [saldoInicial, setSaldoInicial] = useState<number | null>(null);
   const [saldoEm, setSaldoEm] = useState(hoje);
+
+  // --- entrada avulsa (0047: aporte, empréstimo, reembolso…) ---
+  const [formEntrada, setFormEntrada] = useState(false);
+  const [tipoEntrada, setTipoEntrada] = useState("aporte");
+  const [valorEntrada, setValorEntrada] = useState<number | null>(null);
+  const [dataEntrada, setDataEntrada] = useState(hoje);
+  const [contaEntrada, setContaEntrada] = useState("");
+  const [descEntrada, setDescEntrada] = useState("");
+
+  // --- ajuste de caixa (conferência da gaveta) ---
+  const [formAjuste, setFormAjuste] = useState(false);
+  const [contaAjuste, setContaAjuste] = useState("");
+  const [direcaoAjuste, setDirecaoAjuste] = useState<"falta" | "sobra">("falta");
+  const [valorAjuste, setValorAjuste] = useState<number | null>(null);
+  const [dataAjuste, setDataAjuste] = useState(hoje);
+  const [motivoAjuste, setMotivoAjuste] = useState("");
+
+  const [apagandoAvulso, setApagandoAvulso] = useState<MovimentoAvulso | null>(null);
 
   const totalContas = saldos.reduce((s, c) => s + c.saldo, 0);
   const totalNaMao = naMao.reduce((s, m) => s + m.saldo, 0);
@@ -169,6 +191,40 @@ export function CaixaPainel({
     if (ok) {
       setConfirmarDesativar(false);
       setEditando(null);
+    }
+  }
+
+  async function lancarEntrada(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valorEntrada) return setErro("Quanto entrou?");
+    const ok = await chamar("/api/admin/entradas-avulsas", {
+      tipo: tipoEntrada,
+      valor: centavosParaReais(valorEntrada),
+      data: dataEntrada,
+      conta_id: contaEntrada,
+      descricao: descEntrada.trim(),
+    });
+    if (ok) {
+      setValorEntrada(null);
+      setDescEntrada("");
+      setFormEntrada(false);
+    }
+  }
+
+  async function lancarAjuste(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valorAjuste) return setErro("Qual foi a diferença encontrada?");
+    const ok = await chamar("/api/admin/ajustes-caixa", {
+      valor:
+        (direcaoAjuste === "falta" ? -1 : 1) * centavosParaReais(valorAjuste),
+      data: dataAjuste,
+      conta_id: contaAjuste,
+      motivo: motivoAjuste.trim(),
+    });
+    if (ok) {
+      setValorAjuste(null);
+      setMotivoAjuste("");
+      setFormAjuste(false);
     }
   }
 
@@ -302,6 +358,20 @@ export function CaixaPainel({
                 {formatBRL(patrimonio.chequesAbertos)}
               </td>
             </tr>
+            {patrimonio.adiantamentosPendentes > 0 && (
+              <tr className="border-b border-cinza-borda">
+                <td className="py-2 pr-3">
+                  📨 A caminho{" "}
+                  <span className="text-cinza-suave text-xs">
+                    (adiantamento enviado, motorista ainda não aceitou — já
+                    saiu da conta, ainda não está na mão dele)
+                  </span>
+                </td>
+                <td className="py-2 text-right font-mono whitespace-nowrap">
+                  {formatBRL(patrimonio.adiantamentosPendentes)}
+                </td>
+              </tr>
+            )}
             <tr>
               <td className="py-3 pr-3 font-semibold">TOTAL</td>
               <td className="py-3 text-right font-bold text-xl whitespace-nowrap">
@@ -310,7 +380,8 @@ export function CaixaPainel({
                     totalNaMao +
                     patrimonio.valorEstoque +
                     patrimonio.valorOleoCaminhoes +
-                    patrimonio.chequesAbertos
+                    patrimonio.chequesAbertos +
+                    patrimonio.adiantamentosPendentes
                 )}
               </td>
             </tr>
@@ -344,12 +415,192 @@ export function CaixaPainel({
           ⇄ Transferir entre contas
         </button>
         <button
+          onClick={() => {
+            setFormEntrada((v) => !v);
+            setFormAjuste(false);
+            if (!contaEntrada && contasAtivas.length > 0)
+              setContaEntrada(contasAtivas[0].id);
+          }}
+          className="text-verde hover:underline text-sm font-medium"
+        >
+          + Entrada avulsa
+        </button>
+        <button
+          onClick={() => {
+            setFormAjuste((v) => !v);
+            setFormEntrada(false);
+            if (!contaAjuste && contasAtivas.length > 0)
+              setContaAjuste(contasAtivas[0].id);
+          }}
+          className="text-verde hover:underline text-sm font-medium"
+        >
+          ⚖ Conferi a gaveta (ajuste)
+        </button>
+        <button
           onClick={() => setFormConta((v) => !v)}
           className="text-verde hover:underline text-sm font-medium"
         >
           + Cadastrar conta
         </button>
       </div>
+
+      {/* --------------------------------------------------- form entrada avulsa */}
+      {formEntrada && (
+        <form onSubmit={lancarEntrada} className="card space-y-3">
+          <h2 className="text-lg font-semibold">Entrada avulsa</h2>
+          <p className="text-sm text-cinza-suave">
+            Dinheiro que entra <strong>sem ser venda de óleo</strong>: aporte
+            de sócio, empréstimo recebido, reembolso, rendimento, venda de um
+            bem. Entra no caixa e <strong>fica fora do DRE</strong> — não é
+            resultado da operação. Pagamento de comprador NÃO é aqui: é na
+            ficha dele.
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">O que é</label>
+              <select
+                value={tipoEntrada}
+                onChange={(e) => setTipoEntrada(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              >
+                <option value="aporte">Aporte de sócio</option>
+                <option value="emprestimo">Empréstimo recebido</option>
+                <option value="reembolso">Reembolso</option>
+                <option value="rendimento">Rendimento</option>
+                <option value="venda_ativo">Venda de bem</option>
+                <option value="outra">Outra entrada</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Valor</label>
+              <InputDinheiro
+                centavos={valorEntrada}
+                onChange={setValorEntrada}
+                grande={false}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Quando</label>
+              <input
+                type="date"
+                value={dataEntrada}
+                onChange={(e) => setDataEntrada(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Entrou em</label>
+              <select
+                value={contaEntrada}
+                onChange={(e) => setContaEntrada(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              >
+                {contasAtivas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">De onde veio</label>
+            <input
+              value={descEntrada}
+              onChange={(e) => setDescEntrada(e.target.value)}
+              placeholder="ex: aporte do Jean pra virada / empréstimo BB 24x"
+              className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+            />
+          </div>
+          <button type="submit" disabled={salvando} className="btn-primario">
+            {salvando ? "Salvando…" : "Lançar entrada"}
+          </button>
+        </form>
+      )}
+
+      {/* --------------------------------------------------- form ajuste de caixa */}
+      {formAjuste && (
+        <form onSubmit={lancarAjuste} className="card space-y-3">
+          <h2 className="text-lg font-semibold">Ajuste de caixa</h2>
+          <p className="text-sm text-cinza-suave">
+            Conferiu a gaveta (ou o extrato) e a conta não bateu? Lança aqui a{" "}
+            <strong>diferença</strong>, com o motivo — igual ao inventário do
+            estoque. Fora do DRE: é conferência, não gasto.
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Conta conferida</label>
+              <select
+                value={contaAjuste}
+                onChange={(e) => setContaAjuste(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              >
+                {contasAtivas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Deu…</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDirecaoAjuste("falta")}
+                  className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                    direcaoAjuste === "falta"
+                      ? "bg-alerta text-white border-alerta"
+                      : "bg-white border-cinza-borda"
+                  }`}
+                >
+                  Falta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirecaoAjuste("sobra")}
+                  className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                    direcaoAjuste === "sobra"
+                      ? "bg-verde text-white border-verde"
+                      : "bg-white border-cinza-borda"
+                  }`}
+                >
+                  Sobra
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Diferença</label>
+              <InputDinheiro
+                centavos={valorAjuste}
+                onChange={setValorAjuste}
+                grande={false}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Quando conferiu</label>
+              <input
+                type="date"
+                value={dataAjuste}
+                onChange={(e) => setDataAjuste(e.target.value)}
+                className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Motivo</label>
+            <input
+              value={motivoAjuste}
+              onChange={(e) => setMotivoAjuste(e.target.value)}
+              placeholder="ex: troco dado errado na semana / tarifa não lançada"
+              className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+            />
+          </div>
+          <button type="submit" disabled={salvando} className="btn-primario">
+            {salvando ? "Salvando…" : "Lançar ajuste"}
+          </button>
+        </form>
+      )}
 
       {/* --------------------------------------------------- form transferência */}
       {formTransf && (
@@ -699,6 +950,82 @@ export function CaixaPainel({
             </table>
           </div>
         </div>
+      )}
+
+      {/* --------------------------------------------------- entradas e ajustes */}
+      {movimentosAvulsos.length > 0 && (
+        <div className="card">
+          <h2 className="text-lg font-semibold mb-1">Entradas e ajustes</h2>
+          <p className="text-sm text-cinza-suave mb-3">
+            O que mexeu no caixa sem ser operação — aporte, empréstimo,
+            reembolso e conferências da gaveta. Nada daqui entra no DRE.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-cinza-suave border-b border-cinza-borda">
+                  <th className="py-2 pr-3">Data</th>
+                  <th className="py-2 pr-3">O que foi</th>
+                  <th className="py-2 pr-3">Conta</th>
+                  <th className="py-2 pr-3">Detalhe</th>
+                  <th className="py-2 pr-3 text-right">Valor</th>
+                  <th className="py-2 pr-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {movimentosAvulsos.map((m) => (
+                  <tr key={`${m.origem}-${m.id}`} className="border-b border-cinza-borda">
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {formatData(m.data)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {ROTULO_ENTRADA_AVULSA[m.tipo] ?? m.tipo}
+                    </td>
+                    <td className="py-2 pr-3">{m.conta_nome}</td>
+                    <td className="py-2 pr-3 text-cinza-suave">{m.descricao}</td>
+                    <td
+                      className={`py-2 pr-3 text-right font-mono whitespace-nowrap ${
+                        m.valor < 0 ? "text-alerta" : "text-verde"
+                      }`}
+                    >
+                      {m.valor < 0 ? "−" : "+"}
+                      {formatBRL(Math.abs(m.valor))}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <button
+                        onClick={() => setApagandoAvulso(m)}
+                        className="text-alerta hover:underline"
+                      >
+                        Apagar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {apagandoAvulso && (
+        <ModalConfirmar
+          titulo={`Apagar ${ROTULO_ENTRADA_AVULSA[apagandoAvulso.tipo] ?? "movimento"}`}
+          descricao={`${formatBRL(Math.abs(apagandoAvulso.valor))} em ${apagandoAvulso.conta_nome} (${formatData(apagandoAvulso.data)}). O saldo da conta volta sozinho.`}
+          confirmarLabel="Apagar"
+          perigo
+          carregando={salvando}
+          onConfirmar={async () => {
+            await chamar(
+              apagandoAvulso.origem === "entrada"
+                ? `/api/admin/entradas-avulsas/${apagandoAvulso.id}`
+                : `/api/admin/ajustes-caixa/${apagandoAvulso.id}`,
+              null,
+              "DELETE"
+            );
+            setApagandoAvulso(null);
+          }}
+          onFechar={() => setApagandoAvulso(null)}
+        />
       )}
 
       {apagarTransf && (

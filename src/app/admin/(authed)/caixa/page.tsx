@@ -4,21 +4,24 @@ import {
   buscarDinheiroNaMao,
   buscarTransferencias,
   buscarPatrimonio,
+  buscarMovimentosAvulsos,
 } from "@/lib/admin/caixa";
 import { CaixaPainel } from "@/components/admin/CaixaPainel";
 
 export const dynamic = "force-dynamic";
 
 export default async function CaixaPage() {
-  const [contas, saldos, naMao, transferencias, patrimonio] = await Promise.all([
-    // Inativas incluídas: a tela precisa delas pra oferecer "reativar".
-    // Os dropdowns de lançamento continuam só com as ativas (filtro no painel).
-    buscarContasFinanceiras({ incluirInativas: true }),
-    buscarSaldoContas(),
-    buscarDinheiroNaMao(),
-    buscarTransferencias(50),
-    buscarPatrimonio(),
-  ]);
+  const [contas, saldos, naMao, transferencias, patrimonio, avulsos] =
+    await Promise.all([
+      // Inativas incluídas: a tela precisa delas pra oferecer "reativar".
+      // Os dropdowns de lançamento continuam só com as ativas (filtro no painel).
+      buscarContasFinanceiras({ incluirInativas: true }),
+      buscarSaldoContas(),
+      buscarDinheiroNaMao(),
+      buscarTransferencias(50),
+      buscarPatrimonio(),
+      buscarMovimentosAvulsos(50),
+    ]);
 
   return (
     <div>
@@ -44,6 +47,7 @@ export default async function CaixaPage() {
             saldos={saldos}
             naMao={naMao}
             transferencias={transferencias}
+            movimentosAvulsos={avulsos}
             patrimonio={patrimonio}
           />
         </div>
@@ -53,6 +57,7 @@ export default async function CaixaPage() {
           saldos={saldos}
           naMao={naMao}
           transferencias={transferencias}
+          movimentosAvulsos={avulsos}
           patrimonio={patrimonio}
         />
       )}
