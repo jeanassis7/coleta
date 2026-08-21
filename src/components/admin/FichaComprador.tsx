@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
 import { useRouter } from "next/navigation";
+import { ModalConfirmar } from "./Modais";
 import { formatBRL, formatData } from "@/lib/format";
 import {
   InputDinheiro,
@@ -32,6 +33,11 @@ interface Linha {
   descricao: string;
   valor: number;
   anulado?: boolean;
+  /** Só nas linhas de pagamento — habilita o "apagar". */
+  recebimentoId?: string;
+  /** Cheque compensado/repassado/devolvido não pode ser apagado por aqui —
+   *  o servidor recusa, e a tela nem oferece. */
+  podeApagar?: boolean;
 }
 
 export function FichaComprador({
@@ -47,7 +53,11 @@ export function FichaComprador({
   cheques: Cheque[];
   contas: ContaOpcao[];
 }) {
+  const router = useRouter();
   const [pagando, setPagando] = useState(false);
+  const [apagando, setApagando] = useState<Linha | null>(null);
+  const [apagandoBusy, setApagandoBusy] = useState(false);
+  const [erroApagar, setErroApagar] = useState<string | null>(null);
 
   const chequePorRecebimento = new Map(cheques.map((c) => [c.recebimento_id, c]));
   const devolvidos = cheques.filter((c) => c.status === "devolvido");
@@ -73,6 +83,8 @@ export function FichaComprador({
           (anulado ? ` — voltou em ${formatData(ch.devolvido_em || ch.bom_para)}` : ""),
         valor: r.valor,
         anulado,
+        recebimentoId: r.id,
+        podeApagar: !ch || ["em_carteira", "depositado"].includes(ch.status),
       };
     }),
   ].sort((a, b) => (a.data < b.data ? 1 : -1));
@@ -145,6 +157,11 @@ export function FichaComprador({
 
       <div className="card overflow-x-auto">
         <h2 className="text-lg font-semibold mb-3">Extrato</h2>
+        {erroApagar && (
+          <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm mb-3">
+            {erroApagar}
+          </div>
+        )}
         {extrato.length === 0 ? (
           <p className="text-cinza-suave text-center py-6">
             Nada lançado ainda pra esse comprador.
@@ -156,6 +173,7 @@ export function FichaComprador({
                 <th className="py-2 pr-3">Data</th>
                 <th className="py-2 pr-3">O que foi</th>
                 <th className="py-2 pr-3 text-right">Valor</th>
+                <th className="py-2 pr-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -184,12 +202,53 @@ export function FichaComprador({
                     {l.tipo === "venda" ? "+" : "−"}
                     {formatBRL(l.valor)}
                   </td>
+                  <td className="py-2 pr-3 text-right">
+                    {l.recebimentoId && l.podeApagar && (
+                      <button
+                        onClick={() => {
+                          setErroApagar(null);
+                          setApagando(l);
+                        }}
+                        className="text-alerta hover:underline text-xs"
+                      >
+                        apagar
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {apagando && (
+        <ModalConfirmar
+          titulo="Apagar pagamento"
+          descricao={`${apagando.descricao} — ${formatBRL(apagando.valor)} em ${formatData(apagando.data)}. Apagar desfaz tudo: a dívida do comprador volta a aparecer e o dinheiro sai do saldo da conta que o recebeu (cheque sai da carteira junto). Use pra corrigir lançamento errado — depois é só registrar de novo, certo.`}
+          confirmarLabel="Apagar pagamento"
+          perigo
+          carregando={apagandoBusy}
+          onConfirmar={async () => {
+            setApagandoBusy(true);
+            try {
+              const res = await fetch(
+                `/api/admin/recebimentos/${apagando.recebimentoId}`,
+                { method: "DELETE" }
+              );
+              const json = await res.json();
+              if (!res.ok) {
+                setErroApagar(json.error || "Falha ao apagar.");
+              }
+              setApagando(null);
+              router.refresh();
+            } finally {
+              setApagandoBusy(false);
+            }
+          }}
+          onFechar={() => setApagando(null)}
+        />
+      )}
     </>
   );
 }
