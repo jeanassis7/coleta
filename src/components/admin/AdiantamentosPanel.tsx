@@ -28,7 +28,7 @@ export function AdiantamentosPanel({
   contas: ContaOpcao[];
 }) {
   const router = useRouter();
-  const [modal, setModal] = useState<"novo" | "acerto" | null>(null);
+  const [modal, setModal] = useState<"novo" | "acerto" | "devolucao" | null>(null);
   const [motoristaSelId, setMotoristaSelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [modalCancelar, setModalCancelar] = useState<string | null>(null);
@@ -130,13 +130,26 @@ export function AdiantamentosPanel({
                           Cancelar
                         </button>
                       ) : (
-                        <button
-                          onClick={() => abrirAcerto(s.id)}
-                          className="text-slate-700 hover:underline"
-                          disabled={loading}
-                        >
-                          Acerto
-                        </button>
+                        <>
+                          <button
+                            onClick={() => abrirAcerto(s.id)}
+                            className="text-slate-700 hover:underline"
+                            disabled={loading}
+                          >
+                            Acerto
+                          </button>
+                          <button
+                            onClick={() => {
+                              setMotoristaSelId(s.id);
+                              setModal("devolucao");
+                            }}
+                            className="text-slate-700 hover:underline"
+                            disabled={loading}
+                            title="Motorista devolveu troco no meio do ciclo — sem fechar acerto"
+                          >
+                            Devolução
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -182,7 +195,149 @@ export function AdiantamentosPanel({
           onClose={() => setModal(null)}
         />
       )}
+      {modal === "devolucao" && saldoSelecionado && (
+        <ModalDevolucao
+          motoristaId={saldoSelecionado.id}
+          motoristaNome={saldoSelecionado.nome}
+          saldoAtual={saldoSelecionado.saldo_atual}
+          contas={contas}
+          onClose={() => setModal(null)}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Devolução de troco no MEIO do ciclo: sai da mão do motorista, entra na
+ * conta escolhida, e o corte do ciclo fica quieto. O acerto continua sendo
+ * o fechamento; isto é só o "toma R$ 500 de volta, continuo rodando".
+ */
+function ModalDevolucao({
+  motoristaId,
+  motoristaNome,
+  saldoAtual,
+  contas,
+  onClose,
+}: {
+  motoristaId: string;
+  motoristaNome: string;
+  saldoAtual: number;
+  contas: ContaOpcao[];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [valorCentavos, setValorCentavos] = useState<number | null>(null);
+  const [contaId, setContaId] = useState("");
+  const [data, setData] = useState(hoje);
+  const [obs, setObs] = useState("");
+
+  async function salvar() {
+    if (!valorCentavos || valorCentavos <= 0) return setErro("Quanto ele devolveu?");
+    if (!contaId) return setErro("Diga em qual conta o dinheiro entrou");
+    setErro(null);
+    setSalvando(true);
+    try {
+      const res = await fetch("/api/admin/devolucoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motorista_id: motoristaId,
+          valor: centavosParaReais(valorCentavos),
+          data,
+          conta_id: contaId,
+          observacao: obs.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || "erro");
+        return;
+      }
+      router.refresh();
+      onClose();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">Devolução — {motoristaNome}</h2>
+          <p className="text-sm text-cinza-suave mt-1">
+            Ele tem {formatBRL(saldoAtual)} na mão. A devolução tira do saldo
+            dele e entra na conta escolhida — <strong>sem fechar o ciclo</strong>{" "}
+            (pra fechar, use o Acerto).
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Quanto devolveu</label>
+            <InputDinheiro
+              centavos={valorCentavos}
+              onChange={setValorCentavos}
+              grande={false}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Quando</label>
+            <input
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            />
+          </div>
+        </div>
+
+        <SelectConta
+          contas={contas}
+          valor={contaId}
+          onChange={setContaId}
+          label="Em qual conta entrou"
+        />
+
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Observação <span className="text-cinza-suave">(opcional)</span>
+          </label>
+          <input
+            value={obs}
+            onChange={(e) => setObs(e.target.value)}
+            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+          />
+        </div>
+
+        {erro && (
+          <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+            {erro}
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onClose}
+            disabled={salvando}
+            className="px-4 py-2 rounded-xl border border-cinza-borda"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            className="btn-primario disabled:opacity-40"
+          >
+            {salvando ? "Salvando…" : "Registrar devolução"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

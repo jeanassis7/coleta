@@ -807,23 +807,40 @@ export async function buscarMotoristasComSaldo(): Promise<MotoristaComSaldo[]> {
 /**
  * Histórico de adiantamentos + acertos de um motorista específico.
  */
+export interface DevolucaoMotorista {
+  id: string;
+  motorista_id: string;
+  valor: number;
+  data: string;
+  conta_id: string;
+  observacao: string | null;
+  criado_em: string;
+}
+
 export async function buscarHistoricoAdiantamentos(motoristaId: string) {
   const supabase = await getSupabaseServer();
-  const [{ data: adiantamentos }, { data: acertos }] = await Promise.all([
-    supabase
-      .from("adiantamentos")
-      .select("*")
-      .eq("motorista_id", motoristaId)
-      .order("criado_em", { ascending: false }),
-    supabase
-      .from("acertos")
-      .select("*")
-      .eq("motorista_id", motoristaId)
-      .order("criado_em", { ascending: false }),
-  ]);
+  const [{ data: adiantamentos }, { data: acertos }, { data: devolucoes }] =
+    await Promise.all([
+      supabase
+        .from("adiantamentos")
+        .select("*")
+        .eq("motorista_id", motoristaId)
+        .order("criado_em", { ascending: false }),
+      supabase
+        .from("acertos")
+        .select("*")
+        .eq("motorista_id", motoristaId)
+        .order("criado_em", { ascending: false }),
+      supabase
+        .from("devolucoes_motorista")
+        .select("*")
+        .eq("motorista_id", motoristaId)
+        .order("criado_em", { ascending: false }),
+    ]);
   return {
     adiantamentos: (adiantamentos as Adiantamento[]) || [],
     acertos: (acertos as Acerto[]) || [],
+    devolucoes: (devolucoes as DevolucaoMotorista[]) || [],
   };
 }
 

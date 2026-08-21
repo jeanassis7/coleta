@@ -3,6 +3,11 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { buscarHistoricoAdiantamentos } from "@/lib/admin/queries";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { DesfazerAcerto } from "@/components/admin/DesfazerAcerto";
+import {
+  EstornarAdiantamento,
+  ApagarDevolucao,
+} from "@/components/admin/AcoesAdiantamento";
+import { formatData } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +25,8 @@ export default async function HistoricoAdiantamentosPage({
     .eq("id", motoristaId)
     .maybeSingle();
 
-  const { adiantamentos, acertos } = await buscarHistoricoAdiantamentos(motoristaId);
+  const { adiantamentos, acertos, devolucoes } =
+    await buscarHistoricoAdiantamentos(motoristaId);
 
   const totalEnviado = adiantamentos
     .filter((a) => a.status === "aceito")
@@ -68,6 +74,7 @@ export default async function HistoricoAdiantamentosPage({
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Aceito em</th>
                 <th className="py-2 pr-3">Obs</th>
+                <th className="py-2 pr-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -95,12 +102,57 @@ export default async function HistoricoAdiantamentosPage({
                   <td className="py-2 pr-3 text-cinza-suave">
                     {a.observacao || "—"}
                   </td>
+                  <td className="py-2 pr-3">
+                    {a.status === "aceito" && (
+                      <EstornarAdiantamento
+                        adiantamentoId={a.id}
+                        valor={Number(a.valor)}
+                        motoristaNome={motorista?.nome || "—"}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {devolucoes.length > 0 && (
+        <>
+          <h2 className="text-lg font-semibold mb-2">Devoluções (troco)</h2>
+          <div className="card overflow-x-auto mb-6">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-cinza-suave border-b border-cinza-borda">
+                  <th className="py-2 pr-3">Data</th>
+                  <th className="py-2 pr-3 text-right">Valor</th>
+                  <th className="py-2 pr-3">Obs</th>
+                  <th className="py-2 pr-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {devolucoes.map((d) => (
+                  <tr key={d.id} className="border-b border-cinza-borda last:border-0">
+                    <td className="py-2 pr-3 whitespace-nowrap">{formatData(d.data)}</td>
+                    <td className="py-2 pr-3 text-right font-mono">
+                      {formatBRL(Number(d.valor))}
+                    </td>
+                    <td className="py-2 pr-3 text-cinza-suave">{d.observacao || "—"}</td>
+                    <td className="py-2 pr-3">
+                      <ApagarDevolucao
+                        devolucaoId={d.id}
+                        valor={Number(d.valor)}
+                        data={d.data}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <h2 className="text-lg font-semibold mb-2">Acertos</h2>
       <div className="card overflow-x-auto">
