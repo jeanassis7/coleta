@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { buscarHistoricoAdiantamentos } from "@/lib/admin/queries";
 import { formatBRL, formatDataHora } from "@/lib/format";
+import { DesfazerAcerto } from "@/components/admin/DesfazerAcerto";
 
 export const dynamic = "force-dynamic";
 
@@ -114,10 +115,11 @@ export default async function HistoricoAdiantamentosPage({
                 <th className="py-2 pr-3 text-right">Vale (salário)</th>
                 <th className="py-2 pr-3 text-right">Ficou de saldo</th>
                 <th className="py-2 pr-3">Obs</th>
+                <th className="py-2 pr-3"></th>
               </tr>
             </thead>
             <tbody>
-              {acertos.map((a) => (
+              {acertos.map((a, i) => (
                 <tr key={a.id} className="border-b border-cinza-borda last:border-0">
                   <td className="py-2 pr-3 whitespace-nowrap">
                     {formatDataHora(a.corte_em)}
@@ -133,6 +135,19 @@ export default async function HistoricoAdiantamentosPage({
                   </td>
                   <td className="py-2 pr-3 text-cinza-suave">
                     {a.observacao || "—"}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {/* Só o mais recente pode ser desfeito — o servidor
+                        garante; a tela nem oferece nos outros. */}
+                    {i === 0 && (
+                      <DesfazerAcerto
+                        acertoId={a.id}
+                        motoristaNome={motorista?.nome || "—"}
+                        valorDevolvido={Number(a.valor_devolvido)}
+                        valorVale={Number(a.valor_vale)}
+                        valorSaldo={Number(a.valor_saldo)}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}
