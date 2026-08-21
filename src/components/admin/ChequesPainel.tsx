@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { formatBRL, formatData } from "@/lib/format";
 import { ModalConfirmar } from "@/components/admin/Modais";
 import { SelectConta, type ContaOpcao } from "@/components/admin/SelectConta";
+import {
+  InputDinheiro,
+  centavosParaReais,
+  reaisParaCentavos,
+} from "@/components/InputDinheiro";
 import type { Cheque, StatusCheque } from "@/lib/admin/queries";
 
 const ROTULO: Record<StatusCheque, string> = {
@@ -131,6 +136,17 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
   // dinheiro numa conta, e precisa dizer em QUAL.
   const [compensando, setCompensando] = useState<Cheque | null>(null);
   const [contaCompensou, setContaCompensou] = useState("");
+  // Editar os dados do papel (o OCR erra) — só carteira/depositado; o
+  // recebimento par acompanha o valor no servidor.
+  const [editando, setEditando] = useState<Cheque | null>(null);
+  const [edBanco, setEdBanco] = useState("");
+  const [edEmitente, setEdEmitente] = useState("");
+  const [edNumero, setEdNumero] = useState("");
+  const [edBomPara, setEdBomPara] = useState("");
+  const [edValor, setEdValor] = useState<number | null>(null);
+  // Compensado: o único conserto é a conta em que caiu.
+  const [corrigindoConta, setCorrigindoConta] = useState<Cheque | null>(null);
+  const [contaCorrigida, setContaCorrigida] = useState("");
   // A devolução desfaz a conta que o cheque pagou. Avisar é obrigatório:
   // desfazer calado é pior que não desfazer.
   const [aviso, setAviso] = useState<string | null>(null);
@@ -153,14 +169,79 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
       }
       if (resposta.contaRevertida) {
         setAviso(
-          `A conta "${resposta.contaRevertida}" voltou para "a pagar" — o cheque que a quitava voltou.`
+          `A conta "${resposta.contaRevertida}" voltou para "a pagar" — o cheque que a quitava voltou.` +
+            (resposta.avisoVales ? ` ${resposta.avisoVales}` : "")
         );
+      } else if (resposta.avisoVales) {
+        setAviso(resposta.avisoVales);
       }
       router.refresh();
     } finally {
       setLoading(false);
       setAcao(null);
       setCompensando(null);
+    }
+  }
+
+  function abrirEdicao(c: Cheque) {
+    setErro(null);
+    setEditando(c);
+    setEdBanco(c.banco);
+    setEdEmitente(c.emitente);
+    setEdNumero(c.numero || "");
+    setEdBomPara(c.bom_para);
+    setEdValor(reaisParaCentavos(c.valor));
+  }
+
+  async function salvarEdicao() {
+    if (!editando) return;
+    if (!edValor || edValor <= 0) return setErro("Informe o valor");
+    setLoading(true);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/admin/cheques/${editando.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acao: "editar",
+          banco: edBanco.trim(),
+          emitente: edEmitente.trim(),
+          numero: edNumero.trim() || null,
+          bom_para: edBomPara,
+          valor: centavosParaReais(edValor),
+        }),
+      });
+      const resposta = await res.json();
+      if (!res.ok) {
+        setErro(resposta.error || "erro");
+        return;
+      }
+      setEditando(null);
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function salvarContaCorrigida() {
+    if (!corrigindoConta) return;
+    setLoading(true);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/admin/cheques/${corrigindoConta.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "editar", conta_id: contaCorrigida }),
+      });
+      const resposta = await res.json();
+      if (!res.ok) {
+        setErro(resposta.error || "erro");
+        return;
+      }
+      setCorrigindoConta(null);
+      router.refresh();
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -273,6 +354,27 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
                         Voltou
                       </button>
                     )}
+                    {["em_carteira", "depositado"].includes(c.status) && (
+                      <button
+                        onClick={() => abrirEdicao(c)}
+                        className="text-cinza-suave hover:underline"
+                      >
+                        Editar
+                      </button>
+                    )}
+                    {c.status === "compensado" && (
+                      <button
+                        onClick={() => {
+                          setErro(null);
+                          setContaCorrigida("");
+                          setCorrigindoConta(c);
+                        }}
+                        className="text-cinza-suave hover:underline text-xs"
+                        title="Errou a conta em que o cheque caiu? Corrija aqui — o saldo das duas contas recalcula sozinho."
+                      >
+                        corrigir conta
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -351,6 +453,132 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
                 className="btn-primario disabled:opacity-40"
               >
                 {loading ? "Salvando…" : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editando && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div>
+              <h2 className="text-lg font-bold">Editar cheque</h2>
+              <p className="text-sm text-cinza-suave mt-1">
+                De {editando.comprador_nome}. Se mudar o valor, o pagamento do
+                comprador acompanha junto — cheque e crédito são um par só.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Banco</label>
+                <input
+                  value={edBanco}
+                  onChange={(e) => setEdBanco(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Emitente</label>
+                <input
+                  value={edEmitente}
+                  onChange={(e) => setEdEmitente(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Nº <span className="text-cinza-suave">(opcional)</span>
+                </label>
+                <input
+                  value={edNumero}
+                  onChange={(e) => setEdNumero(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Bom para</label>
+                <input
+                  type="date"
+                  value={edBomPara}
+                  onChange={(e) => setEdBomPara(e.target.value)}
+                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Valor</label>
+                <InputDinheiro
+                  centavos={edValor}
+                  onChange={setEdValor}
+                  grande={false}
+                />
+              </div>
+            </div>
+
+            {erro && (
+              <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                {erro}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setEditando(null)}
+                className="px-4 py-2 text-cinza-suave hover:underline"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEdicao}
+                disabled={loading}
+                className="btn-primario disabled:opacity-40"
+              >
+                {loading ? "Salvando…" : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {corrigindoConta && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div>
+              <h2 className="text-lg font-bold">Corrigir a conta da compensação</h2>
+              <p className="text-sm text-cinza-suave mt-1">
+                {corrigindoConta.banco} · {formatBRL(corrigindoConta.valor)}. O
+                valor sai da conta errada e entra na certa — os dois saldos
+                recalculam sozinhos.
+              </p>
+            </div>
+
+            <SelectConta
+              contas={contas}
+              valor={contaCorrigida}
+              onChange={setContaCorrigida}
+              label="Caiu em qual conta, de verdade"
+            />
+
+            {erro && (
+              <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+                {erro}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setCorrigindoConta(null)}
+                className="px-4 py-2 text-cinza-suave hover:underline"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarContaCorrigida}
+                disabled={loading || !contaCorrigida}
+                className="btn-primario disabled:opacity-40"
+              >
+                {loading ? "Salvando…" : "Corrigir"}
               </button>
             </div>
           </div>

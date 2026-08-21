@@ -51,6 +51,131 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json();
 
+  // ------------------------------------------------------------------
+  // EDITAR os dados do cheque (o OCR erra, o dedo erra)
+  // ------------------------------------------------------------------
+  // Enquanto o cheque é SÓ PAPEL (carteira/depositado), tudo é corrigível —
+  // valor, banco, emitente, número, bom para. O recebimento par acompanha o
+  // valor (1:1): cheque e crédito do comprador nunca podem divergir.
+  // Compensado, o único conserto é a CONTA em que caiu (errou o banco no
+  // modal). Repassado/devolvido não se edita: o papel já pagou uma conta ou
+  // já virou dívida de novo — mexer no valor reescreveria fato encerrado.
+  if (String(body.acao || "") === "editar") {
+    const client = getSupabaseAdmin(admin.id);
+    const { data: atual, error: eAtual } = await client
+      .from("cheques")
+      .select("id, status, recebimento_id, valor")
+      .eq("id", id)
+      .maybeSingle();
+    if (eAtual) return NextResponse.json({ error: eAtual.message }, { status: 400 });
+    if (!atual) return NextResponse.json({ error: "cheque não encontrado" }, { status: 404 });
+
+    if (atual.status === "compensado") {
+      const contaId = body.conta_id ? String(body.conta_id) : null;
+      if (!contaId) {
+        return NextResponse.json(
+          { error: "diga em qual conta o cheque caiu" },
+          { status: 400 }
+        );
+      }
+      const { data: mexeu, error } = await client
+        .from("cheques")
+        .update({ conta_id: contaId })
+        .eq("id", id)
+        .eq("status", "compensado")
+        .select("id");
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (!mexeu || mexeu.length === 0) {
+        return NextResponse.json(
+          { error: "esse cheque já mudou de situação — recarregue a tela" },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (!["em_carteira", "depositado"].includes(atual.status)) {
+      return NextResponse.json(
+        {
+          error:
+            atual.status === "repassado"
+              ? "cheque repassado não se edita — ele já pagou uma conta; desfaça o pagamento primeiro"
+              : "cheque devolvido não se edita — a dívida do comprador já voltou por ele",
+        },
+        { status: 409 }
+      );
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (body.banco !== undefined) {
+      const v = String(body.banco).trim();
+      if (!v) return NextResponse.json({ error: "banco não pode ficar vazio" }, { status: 400 });
+      updates.banco = v;
+    }
+    if (body.emitente !== undefined) {
+      const v = String(body.emitente).trim();
+      if (!v) return NextResponse.json({ error: "emitente não pode ficar vazio" }, { status: 400 });
+      updates.emitente = v;
+    }
+    if (body.numero !== undefined) {
+      updates.numero = body.numero ? String(body.numero).trim() : null;
+    }
+    if (body.bom_para !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.bom_para))) {
+        return NextResponse.json({ error: "data do 'bom para' inválida" }, { status: 400 });
+      }
+      updates.bom_para = body.bom_para;
+    }
+    let novoValor: number | null = null;
+    if (body.valor !== undefined) {
+      const v = Number(body.valor);
+      if (!Number.isFinite(v) || v <= 0) {
+        return NextResponse.json({ error: "valor inválido" }, { status: 400 });
+      }
+      novoValor = Math.round(v * 100) / 100;
+      updates.valor = novoValor;
+    }
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
+    }
+
+    const { data: mexeu, error } = await client
+      .from("cheques")
+      .update(updates)
+      .eq("id", id)
+      .in("status", ["em_carteira", "depositado"])
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!mexeu || mexeu.length === 0) {
+      return NextResponse.json(
+        { error: "esse cheque já mudou de situação — recarregue a tela" },
+        { status: 409 }
+      );
+    }
+
+    if (novoValor !== null && atual.recebimento_id) {
+      const { error: eRec } = await client
+        .from("recebimentos")
+        .update({ valor: novoValor })
+        .eq("id", atual.recebimento_id);
+      // TUDO OU NADA: cheque de um valor e recebimento de outro é o pior
+      // estado possível (o saldo do comprador e o patrimônio divergem).
+      if (eRec) {
+        await client
+          .from("cheques")
+          .update({ valor: atual.valor })
+          .eq("id", id);
+        return NextResponse.json(
+          {
+            error: `não consegui atualizar o pagamento par do cheque (${eRec.message}) — nada foi alterado, tenta de novo`,
+          },
+          { status: 500 }
+        );
+      }
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const t = TRANSICOES[String(body.acao || "")];
   if (!t) return NextResponse.json({ error: "ação inválida" }, { status: 400 });
 
@@ -111,6 +236,7 @@ export async function PATCH(
   // verdade. Um mês fechado pode mudar por causa disso, e é o preço de ser
   // fiel ao caixa — melhor que registrar um pagamento que não aconteceu.
   let contaRevertida: string | null = null;
+  let avisoVales: string | null = null;
   if (t.para === "devolvido" && data && data.length > 0) {
     const { data: contas, error: eReversao } = await client
       .from("contas_a_pagar")
@@ -148,13 +274,19 @@ export async function PATCH(
       // Se era um pagamento de salário, os vales que ele tinha quitado
       // voltam a pendentes — o desconto não aconteceu de verdade (o cheque
       // voltou). Quando a conta for paga de novo, o gestor marca de novo.
-      await client
+      const { error: eVales } = await client
         .from("acertos")
         .update({ vale_quitado_em: null, vale_quitado_por: null })
         .in(
           "vale_quitado_por",
           contas.map((c) => c.id as string)
         );
+      // A conta já foi revertida — reverter tudo de novo por causa do vale
+      // seria pior. Mas falhar CALADO deixava vale quitado por um pagamento
+      // que voltou; a tela manda conferir.
+      if (eVales) {
+        avisoVales = `Não consegui devolver os vales desse pagamento pra lista de pendentes (${eVales.message}) — confira em Adiantamentos.`;
+      }
     }
   }
 
@@ -170,5 +302,6 @@ export async function PATCH(
     // A tela avisa o que foi desfeito — desfazer calado é pior que não
     // desfazer.
     contaRevertida,
+    avisoVales,
   });
 }
