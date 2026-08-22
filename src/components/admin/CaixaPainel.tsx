@@ -404,7 +404,7 @@ export function CaixaPainel({
             decisão do Evaner (21/08): o patrimônio é o número positivo; a
             dívida aparece como informação própria. A linha "Dívidas
             cadastradas" entra aqui quando o cadastro de dívidas nascer. */}
-        <div className="mt-3 pt-3 border-t border-cinza-borda text-sm">
+        <div className="mt-3 pt-3 border-t border-cinza-borda text-sm space-y-2">
           <div className="flex items-baseline justify-between gap-3">
             <span>
               📤 Contas a pagar em aberto{" "}
@@ -415,6 +415,21 @@ export function CaixaPainel({
             </span>
             <span className="font-mono text-alerta whitespace-nowrap">
               {formatBRL(patrimonio.contasAPagarAbertas)}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <span>
+              🧾 Dívidas cadastradas{" "}
+              <span className="text-cinza-suave text-xs">
+                (o que falta pagar do que está em{" "}
+                <a href="/admin/dividas" className="text-verde hover:underline">
+                  Dívidas
+                </a>
+                )
+              </span>
+            </span>
+            <span className="font-mono text-alerta whitespace-nowrap">
+              {formatBRL(patrimonio.dividasCadastradas)}
             </span>
           </div>
         </div>

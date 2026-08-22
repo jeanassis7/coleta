@@ -37,12 +37,19 @@ export interface ChequeOpcao {
   valor: number;
 }
 
+export interface DividaOpcao {
+  id: string;
+  credor: string;
+  saldo: number;
+}
+
 export function LancamentosPainel({
   lancamentos,
   contas,
   pessoas,
   cheques,
   vales,
+  dividas,
   filtros,
 }: {
   lancamentos: Lancamento[];
@@ -52,6 +59,8 @@ export function LancamentosPainel({
   cheques: ChequeOpcao[];
   /** Vales de acerto ainda não descontados de nenhum salário. */
   vales: ValePendente[];
+  /** Dívidas em aberto — o pagamento diz qual delas abate. */
+  dividas: DividaOpcao[];
   filtros: { inicio: string; fim: string; categoria: string; conta_id: string };
 }) {
   const router = useRouter();
@@ -71,6 +80,8 @@ export function LancamentosPainel({
   const [chequeId, setChequeId] = useState("");
   // Vales que este pagamento está quitando.
   const [valesMarcados, setValesMarcados] = useState<string[]>([]);
+  // Qual dívida cadastrada este pagamento abate (só em "Pagamento de dívidas").
+  const [dividaId, setDividaId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -155,6 +166,7 @@ export function LancamentosPainel({
           cheque_id: comCheque ? chequeId : null,
           vales_quitados: valesMarcados,
           pessoa_id: pedePessoa(categoria) ? pessoaId : null,
+          divida_id: categoria === "dividas_pf" && dividaId ? dividaId : null,
           descricao: descricao.trim() || null,
         }),
       });
@@ -335,6 +347,42 @@ export function LancamentosPainel({
             />
           </div>
         </div>
+
+        {categoria === "dividas_pf" && (
+          <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3">
+            <label className="block text-sm font-medium mb-1">
+              Qual dívida este pagamento abate?
+            </label>
+            {dividas.length === 0 ? (
+              <p className="text-sm text-cinza-suave">
+                Nenhuma dívida cadastrada.{" "}
+                <a href="/admin/dividas" className="text-verde hover:underline">
+                  Cadastrar
+                </a>{" "}
+                — sem isso o pagamento entra no DRE normalmente, só não abate
+                saldo de ninguém.
+              </p>
+            ) : (
+              <>
+                <select
+                  value={dividaId}
+                  onChange={(e) => setDividaId(e.target.value)}
+                  className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
+                >
+                  <option value="">Nenhuma (só o gasto)</option>
+                  {dividas.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.credor} — faltam {formatBRL(d.saldo)}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-cinza-suave mt-1">
+                  Escolhendo, o saldo dela cai sozinho neste valor.
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         {categoria === "salario" && pessoaId && (() => {
           const doDele = vales.filter((v) => v.motorista_id === pessoaId);

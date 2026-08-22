@@ -231,8 +231,12 @@ export interface Patrimonio {
    *  POSITIVO dos compradores — crédito de comprador não é ativo). */
   aReceberCompradores: number;
   /** Dívida certa (status a_pagar; prevista fica fora — é palpite).
-   *  Entra NEGATIVA no total: giro honesto desconta o que já se deve. */
+   *  NÃO desconta do total: aparece como linha própria abaixo dele
+   *  (decisão do Evaner, 21/08). Conta amarrada a uma dívida cadastrada
+   *  fica fora daqui — senão a mesma dívida contaria duas vezes. */
   contasAPagarAbertas: number;
+  /** Soma do que falta pagar das dívidas cadastradas em aberto (0053). */
+  dividasCadastradas: number;
 }
 
 export async function buscarPatrimonio(): Promise<Patrimonio> {
@@ -244,6 +248,7 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     { data: adPendentes, error: eAd },
     { data: saldoCompradores, error: eComp },
     { data: contasAbertas, error: eContas },
+    { data: dividas, error: eDiv },
   ] = await Promise.all([
     supabase.rpc("estoque_atual"),
     // Óleo nos caminhões: coletas de cargas AINDA ATIVAS (o join limita o
@@ -262,7 +267,14 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     // Enviado e não aceito: saiu do caixa, não chegou na mão — está "no ar".
     supabase.from("adiantamentos").select("valor").eq("status", "pendente"),
     supabase.rpc("saldo_compradores"),
-    supabase.from("contas_a_pagar").select("valor").eq("status", "a_pagar"),
+    // divida_id is null: parcela de dívida cadastrada já conta na linha das
+    // dívidas — contar aqui também dobraria a mesma dívida.
+    supabase
+      .from("contas_a_pagar")
+      .select("valor")
+      .eq("status", "a_pagar")
+      .is("divida_id", null),
+    supabase.rpc("saldo_dividas"),
   ]);
   if (eEstoque) throw eEstoque;
   if (eColetas) throw eColetas;
@@ -270,6 +282,7 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
   if (eAd) throw eAd;
   if (eComp) throw eComp;
   if (eContas) throw eContas;
+  if (eDiv) throw eDiv;
 
   const preco = PRECO_REFERENCIA_LITRO;
   const estoqueKg = ((estoque as { saldo_kg: number }[]) ?? []).reduce(
@@ -296,6 +309,9 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     (s, c) => s + Number(c.valor || 0),
     0
   );
+  const dividasCadastradas = ((dividas as { saldo: number; status: string }[]) ?? [])
+    .filter((d) => d.status === "aberta" && Number(d.saldo) > 0)
+    .reduce((s, d) => s + Number(d.saldo), 0);
 
   const n2 = (v: number) => Math.round(v * 100) / 100;
   return {
@@ -309,7 +325,43 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     valorOleoCaminhoes: n2(oleoCaminhoesLitros * preco),
     aReceberCompradores: n2(aReceberCompradores),
     contasAPagarAbertas: n2(contasAPagarAbertas),
+    dividasCadastradas: n2(dividasCadastradas),
   };
+}
+
+export interface SaldoDivida {
+  id: string;
+  credor: string;
+  tipo: "parcelada" | "aberta";
+  valor_total: number;
+  pago: number;
+  saldo: number;
+  parcelas_total: number | null;
+  valor_parcela: number | null;
+  parcelas_pagas: number | null;
+  status: "aberta" | "quitada";
+  quitada_em: string | null;
+  primeira_em: string | null;
+  observacao: string | null;
+  criado_em: string;
+}
+
+/**
+ * As dívidas com o saldo já calculado (0053). O saldo sai de
+ * `valor_total − pagamentos pagos vinculados` — nunca de um número guardado,
+ * então apagar um pagamento devolve a dívida sozinho.
+ */
+export async function buscarSaldoDividas(): Promise<SaldoDivida[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase.rpc("saldo_dividas");
+  if (error) throw error;
+  return ((data as SaldoDivida[]) || []).map((d) => ({
+    ...d,
+    valor_total: Number(d.valor_total),
+    pago: Number(d.pago),
+    saldo: Number(d.saldo),
+    valor_parcela: d.valor_parcela != null ? Number(d.valor_parcela) : null,
+  }));
 }
 
 export interface FotoCaixaLinha {

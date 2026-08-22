@@ -44,6 +44,23 @@ Material em `dados-historicos/` (fora do git): `MAPA-BACKFILL.md`,
   7.057,76 de 27/07, "a posteriori" por decisão do Evaner).
 - **Caixa pós-backfill**: BB 78.952,71 · Dinheiro em mãos 315,00 (+ Conta
   teste 10.000 que o Evaner vai apagar). Conferir com o banco real.
+- **DÍVIDAS CADASTRADAS (0053, 21/08 à noite)**: `/admin/dividas`. Dois
+  formatos — **parcelada** (acordo fechado, 8×12k, mostra "3 de 8") e
+  **aberta** (valor devido sem cronograma; a situação em palavras no campo
+  observação). **Juro NÃO é calculado** (decisão do Evaner: juro parado sem
+  negociação é conversa) — mudou o acordo, edita o valor e o log 0022 guarda
+  o antes/depois. O **saldo não se guarda, se calcula**: `saldo_dividas()` =
+  total − pagamentos `paga` vinculados, então apagar um pagamento devolve a
+  dívida sozinho. O lançamento em "Pagamento de dívidas" pergunta qual dívida
+  abate (`contas_a_pagar.divida_id`); o servidor recusa vincular em outra
+  categoria. **Anti-dobra**: conta com `divida_id` sai da linha "Contas a
+  pagar em aberto" (já está dentro das dívidas). Apagar dívida só sem
+  pagamento vinculado — quem acabou, QUITA (sai da linha, vira histórico).
+- **TOTAL do patrimônio = só o positivo** (decisão do Evaner 21/08): contas a
+  pagar em aberto e dívidas cadastradas aparecem como linhas ABAIXO do
+  total, sem descontar. A foto semanal segue o mesmo desenho (0052/0053).
+- **Categoria `dividas_pf` re-rotulada "Pagamento de dívidas"** — a CHAVE
+  não mudou (os 17 lançamentos do backfill continuam classificados).
 - **FOTO SEMANAL DO CAIXA (0051, 21/08 à noite)**: toda segunda 06:00 BR o
   pg_cron do banco fotografa o giro (mesmas linhas do card Patrimônio) em
   `fotos_caixa` — imutável, testemunha do sistema fechado. Primeira foto:

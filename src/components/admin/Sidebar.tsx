@@ -46,6 +46,7 @@ export function Sidebar({
         { href: "/admin/vendas", label: "Vendas" },
         { href: "/admin/cheques", label: "Cheques" },
         { href: "/admin/contas", label: "Contas a pagar" },
+        { href: "/admin/dividas", label: "Dívidas" },
         { href: "/admin/cargas", label: "Cargas" },
         { href: "/admin/abastecimentos", label: "Abastecimentos" },
         { href: "/admin/despesas", label: "Despesas" },

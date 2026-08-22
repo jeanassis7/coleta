@@ -2,6 +2,7 @@ import {
   buscarLancamentos,
   buscarContasFinanceiras,
   buscarValesPendentes,
+  buscarSaldoDividas,
 } from "@/lib/admin/caixa";
 import { buscarMotoristas, buscarCheques } from "@/lib/admin/queries";
 import { LancamentosPainel } from "@/components/admin/LancamentosPainel";
@@ -34,7 +35,7 @@ export default async function LancamentosPage({
     conta_id: params.conta_id || "",
   };
 
-  const [lancamentos, contas, perfis, chequesCarteira, vales] =
+  const [lancamentos, contas, perfis, chequesCarteira, vales, dividas] =
     await Promise.all([
       buscarLancamentos({
         inicio: filtros.inicio,
@@ -49,6 +50,7 @@ export default async function LancamentosPage({
       buscarCheques({ status: ["em_carteira"] }),
       // O vale do acerto desconta do salário — o sistema lembra, não o gestor.
       buscarValesPendentes(),
+      buscarSaldoDividas(),
     ]);
 
   return (
@@ -75,6 +77,9 @@ export default async function LancamentosPage({
           valor: c.valor,
         }))}
         vales={vales}
+        dividas={dividas
+          .filter((d) => d.status === "aberta" && d.saldo > 0)
+          .map((d) => ({ id: d.id, credor: d.credor, saldo: d.saldo }))}
         filtros={filtros}
       />
     </div>

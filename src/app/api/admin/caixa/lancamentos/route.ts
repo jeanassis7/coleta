@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
     ? body.vales_quitados.map(String)
     : [];
   const pessoa_id = body.pessoa_id ? String(body.pessoa_id) : null;
+  // Qual dívida cadastrada este pagamento abate (0053). Só faz sentido em
+  // "Pagamento de dívidas" — o saldo da dívida sai de `total − pagos`.
+  const divida_id = body.divida_id ? String(body.divida_id) : null;
   const descricao = String(body.descricao || "").trim();
   const forma_pagamento = body.forma_pagamento
     ? String(body.forma_pagamento)
@@ -79,6 +82,14 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  // Amarrar dívida em categoria errada faria o saldo dela cair por um gasto
+  // que não a pagou. A tela já limita; aqui é a garantia.
+  if (divida_id && categoria !== "dividas_pf") {
+    return NextResponse.json(
+      { error: "só pagamento em “Pagamento de dívidas” pode abater uma dívida" },
+      { status: 400 }
+    );
+  }
 
   const client = getSupabaseAdmin(admin.id);
   const { data: criado, error } = await client
@@ -97,6 +108,7 @@ export async function POST(req: NextRequest) {
       conta_id: cheque_id ? null : conta_id,
       cheque_id,
       pessoa_id: pedePessoa(categoria) ? pessoa_id : null,
+      divida_id,
       observacao: body.observacao ? String(body.observacao).trim() : null,
       registrado_por: admin.id,
     })
