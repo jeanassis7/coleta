@@ -1181,13 +1181,21 @@ function ModalConfirmarPrevisao({
   );
 }
 
+// Recorrente não guarda a PESSOA (a tabela não tem a coluna), então
+// categoria que pede dono não pode virar recorrente: geraria conta órfã
+// todo mês e o vale nunca casaria. O servidor recusa; aqui a opção nem
+// aparece (varredura 21/08).
+const CATEGORIAS_RECORRENTES = CATEGORIAS_LANCAVEIS.filter(
+  (l) => !l.pedePessoa || l.pessoaOpcional
+);
+
 function FormRecorrente({ onFim }: { onFim: () => void }) {
   const router = useRouter();
   const [descricao, setDescricao] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   // "fixa" não é chave do plano — o select renderizava sem seleção e o
   // salvar voltava 400 sem apontar o campo.
-  const [categoria, setCategoria] = useState(CATEGORIAS_LANCAVEIS[0].chave);
+  const [categoria, setCategoria] = useState(CATEGORIAS_RECORRENTES[0].chave);
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [dia, setDia] = useState("10");
   const [periodicidade, setPeriodicidade] = useState<"mensal" | "anual">("mensal");
@@ -1268,9 +1276,9 @@ function FormRecorrente({ onFim }: { onFim: () => void }) {
             value={categoria}
             onChange={(e) => setCategoria(e.target.value)}
           >
-            {CATEGORIAS.map(([v, r]) => (
-              <option key={v} value={v}>
-                {r}
+            {CATEGORIAS_RECORRENTES.map((l) => (
+              <option key={l.chave} value={l.chave}>
+                {l.label}
               </option>
             ))}
           </select>

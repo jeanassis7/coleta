@@ -836,6 +836,15 @@ try {
       [pessoa, tipo, valor, base, desde, perfil.id]
     );
 
+  // ⚠️ ISOLAMENTO (22/08/2026): as vigências REAIS saem de cena primeiro.
+  // Estamos numa transação com ROLLBACK — produção não é tocada — mas sem
+  // isto o teste compara contra o que o Evaner cadastrou de verdade e
+  // quebra sozinho. Aconteceu: ele criou "comissão R$ 10 por 200 L desde
+  // 01/08" e os 4 cenários de agosto passaram a ler 10 em vez do sintético.
+  // É a mesma lição do bloco de estoque, que virou DELTA pelo mesmo motivo:
+  // teste que quebra quando chega dado real ensina a ignorar o CI.
+  await client.query("delete from public.vigencias_remuneracao");
+
   // Regra geral da empresa, e um reajuste depois.
   await vig(null, "comissao", 100, 200, "2026-01-01");
   await vig(null, "comissao", 120, 200, "2026-06-01");

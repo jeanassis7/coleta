@@ -121,10 +121,28 @@ function CardTipo({
         </div>
       )}
 
+      {/* O saldo pode ter voltado a positivo com a descarga seguinte e o
+          aviso vermelho some — mas a distorção no custo médio FICA. Este
+          aviso sobrevive até o inventário fazer o rebase (0054). */}
+      {e.saldo_kg >= 0 && !e.custo_confiavel && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-2 text-sm">
+          <strong>O custo médio abaixo não é confiável.</strong> Em algum
+          momento saiu mais óleo do que o sistema tinha, e a conta do custo
+          por kg carrega essa distorção mesmo agora que o saldo voltou.
+          Um <strong>inventário</strong> (contar o tanque) acerta os dois.
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3 pt-2 border-t border-cinza-borda">
         <div>
-          <div className="text-xs text-cinza-suave">Custo médio</div>
-          <div className="font-mono font-semibold">
+          <div className="text-xs text-cinza-suave">
+            Custo médio{!e.custo_confiavel && " ⚠️"}
+          </div>
+          <div
+            className={`font-mono font-semibold ${
+              !e.custo_confiavel ? "text-amber-700" : ""
+            }`}
+          >
             {e.custo_medio_kg > 0 ? `${porKg(e.custo_medio_kg)}/kg` : "—"}
           </div>
         </div>

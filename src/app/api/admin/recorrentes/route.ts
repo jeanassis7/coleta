@@ -42,6 +42,20 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  // ⚠️ A recorrente é a TERCEIRA porta da contas_a_pagar, e a única sem
+  // coluna `pessoa_id` (varredura 21/08). "Salário Valdecir todo dia 5"
+  // gerava conta sem dono TODO MÊS: no DRE a linha Salário abria em "sem
+  // pessoa" e o vale de acerto nunca casava (a quitação exige pessoa).
+  // Enquanto a tabela não tiver o dono, categoria que pede pessoa não
+  // pode virar recorrente.
+  if (linha.pedePessoa && !linha.pessoaOpcional) {
+    return NextResponse.json(
+      {
+        error: `"${linha.label}" precisa dizer de quem é, e despesa recorrente não guarda a pessoa. Lance mês a mês em Lançamentos (é lá que o vale desconta do salário).`,
+      },
+      { status: 400 }
+    );
+  }
 
   const client = getSupabaseAdmin(admin.id);
   const { error } = await client.from("despesas_recorrentes").insert({

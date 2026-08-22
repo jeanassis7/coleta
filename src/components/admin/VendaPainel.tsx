@@ -194,7 +194,12 @@ function FormVenda({
       setAvisoEstoque(true);
       return;
     }
-    if (Math.abs(emAberto) > 0.009 && !avisoPagamento) {
+    // ⚠️ Só avisa quando o pagamento PASSA do total (vira crédito do
+    // comprador). Venda a prazo — pagar parte hoje e o resto em cheque —
+    // é o fluxo NORMAL do negócio, e avisar nele treinava o clique duplo
+    // automático, que passava por cima do aviso de estoque logo antes.
+    // "Alerta ruidoso ensina a ignorar alerta" (varredura 21/08).
+    if (emAberto < -0.009 && !avisoPagamento) {
       setErro(null);
       setAvisoPagamento(true);
       return;
@@ -612,15 +617,22 @@ function FormVenda({
       {avisoPagamento && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
           <p className="font-semibold mb-1">
-            O pagamento não fecha com o valor da venda
+            O pagamento passa do valor da venda
           </p>
           <p className="text-cinza-suave">
-            {emAberto > 0
-              ? `Faltam ${formatBRL(emAberto)}, que vão ficar em aberto na conta do comprador.`
-              : `Sobram ${formatBRL(-emAberto)}, que viram crédito dele pra próxima.`}{" "}
-            Se é isso mesmo, toque de novo.
+            Sobram {formatBRL(-emAberto)}, que viram crédito dele pra próxima.
+            Confira se não faltou lançar uma venda antiga, ou se sobrou um
+            zero. Se é isso mesmo, toque de novo.
           </p>
         </div>
+      )}
+
+      {/* Venda a prazo é o normal — informa sem parar o fluxo. */}
+      {emAberto > 0.009 && !avisoPagamento && (
+        <p className="text-sm text-cinza-suave">
+          Ficam <strong>{formatBRL(emAberto)}</strong> em aberto na conta do
+          comprador.
+        </p>
       )}
 
       {erro && (

@@ -40,12 +40,15 @@ export async function PATCH(
 
   // Aceito ANTES do último acerto já foi acertado — estornar agora tiraria
   // dinheiro de um ciclo fechado e o saldo atual nem mudaria. Sem volta.
-  const { data: acertoDepois } = await client
+  // ⚠️ `error` era descartado e `?? []` fazia o guard passar em silêncio
+  // se a consulta falhasse — guard que falha aberto não é guard (21/08).
+  const { data: acertoDepois, error: eAcerto } = await client
     .from("acertos")
     .select("id")
     .eq("motorista_id", atual.motorista_id)
     .gt("corte_em", atual.aceito_em)
     .limit(1);
+  if (eAcerto) return NextResponse.json({ error: eAcerto.message }, { status: 400 });
   if ((acertoDepois ?? []).length > 0) {
     return NextResponse.json(
       { error: "esse adiantamento já entrou num acerto fechado — desfaça o acerto primeiro (no histórico do motorista)" },

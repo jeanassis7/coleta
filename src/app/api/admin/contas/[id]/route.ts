@@ -79,6 +79,32 @@ export async function PATCH(
       if (!Number.isFinite(valor) || valor <= 0) {
         return NextResponse.json({ error: "valor inválido" }, { status: 400 });
       }
+      // ⚠️ Conta que veio de um FATO não pode ter o valor mudado por aqui
+      // (varredura 21/08): a conta ia pra R$ 680 e o abastecimento ficava
+      // R$ 800 — o DRE certo e a ficha do caminhão errada. O caminho
+      // inverso (editar o abastecimento) sincroniza os dois de propósito.
+      // `editar_pagamento` já recusava mexer em categoria pelo mesmo
+      // motivo; faltava aqui.
+      const { data: alvo } = await client
+        .from("contas_a_pagar")
+        .select("origem_tipo, valor")
+        .eq("id", id)
+        .maybeSingle();
+      if (
+        alvo?.origem_tipo &&
+        Math.round(Number(alvo.valor) * 100) !== Math.round(valor * 100)
+      ) {
+        return NextResponse.json(
+          {
+            error: `Essa conta nasceu de um ${alvo.origem_tipo} de R$ ${Number(
+              alvo.valor
+            )
+              .toFixed(2)
+              .replace(".", ",")}. Mudando o valor só aqui, o ${alvo.origem_tipo} continua com o valor antigo e os relatórios divergem. Edite o ${alvo.origem_tipo} — ele acerta os dois.`,
+          },
+          { status: 409 }
+        );
+      }
       updates.valor = n2(valor);
     }
     if (body.vencimento !== undefined) {
@@ -242,6 +268,23 @@ export async function PATCH(
         return NextResponse.json({
           ok: true,
           aviso: `a data do repasse do cheque não acompanhou (${eCh.message}) — confira na tela de Cheques`,
+        });
+      }
+    }
+
+    // TERCEIRO relógio (varredura 21/08): o vale que este pagamento quitou
+    // guarda a data da quitação. Sem isto ele ficava marcado no dia antigo
+    // — o comentário acima falava em "dois relógios" e esqueceu esse.
+    if (updates.pago_em !== undefined) {
+      const { error: eVale } = await client
+        .from("acertos")
+        .update({ vale_quitado_em: updates.pago_em })
+        .eq("vale_quitado_por", id)
+        .not("vale_quitado_em", "is", null);
+      if (eVale) {
+        return NextResponse.json({
+          ok: true,
+          aviso: `a data da quitação do vale não acompanhou (${eVale.message}) — confira em Adiantamentos`,
         });
       }
     }
@@ -562,6 +605,28 @@ export async function DELETE(
     .maybeSingle();
 
   const desfeito: string[] = [];
+
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #7 — o guard existia só na TELA (varredura 21/08)
+  // ---------------------------------------------------------------------
+  // `LancamentosPainel` esconde o botão Apagar quando a conta veio de um
+  // fato, mas o servidor aceitava. Apagar a conta de um abastecimento de
+  // nota assinada deixava o abastecimento com `pago_na_hora=false` e sem
+  // dívida nenhuma: sumia das contas a pagar E do DRE. Só o caso 'coleta'
+  // era tratado; abastecimento e despesa saíam sem nem um aviso.
+  if (
+    conta?.origem_tipo &&
+    ["abastecimento", "despesa", "manutencao", "compra_direta", "documento"].includes(
+      conta.origem_tipo
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error: `Essa conta nasceu de um ${conta.origem_tipo} — apagá-la deixaria o lançamento sem dívida e sem sair no DRE. Se o pagamento foi na hora, edite o ${conta.origem_tipo}; se a conta não existe mais, CANCELE em vez de apagar.`,
+      },
+      { status: 409 }
+    );
+  }
 
   if (conta?.cheque_id) {
     const { data: ch, error: eCh } = await client

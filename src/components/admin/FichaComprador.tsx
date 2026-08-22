@@ -112,7 +112,11 @@ export function FichaComprador({
           </span>
         </div>
 
-        {comprador.saldo !== 0 && (
+        {/* ⚠️ Não gatear em `saldo !== 0` (varredura 21/08): com venda de
+            10.000 paga 10.000 em pix + 5.000 em cheque que VOLTOU, o saldo
+            dá exatamente zero e a ficha dizia "está em dia" — o cheque
+            devolvido de 5.000 não aparecia em lugar nenhum dela. */}
+        {(comprador.saldo !== 0 || devolvidos.length > 0) && (
           <div className="border-t border-cinza-borda pt-3 space-y-1 text-sm">
             {Math.abs(residual) > 0.009 && (
               <div className="flex justify-between">

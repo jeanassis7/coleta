@@ -107,6 +107,12 @@ export function CaixaPainel({
   const [motivoAjuste, setMotivoAjuste] = useState("");
 
   const [apagandoAvulso, setApagandoAvulso] = useState<MovimentoAvulso | null>(null);
+  // Operação que o servidor pediu pra confirmar (antiburro de 2 etapas).
+  const [confirmarEnvio, setConfirmarEnvio] = useState<{
+    url: string;
+    body: unknown;
+    metodo: string;
+  } | null>(null);
 
   const totalContas = saldos.reduce((s, c) => s + c.saldo, 0);
   const totalNaMao = naMao.reduce((s, m) => s + m.saldo, 0);
@@ -123,8 +129,13 @@ export function CaixaPainel({
       const json = await res.json();
       if (!res.ok) {
         setErro(json.error || "Falha na operação.");
+        // Guard de 2 etapas do servidor (mexer no ponto de partida de conta
+        // com movimento, saque maior que o saldo): guarda o que ia ser
+        // enviado pra repetir com `confirmado` no 2º clique.
+        if (json.precisaConfirmar) setConfirmarEnvio({ url, body, metodo });
         return false;
       }
+      setConfirmarEnvio(null);
       router.refresh();
       return true;
     } finally {
@@ -180,12 +191,20 @@ export function CaixaPainel({
     e.preventDefault();
     if (!editando) return;
     if (!edNome.trim()) return setErro("A conta precisa de um nome.");
+    // ⚠️ Campo vazio NÃO é zero (varredura 21/08): mandar 0 quando o gestor
+    // só apagou os dígitos zerava o saldo inicial da conta em silêncio, e
+    // o saldo inteiro mudava sem que nada tivesse acontecido.
+    if (edSaldo == null) {
+      return setErro(
+        "Informe o saldo inicial da conta (se é zero mesmo, digite 0)."
+      );
+    }
     const ok = await chamar(
       `/api/admin/contas-financeiras/${editando.id}`,
       {
         nome: edNome.trim(),
         banco: editando.tipo === "banco" ? edBanco.trim() || null : null,
-        saldo_inicial: edSaldo != null ? centavosParaReais(edSaldo) : 0,
+        saldo_inicial: centavosParaReais(edSaldo),
         saldo_inicial_em: edSaldoEm,
       },
       "PATCH"
@@ -242,8 +261,23 @@ export function CaixaPainel({
   return (
     <div className="space-y-6">
       {erro && (
-        <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm">
-          {erro}
+        <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm space-y-2">
+          <p>{erro}</p>
+          {confirmarEnvio && (
+            <button
+              onClick={() =>
+                chamar(
+                  confirmarEnvio.url,
+                  { ...(confirmarEnvio.body as object), confirmado: true },
+                  confirmarEnvio.metodo
+                )
+              }
+              disabled={salvando}
+              className="px-4 py-2 rounded-xl border-2 border-amber-400 bg-amber-50 text-preto text-sm font-medium"
+            >
+              Está certo, fazer assim
+            </button>
+          )}
         </div>
       )}
 

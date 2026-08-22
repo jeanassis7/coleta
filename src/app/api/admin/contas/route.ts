@@ -83,8 +83,13 @@ export async function POST(req: NextRequest) {
       vencimento: vencimentoParcela(i),
       status: prevista ? "prevista" : "a_pagar",
       pessoa_id: pedePessoa(categoria) ? pessoa_id : null,
-      origem_tipo: body.origem_tipo || null,
-      origem_id: body.origem_id || null,
+      // ⚠️ NÃO aceita origem do body (varredura 21/08): um POST com
+      // origem_tipo:'coleta' e um origem_id qualquer removia AQUELA coleta
+      // do DRE na hora, via a anti-dobra. Conta que nasce de um fato é
+      // criada pelo próprio fluxo do fato (trigger 0034, coleta da sede,
+      // manutenção), nunca por esta porta manual.
+      origem_tipo: null,
+      origem_id: null,
       parcela: parcelas > 1 ? i + 1 : null,
       parcelas_total: parcelas > 1 ? parcelas : null,
       observacao: body.observacao ? String(body.observacao).trim() : null,

@@ -241,6 +241,39 @@ export async function POST(req: NextRequest) {
       avisoVales =
         "os vales marcados NÃO foram quitados — vale só desconta em pagamento de Salário com a pessoa escolhida";
     } else {
+      // RÉGUA DO DINHEIRO #1 — vale MAIOR que o pagamento.
+      // O vale é tudo-ou-nada: marcar um de R$ 3.000 num salário de R$
+      // 2.000 tirava o vale inteiro da lista e R$ 1.000 de desconto
+      // deixavam de existir, calados. Agora avisa e pede o 2º clique.
+      const { data: marcados } = await client
+        .from("acertos")
+        .select("valor_vale")
+        .in("id", vales_quitados)
+        .is("vale_quitado_em", null);
+      const somaVales = Math.round(
+        ((marcados as { valor_vale: number }[]) ?? []).reduce(
+          (s, v) => s + Number(v.valor_vale || 0),
+          0
+        ) * 100
+      ) / 100;
+      if (somaVales > valor + 0.009 && !body.confirmado) {
+        await client.from("contas_a_pagar").delete().eq("id", criado.id);
+        return NextResponse.json(
+          {
+            error: `Os vales marcados somam ${somaVales.toFixed(
+              2
+            )} e o pagamento é de ${valor.toFixed(
+              2
+            )}. O vale é tudo-ou-nada: marcando assim, o vale inteiro sai da lista e ${(
+              somaVales - valor
+            ).toFixed(
+              2
+            )} de desconto deixam de existir. Desconte o resto no próximo salário (deixe o vale pendente) ou confirme.`,
+            precisaConfirmar: true,
+          },
+          { status: 409 }
+        );
+      }
       const { data: mexidos } = await client
         .from("acertos")
         .update({ vale_quitado_em: data, vale_quitado_por: criado.id })

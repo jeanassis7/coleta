@@ -32,40 +32,49 @@ Conferido no banco em 21/08: 0 contas canceladas com origem, 0 vendas com
 total divergente, maior mês tem 140 coletas (teto era 1.000), só o Lucimar
 com saldo e ele está ativo.
 
-## Pendentes — a próxima leva
+## Segunda leva — 22/08, os 18 restantes ✅
 
-### Prioridade alta
-- **Acerto sem idempotência (TOCTOU)**: dois POSTs simultâneos leem o mesmo
-  saldo e os dois passam; clique duplo grava dois acertos e a conta recebe o
-  dobro. Falta `client_id` unique (como cheques 0041 e vendas 0048).
-- **Vale maior que o pagamento some inteiro**: vale de R$ 3.000 marcado num
-  salário de R$ 2.000 sai da lista por inteiro; R$ 1.000 de desconto deixam
-  de existir. Precisa de aviso ou quitação parcial.
-- **Custo médio corrompido fica invisível**: venda a descoberto deixa
-  `v_valor` negativo; quando o estoque volta a positivo o custo sai errado e
-  o alerta some junto. A 0016 já previa; falta o sinal na tela.
+**Placar: 30 de 30 fechados.**
 
-### Prioridade média
-- Saldo inicial / data de corte da conta financeira editáveis sem checagem —
-  apagar os dígitos zera o saldo inicial calado (`CaixaPainel` manda `0`).
-- Transferência (saque) maior que o saldo da origem passa sem aviso.
-- Editar valor de conta que veio de um fato não sincroniza o fato
-  (abastecimento fica R$ 800, conta vira R$ 680; ficha do caminhão erra).
-- Apagar conta com origem: guard só no cliente, servidor aceita.
-- Recorrente é a terceira porta da `contas_a_pagar` e não exige pessoa —
-  "Salário Valdecir todo dia 5" gera conta sem dono todo mês.
-- Adiantamento sem teto nenhum (R$ 50.000 no lugar de R$ 500 sai calado).
-- Ficha do comprador esconde o cheque devolvido quando o saldo dá zero.
-- Antiburro da venda a prazo dispara no caminho feliz (ensina clique
-  automático — contraria "alerta ruidoso ensina a ignorar alerta").
-- `buscarLancamentos` tem teto de 500 e a tela soma só o que veio.
+### As três altas
+| Achado | Como ficou |
+|---|---|
+| **Acerto sem idempotência (TOCTOU)** — clique duplo gravava dois acertos e creditava a conta em dobro | `acertos.client_id` unique (0054); um id por modal aberto; reenvio é reconhecido, não duplicado |
+| **Vale maior que o pagamento sumia inteiro** — vale de 3.000 num salário de 2.000 zerava o vale e 1.000 de desconto deixavam de existir | compara a soma dos vales com o pagamento, explica e pede 2º clique |
+| **Custo médio corrompido ficava invisível** — venda a descoberto deixa o valor negativo e o alerta some quando o saldo volta | `estoque_atual()` devolve `custo_confiavel` (0054) e a tela avisa até o inventário fazer o rebase |
 
-### Prioridade baixa
-- Corrigir data de pagamento move `repassado_em` do cheque mas não
-  `vale_quitado_em`.
-- `origem_tipo`/`origem_id` entram crus no POST de contas.
-- Apagar comprador só checa vendas (maço de cheques estoura FK crua).
-- Guard de ciclo fechado descarta o `error` da própria consulta.
+### As nove médias
+- **Saldo inicial zerava calado**: campo vazio virava `0` no envio; agora exige o número, e mexer no ponto de partida de conta COM movimento pede confirmação (o DELETE checava 8 tabelas, o PATCH nenhuma).
+- **Transferência maior que o saldo da origem**: avisa quanto ficaria negativo.
+- **Adiantamento sem teto**: compara com o saldo da conta (retroativo da regularização fica de fora, de propósito).
+- **Editar valor de conta que veio de um fato**: recusado — o caminho é editar o fato, que sincroniza os dois.
+- **Apagar conta com origem**: o guard existia só na tela; agora o servidor recusa e manda cancelar.
+- **Recorrente sem pessoa**: categoria que pede dono não vira recorrente (a tabela não guarda pessoa) — some do dropdown e o servidor recusa.
+- **Ficha do comprador escondia cheque devolvido** quando o saldo dava exatamente zero.
+- **Antiburro da venda a prazo**: só avisa quando o pagamento PASSA do total; venda a prazo virou informação, não alerta.
+- **`buscarLancamentos` com teto de 500**: paginado — a tela somava um total parcial como se fosse o total.
+
+### As quatro baixas
+- Corrigir a data de um pagamento agora move também o `vale_quitado_em` (era o "terceiro relógio" esquecido).
+- `origem_tipo`/`origem_id` não entram mais do body (um POST podia sumir com uma coleta do DRE).
+- Apagar comprador checa vendas, recebimentos E cheques (antes estourava FK crua).
+- Os dois guards que descartavam o `error` da própria consulta agora falham fechado.
+
+## O teste do caminho errado — `scripts/e2e-guards-dinheiro.mjs`
+
+A pergunta 8 da régua virou arquivo, e roda no CI a cada push (transação
+com ROLLBACK, nada sobra). **14 asserções**, cada uma com o valor errado de
+propósito: pagar acima do saldo, parcela agendada que não pode abater,
+apagar pagamento devolvendo a dívida, conta cancelada devolvendo o fato ao
+DRE, `client_id` barrando o acerto duplicado, cheque devolvido que não pode
+compensar, mistura de venda que não fecha, conta paga sem data.
+
+**Achado de brinde:** ao rodar a suíte inteira, o E2E do Módulo 2 quebrou em
+4 asserções — e **não era regressão minha**: o Evaner cadastrou uma vigência
+real de comissão e o teste, que roda contra produção, passou a comparar com
+ela. Mesmo modo de falha que já derrubara o bloco de estoque. O teste agora
+se isola (limpa as vigências dentro da própria transação); a vigência real
+dele segue intacta — conferido depois do rollback.
 
 ## O que fica de método
 

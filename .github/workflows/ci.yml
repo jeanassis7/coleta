@@ -87,3 +87,13 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/e2e-modulo2.mjs
+
+      # Os guards do dinheiro — o caminho que dá ERRADO (régua do dinheiro
+      # #8). Os outros E2E testam o caminho feliz, que é justamente aquele
+      # em que ninguém precisa do sistema. Também roda em transação com
+      # ROLLBACK: nada sobra.
+      - name: E2E Guards do dinheiro
+        if: steps.env.outputs.rodar == 'sim'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/e2e-guards-dinheiro.mjs

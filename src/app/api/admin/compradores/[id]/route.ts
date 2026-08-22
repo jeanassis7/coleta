@@ -46,15 +46,26 @@ export async function DELETE(
   const { id } = await params;
   const client = getSupabaseAdmin(admin.id);
 
-  const { count } = await client
-    .from("vendas")
-    .select("id", { count: "exact", head: true })
-    .eq("comprador_id", id);
+  // Checar SÓ vendas deixava passar o comprador que só tem maço de cheques
+  // lançado (recebimento avulso, sem venda) — e aí estourava na FK crua do
+  // Postgres, com mensagem técnica na cara do gestor (varredura 21/08).
+  const [{ count: nVendas }, { count: nReceb }, { count: nCheques }] =
+    await Promise.all([
+      client.from("vendas").select("id", { count: "exact", head: true }).eq("comprador_id", id),
+      client.from("recebimentos").select("id", { count: "exact", head: true }).eq("comprador_id", id),
+      client.from("cheques").select("id", { count: "exact", head: true }).eq("comprador_id", id),
+    ]);
 
-  if ((count ?? 0) > 0) {
+  const total = (nVendas ?? 0) + (nReceb ?? 0) + (nCheques ?? 0);
+  if (total > 0) {
+    const partes = [
+      nVendas ? `${nVendas} venda(s)` : null,
+      nReceb ? `${nReceb} recebimento(s)` : null,
+      nCheques ? `${nCheques} cheque(s)` : null,
+    ].filter(Boolean);
     return NextResponse.json(
       {
-        error: `esse comprador tem ${count} venda(s) lançada(s). Desative em vez de apagar, senão o histórico do estoque some junto.`,
+        error: `esse comprador tem ${partes.join(" e ")} no sistema. Desative em vez de apagar, senão o histórico some junto.`,
       },
       { status: 409 }
     );

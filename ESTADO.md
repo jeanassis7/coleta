@@ -24,8 +24,19 @@ avisa e a ficha do Comprador não).
   paga pelo chute; editar venda comia o arredondamento; desativar motorista
   sumia com o dinheiro do patrimônio.
 - **Todas preventivas** — nenhum dado existente estava errado (conferido).
-- **Próxima leva (alta)**: acerto sem idempotência (TOCTOU), vale maior que
-  o pagamento, custo médio corrompido invisível.
+- **22/08: os 18 restantes FECHADOS — placar 30 de 30.** Destaques: acerto
+  ganhou `client_id` (0054) contra clique duplo; `estoque_atual()` devolve
+  `custo_confiavel` e a tela avisa quando o custo virou ficção; vale maior
+  que o pagamento avisa; saldo inicial não zera mais calado; transferência
+  e adiantamento acima do saldo avisam; apagar conta com origem recusado no
+  servidor; recorrente não aceita categoria que pede pessoa.
+- **`scripts/e2e-guards-dinheiro.mjs` — o teste do caminho ERRADO**, no CI a
+  cada push. 14 asserções com o valor errado de propósito. É a pergunta 8 da
+  régua virada em arquivo: régua sem teste depende de alguém lembrar.
+- ⚠️ **Teste que roda contra produção precisa se ISOLAR**: o E2E do Módulo 2
+  quebrou sozinho quando o Evaner cadastrou uma vigência de comissão real
+  (mesmo modo de falha do bloco de estoque, que virou DELTA). Corrigido —
+  o bloco de remuneração limpa as vigências dentro da própria transação.
 
 ---
 

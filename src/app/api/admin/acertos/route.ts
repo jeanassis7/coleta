@@ -57,6 +57,12 @@ export async function POST(req: NextRequest) {
       { status: 409 }
     );
   }
+  // IDEMPOTÊNCIA (0054). A conferência de saldo acima é TOCTOU: dois POSTs
+  // simultâneos (clique duplo, retry de rede) leem o mesmo saldo ANTES de
+  // qualquer insert e os dois passam — gravando dois acertos e creditando a
+  // conta em dobro. O `client_id` vem da tela, um por modal aberto: a
+  // segunda tentativa bate no índice único e é reconhecida como reenvio.
+  const client_id = body.client_id ? String(body.client_id) : null;
   const { data, error } = await client
     .from("acertos")
     .insert({
@@ -66,10 +72,22 @@ export async function POST(req: NextRequest) {
       valor_vale,
       valor_saldo,
       observacao,
+      client_id,
       registrado_por: admin.id,
     })
     .select()
     .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    if (error.code === "23505" && client_id) {
+      // Reenvio do MESMO acerto: já entrou. Não é erro pro gestor.
+      const { data: ja } = await client
+        .from("acertos")
+        .select("*")
+        .eq("client_id", client_id)
+        .maybeSingle();
+      return NextResponse.json({ ok: true, acerto: ja, aviso: "esse acerto já tinha sido lançado — nada foi duplicado" });
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
   return NextResponse.json({ ok: true, acerto: data });
 }

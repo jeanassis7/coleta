@@ -54,6 +54,36 @@ export async function POST(req: NextRequest) {
   }
 
   const client = getSupabaseAdmin(admin.id);
+
+  // RÉGUA DO DINHEIRO #1 — adiantamento maior que o que a conta tem
+  // (varredura 21/08). Não havia teto NENHUM: R$ 50.000 no lugar de R$ 500
+  // saía calado e a conta ficava negativa — o sistema tem antiburro de
+  // ±30% na descarga e de 1.500 km no abastecimento, e aqui, nada.
+  //
+  // Retroativo (regularização da largada) fica de fora: aquele dinheiro já
+  // está embutido no saldo de partida da conta, então comparar com o saldo
+  // de hoje não diz nada.
+  if (!data_envio) {
+    const { data: saldos } = await client.rpc("saldo_contas");
+    const conta = ((saldos as { conta_id: string; nome: string; saldo: number }[]) ?? []).find(
+      (s) => s.conta_id === conta_id
+    );
+    const tem = Math.round(Number(conta?.saldo ?? 0) * 100) / 100;
+    if (valor > tem + 0.009 && !body.confirmado) {
+      return NextResponse.json(
+        {
+          error: `"${conta?.nome ?? "A conta"}" tem ${tem.toFixed(
+            2
+          )} e o adiantamento é de ${valor.toFixed(2)} — ficaria ${(tem - valor).toFixed(
+            2
+          )} negativo. Confira se o valor está certo (é fácil sobrar um zero). Se está, confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const { data, error } = await client
     .from("adiantamentos")
     .insert({

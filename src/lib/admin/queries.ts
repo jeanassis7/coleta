@@ -1132,6 +1132,12 @@ export interface EstoqueTipo {
   valor_total: number;
   /** Referência — a densidade é fixa em 0,9 no sistema inteiro */
   litros_equivalente: number;
+  /** false = saiu mais óleo do que existia em algum momento e o valor do
+   *  estoque ficou negativo. Daí em diante o custo médio é FICÇÃO até
+   *  alguém lançar um inventário (0054). Sem este sinal, o saldo voltava a
+   *  positivo com a descarga seguinte, o alerta de negativo sumia e a
+   *  distorção ficava invisível. */
+  custo_confiavel: boolean;
 }
 
 /**
@@ -1156,6 +1162,7 @@ export async function buscarEstoque(): Promise<EstoqueTipo[]> {
       custo_medio_kg: Number(l?.custo_medio_kg ?? 0),
       valor_total: Number(l?.valor_total ?? 0),
       litros_equivalente: Math.round(saldo_kg / 0.9),
+      custo_confiavel: l?.custo_confiavel !== false,
     };
   });
 }

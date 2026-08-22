@@ -394,10 +394,12 @@ function ModalNovoAdiantamento({
   // Vazio = agora. Data no passado é pra regularização: dinheiro mandado
   // por fora do sistema antes do módulo de saldo existir.
   const [quandoFoi, setQuandoFoi] = useState("");
+  // Adiantamento maior que o saldo da conta: explica no 1º clique.
+  const [precisaConfirmarEnvio, setPrecisaConfirmarEnvio] = useState(false);
 
   const nome = motoristas.find((m) => m.id === motoristaId)?.nome || "—";
 
-  async function enviar() {
+  async function enviar(confirmado = false) {
     if (valorCentavos === null || valorCentavos <= 0) {
       setErro("Valor inválido");
       return;
@@ -407,6 +409,7 @@ function ModalNovoAdiantamento({
       return;
     }
     setErro(null);
+    setPrecisaConfirmarEnvio(false);
     setSalvando(true);
     try {
       const res = await fetch(`/api/admin/adiantamentos`, {
@@ -418,12 +421,14 @@ function ModalNovoAdiantamento({
           forma_pagamento: forma,
           conta_id: contaId,
           observacao: obs.trim() || null,
+          confirmado,
           ...(quandoFoi ? { data_envio: quandoFoi } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setErro(data.error || "erro");
+        if (data.precisaConfirmar) setPrecisaConfirmarEnvio(true);
         return;
       }
       router.refresh();
@@ -521,13 +526,23 @@ function ModalNovoAdiantamento({
           >
             Cancelar
           </button>
-          <button
-            onClick={enviar}
-            disabled={salvando}
-            className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
-          >
-            {salvando ? "Enviando..." : "Enviar adiantamento"}
-          </button>
+          {precisaConfirmarEnvio ? (
+            <button
+              onClick={() => enviar(true)}
+              disabled={salvando}
+              className="px-6 py-2 rounded-xl border-2 border-amber-400 bg-amber-50 font-medium"
+            >
+              Está certo, enviar assim
+            </button>
+          ) : (
+            <button
+              onClick={() => enviar(false)}
+              disabled={salvando}
+              className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
+            >
+              {salvando ? "Enviando..." : "Enviar adiantamento"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -569,6 +584,10 @@ function ModalAcerto({
   const [obs, setObs] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Um id por modal aberto (0054): se a rede piscar e o gestor clicar de
+  // novo, o servidor reconhece o reenvio em vez de gravar dois acertos e
+  // creditar a conta em dobro.
+  const [clientId] = useState(() => crypto.randomUUID());
 
   const d = devolvido ?? 0;
   const v = vale ?? 0;
@@ -597,6 +616,7 @@ function ModalAcerto({
           valor_saldo: centavosParaReais(sinal * s),
           conta_id: contaId || null,
           observacao: obs.trim() || null,
+          client_id: clientId,
         }),
       });
       const data = await res.json();

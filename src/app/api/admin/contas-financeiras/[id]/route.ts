@@ -43,6 +43,62 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const client = getSupabaseAdmin(admin.id);
+
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #1/#6 — mexer no PONTO DE PARTIDA de uma conta que
+  // já tem movimento (varredura 21/08)
+  // ---------------------------------------------------------------------
+  // `saldo_contas()` só soma movimentos com data >= `saldo_inicial_em`.
+  // Adiantar a data de corte EXCLUI silenciosamente tudo que é anterior, e
+  // mudar o saldo inicial reescreve o saldo de hoje — nos dois casos o
+  // número muda sem que nada tenha acontecido de verdade. O DELETE desta
+  // rota checa 8 tabelas de uso; o PATCH não checava nenhuma.
+  if (updates.saldo_inicial !== undefined || updates.saldo_inicial_em !== undefined) {
+    const { data: atual } = await client
+      .from("contas_financeiras")
+      .select("saldo_inicial, saldo_inicial_em, nome")
+      .eq("id", id)
+      .maybeSingle();
+    const mudouSaldo =
+      updates.saldo_inicial !== undefined &&
+      Math.round(Number(updates.saldo_inicial) * 100) !==
+        Math.round(Number(atual?.saldo_inicial ?? 0) * 100);
+    const mudouData =
+      updates.saldo_inicial_em !== undefined &&
+      String(updates.saldo_inicial_em) !== String(atual?.saldo_inicial_em ?? "").slice(0, 10);
+
+    if ((mudouSaldo || mudouData) && !body.confirmado) {
+      const usos = await Promise.all([
+        client.from("recebimentos").select("id", { count: "exact", head: true }).eq("conta_id", id),
+        client.from("contas_a_pagar").select("id", { count: "exact", head: true }).eq("conta_id", id),
+        client.from("adiantamentos").select("id", { count: "exact", head: true }).eq("conta_id", id),
+        client.from("acertos").select("id", { count: "exact", head: true }).eq("conta_id", id),
+        client.from("transferencias").select("id", { count: "exact", head: true }).eq("conta_origem_id", id),
+        client.from("transferencias").select("id", { count: "exact", head: true }).eq("conta_destino_id", id),
+        client.from("cheques").select("id", { count: "exact", head: true }).eq("conta_id", id),
+        client.from("compras_diretas").select("id", { count: "exact", head: true }).eq("conta_id", id),
+      ]);
+      const total = usos.reduce((s, u) => s + (u.count ?? 0), 0);
+      if (total > 0) {
+        return NextResponse.json(
+          {
+            error:
+              `Essa conta já tem ${total} movimento(s). ` +
+              (mudouData
+                ? "Mudar a data de corte faz o sistema IGNORAR tudo que aconteceu antes dela — o saldo muda sem nada ter acontecido. "
+                : "") +
+              (mudouSaldo
+                ? "Mudar o saldo inicial reescreve o saldo de hoje inteiro. "
+                : "") +
+              "Se foi erro no cadastro e você quer corrigir mesmo, confirme.",
+            precisaConfirmar: true,
+          },
+          { status: 409 }
+        );
+      }
+    }
+  }
+
   const { error } = await client
     .from("contas_financeiras")
     .update(updates)

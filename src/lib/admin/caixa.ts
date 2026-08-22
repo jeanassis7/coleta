@@ -442,32 +442,32 @@ export interface FiltrosLancamento {
  * pagar, que é outra pergunta ("o que eu devo") e outra tela.
  */
 export async function buscarLancamentos(
-  f: FiltrosLancamento = {},
-  limite = 500
+  f: FiltrosLancamento = {}
 ): Promise<Lancamento[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("contas_a_pagar")
-    .select(
-      "id, descricao, fornecedor, categoria, valor, pago_em, forma_pagamento, conta_id, pessoa_id, origem_tipo, observacao, criado_em"
-    )
-    .eq("status", "paga")
-    .order("pago_em", { ascending: false })
-    .order("criado_em", { ascending: false })
-    .limit(limite);
+  // PAGINADO (21/08/2026): tinha teto de 500 e a tela somava só o que veio,
+  // apresentando um total PARCIAL como se fosse o total. Um mês do backfill
+  // já tem 172 pagamentos; período largo passa fácil. Régua do dinheiro #6.
+  const rows = await selectTudo<Lancamento>((de, ate) => {
+    let q = supabase
+      .from("contas_a_pagar")
+      .select(
+        "id, descricao, fornecedor, categoria, valor, pago_em, forma_pagamento, conta_id, pessoa_id, origem_tipo, observacao, criado_em"
+      )
+      .eq("status", "paga")
+      .order("pago_em", { ascending: false })
+      .order("criado_em", { ascending: false })
+      .order("id")
+      .range(de, ate);
 
-  if (f.inicio) q = q.gte("pago_em", f.inicio);
-  if (f.fim) q = q.lte("pago_em", f.fim);
-  if (f.categoria) q = q.eq("categoria", f.categoria);
-  if (f.conta_id) q = q.eq("conta_id", f.conta_id);
-  if (f.pessoa_id) q = q.eq("pessoa_id", f.pessoa_id);
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return ((data as Lancamento[]) || []).map((l) => ({
-    ...l,
-    valor: Number(l.valor),
-  }));
+    if (f.inicio) q = q.gte("pago_em", f.inicio);
+    if (f.fim) q = q.lte("pago_em", f.fim);
+    if (f.categoria) q = q.eq("categoria", f.categoria);
+    if (f.conta_id) q = q.eq("conta_id", f.conta_id);
+    if (f.pessoa_id) q = q.eq("pessoa_id", f.pessoa_id);
+    return q;
+  });
+  return rows.map((l) => ({ ...l, valor: Number(l.valor) }));
 }
 
 export interface ValePendente {
