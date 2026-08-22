@@ -186,14 +186,36 @@ export interface DinheiroNaMao {
  * Aparece no painel de caixa como linha, não como conta financeira.
  */
 export async function buscarDinheiroNaMao(): Promise<DinheiroNaMao[]> {
-  const saldos = await buscarMotoristasComSaldo();
-  return saldos
-    .filter((m) => Number(m.saldo_atual) !== 0)
-    .map((m) => ({
-      motorista_id: m.id,
-      nome: m.nome,
-      saldo: Number(m.saldo_atual),
-    }));
+  const supabase = await getSupabaseServer();
+  // ⚠️ Lê a RPC direto, e NÃO `buscarMotoristasComSaldo()` (21/08/2026):
+  // aquela filtra `ativo = true`, então desativar um motorista que estava
+  // com dinheiro da empresa na mão fazia o valor sumir do card e do TOTAL
+  // do patrimônio — enquanto a foto semanal do caixa, que soma a mesma RPC
+  // sem filtro, continuava contando. As duas telas divergiam sem
+  // explicação, e o dinheiro sumia do relatório sem ter sumido do bolso.
+  // Dinheiro na mão de quem saiu continua sendo dinheiro na rua.
+  const [{ data: saldos, error }, { data: perfis }] = await Promise.all([
+    supabase.rpc("saldos_motoristas"),
+    supabase.from("profiles").select("id, nome, ativo"),
+  ]);
+  if (error) throw error;
+  const info = new Map(
+    ((perfis as { id: string; nome: string; ativo: boolean }[]) ?? []).map((p) => [
+      p.id,
+      p,
+    ])
+  );
+  return ((saldos as { motorista_id: string; saldo: number }[]) ?? [])
+    .filter((s) => Number(s.saldo) !== 0)
+    .map((s) => {
+      const p = info.get(s.motorista_id);
+      return {
+        motorista_id: s.motorista_id,
+        nome: p?.ativo === false ? `${p.nome} (inativo)` : p?.nome ?? "—",
+        saldo: Number(s.saldo),
+      };
+    })
+    .sort((a, b) => b.saldo - a.saldo);
 }
 
 // ============================================================================

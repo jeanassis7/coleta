@@ -199,6 +199,14 @@ export function LoteChequesPainel({
         setErro(json.error || "Falha ao lançar.");
         return;
       }
+      // O servidor pode ter concluído "esse maço já entrou antes". Antes a
+      // tela ignorava o aviso, limpava tudo e o gestor achava que os
+      // cheques novos/corrigidos tinham entrado. Agora ele fica na tela.
+      if (json.aviso) {
+        setErro(`⚠️ ${json.aviso}`);
+        router.refresh();
+        return;
+      }
       setLinhas([]);
       setFotos([]);
       setAberto(false);

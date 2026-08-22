@@ -280,10 +280,11 @@ function FormPagamento({
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [precisaConfirmar, setPrecisaConfirmar] = useState(false);
   // Cheque não entra em conta: fica no papel até compensar.
   const [contaId, setContaId] = useState("");
 
-  async function salvar() {
+  async function salvar(confirmado = false) {
     if (!valorCentavos || valorCentavos <= 0) return setErro("Informe o valor");
     if (!["cheque", "abatimento"].includes(forma) && !contaId) {
       return setErro("Diga em qual conta o dinheiro entrou");
@@ -295,6 +296,7 @@ function FormPagamento({
       return setErro("Diga o motivo do abatimento (ex.: quebra de peso combinada)");
     }
     setErro(null);
+    setPrecisaConfirmar(false);
     setSalvando(true);
     try {
       const res = await fetch("/api/admin/recebimentos", {
@@ -305,6 +307,7 @@ function FormPagamento({
           forma,
           valor: centavosParaReais(valorCentavos),
           data,
+          confirmado,
           conta_id: ["cheque", "abatimento"].includes(forma) ? null : contaId,
           ...(forma === "abatimento" ? { observacao: motivo.trim() } : {}),
           ...(forma === "cheque"
@@ -320,6 +323,8 @@ function FormPagamento({
       const resposta = await res.json();
       if (!res.ok) {
         setErro(resposta.error || "erro");
+        // Recebimento acima da dívida: explica no 1º clique, faz no 2º.
+        if (resposta.precisaConfirmar) setPrecisaConfirmar(true);
         return;
       }
       router.refresh();
@@ -460,13 +465,23 @@ function FormPagamento({
         >
           Cancelar
         </button>
-        <button
-          onClick={salvar}
-          disabled={salvando}
-          className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
-        >
-          {salvando ? "Salvando..." : "Registrar"}
-        </button>
+        {precisaConfirmar ? (
+          <button
+            onClick={() => salvar(true)}
+            disabled={salvando}
+            className="px-6 py-2 rounded-xl border-2 border-amber-400 bg-amber-50 font-medium"
+          >
+            Está certo, registrar assim
+          </button>
+        ) : (
+          <button
+            onClick={() => salvar(false)}
+            disabled={salvando}
+            className="px-6 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
+          >
+            {salvando ? "Salvando..." : "Registrar"}
+          </button>
+        )}
       </div>
     </div>
   );

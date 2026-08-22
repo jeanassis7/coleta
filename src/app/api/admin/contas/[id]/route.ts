@@ -297,7 +297,36 @@ export async function PATCH(
   // em aberto, com o mesmo vencimento/categoria/dono — a dívida não perde
   // o fio. Cheque fica de fora: o papel quita inteiro.
   const valorConta = Number(contaAlvo.valor);
+
+  // ------------------------------------------------- PREVISTA precisa do
+  // valor real antes de virar dinheiro que saiu (21/08/2026)
+  // ---------------------------------------------------------------------
+  // Previsão é CHUTE (energia nasce R$ 800, a fatura vem R$ 940). Pagar
+  // direto gravava o chute no caixa e no DRE: o saldo do banco ficava R$
+  // 140 acima do extrato e o gasto R$ 140 abaixo do real, calado. Agora,
+  // pagar uma prevista exige o valor confirmado — é o que a própria 0019
+  // já mandava ("previsão não conta como dívida até ele confirmar").
+  if (
+    contaAlvo.status === "prevista" &&
+    (body.valor_pago === undefined || body.valor_pago === null)
+  ) {
+    return NextResponse.json(
+      {
+        error: `Essa conta ainda é uma PREVISÃO de ${valorConta.toFixed(
+          2
+        )} — o valor é chute. Confirme quanto veio de verdade na fatura antes de pagar (o campo "quanto foi pago"), senão o caixa fica com um número e o banco com outro.`,
+        precisaValor: true,
+        valorPrevisto: valorConta,
+      },
+      { status: 409 }
+    );
+  }
+
   let valorParcial: number | null = null;
+  // Prevista: o valor informado é O VALOR REAL da fatura, não pagamento
+  // parcial. Veio menor que o chute? A conta vale isso e acabou — não
+  // sobra "resto" nenhum, porque o resto nunca existiu.
+  let valorConfirmado: number | null = null;
   if (body.valor_pago !== undefined && body.valor_pago !== null) {
     const vp = Number(body.valor_pago);
     if (!Number.isFinite(vp) || vp <= 0) {
@@ -309,7 +338,9 @@ export async function PATCH(
         { status: 400 }
       );
     }
-    if (Math.round(vp * 100) < Math.round(valorConta * 100)) {
+    if (contaAlvo.status === "prevista") {
+      valorConfirmado = n2(vp);
+    } else if (Math.round(vp * 100) < Math.round(valorConta * 100)) {
       valorParcial = n2(vp);
     } else if (Math.round(vp * 100) > Math.round(valorConta * 100)) {
       return NextResponse.json(
@@ -399,6 +430,8 @@ export async function PATCH(
       conta_id: forma === "cheque" ? null : contaId,
       // Parcial: a conta original passa a valer o que foi pago DE VERDADE.
       ...(valorParcial !== null ? { valor: valorParcial } : {}),
+      // Prevista confirmada: o chute dá lugar ao valor da fatura.
+      ...(valorConfirmado !== null ? { valor: valorConfirmado } : {}),
     })
     .eq("id", id)
     .in("status", ["prevista", "a_pagar"])

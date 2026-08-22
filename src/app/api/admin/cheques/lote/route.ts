@@ -172,11 +172,62 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: errCompleta.message }, { status: 400 });
       }
     }
+    // ⚠️ 21/08/2026 — o reenvio NÃO é necessariamente igual ao envio.
+    // Cenário real: o gestor tica 5 cheques, o sinal cai depois de gravar,
+    // e antes de clicar de novo ele CORRIGE um valor e ACRESCENTA um sexto.
+    // Antes, este ramo respondia ok:true e a tela limpava tudo: o cheque
+    // novo não existia e a correção não era aplicada — sem uma palavra.
+    // Agora os que ainda não têm recebimento são gravados de verdade, e o
+    // que já existe (e pode ter sido corrigido) volta nomeado pra tela.
+    const novos = prontos.filter((c) => !c.client_id || !recebPorClientId.has(c.client_id));
+    let inseridosAgora = 0;
+    if (novos.length > 0) {
+      const { data: recebNovos, error: eNovos } = await client
+        .from("recebimentos")
+        .insert(
+          novos.map((c) => ({
+            comprador_id,
+            client_id: c.client_id,
+            forma: "cheque",
+            valor: c.valor,
+            data,
+            observacao: rotulo,
+            registrado_por: admin.id,
+          }))
+        )
+        .select("id, client_id");
+      if (eNovos) return NextResponse.json({ error: eNovos.message }, { status: 400 });
+      const porId = new Map((recebNovos ?? []).map((r) => [r.client_id as string, r.id as string]));
+      const { error: eChNovos } = await client.from("cheques").insert(
+        novos.map((c) => ({
+          recebimento_id: porId.get(c.client_id!)!,
+          comprador_id,
+          banco: c.banco,
+          emitente: c.emitente,
+          numero: c.numero,
+          valor: c.valor,
+          bom_para: c.bom_para,
+          status: "em_carteira",
+          observacao: c.observacao,
+        }))
+      );
+      if (eChNovos) {
+        // Sem o cheque, o recebimento vira dinheiro sem papel: desfaz.
+        await client.from("recebimentos").delete().in("id", [...porId.values()]);
+        return NextResponse.json({ error: eChNovos.message }, { status: 400 });
+      }
+      inseridosAgora = novos.length;
+    }
+
+    const jaExistiam = prontos.length - inseridosAgora;
     return NextResponse.json({
       ok: true,
       quantidade: prontos.length,
       total,
-      aviso: "esse maço já tinha sido lançado — nada foi duplicado",
+      aviso:
+        `${jaExistiam} cheque(s) desse maço JÁ tinham sido lançados antes e ficaram como estavam` +
+        (inseridosAgora > 0 ? `; ${inseridosAgora} novo(s) entraram agora` : "") +
+        `. Se você corrigiu algum valor nesta tentativa, a correção NÃO foi aplicada — edite o cheque na tela de Cheques.`,
     });
   }
 

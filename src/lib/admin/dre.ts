@@ -167,40 +167,84 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
       .eq("status", "repassado")
       .gte("repassado_em", inicio)
       .lte("repassado_em", fim),
-    supabase
-      .from("coletas")
-      .select("id, valor_pago, pago_pela_sede, motorista_id")
-      .gte("criado_em", de)
-      .lte("criado_em", ate),
-    supabase.from("compras_diretas").select("id, valor").gte("data", inicio).lte("data", fim),
-    supabase
-      .from("abastecimentos")
-      .select("id, valor, pago_na_hora")
-      .gte("criado_em", de)
-      .lte("criado_em", ate),
-    supabase.from("manutencoes").select("id, valor, tipo").gte("data", inicio).lte("data", fim),
-    supabase
-      .from("despesas")
-      .select("id, valor, pago_na_hora")
-      .gte("criado_em", de)
-      .lte("criado_em", ate),
+    // ⚠️ TODAS PAGINADAS (21/08/2026): o Supabase trunca em 1.000 linhas SEM
+    // ERRO. Três motoristas a ~12 coletas/dia passam de 1.000 coletas num
+    // mês — a partir daí o custo do óleo caía calado, que é o pior tipo de
+    // erro num relatório. O mesmo raciocínio já valia pra lista de origens.
+    selectTudo<Coleta>((d, a) =>
+      supabase
+        .from("coletas")
+        .select("id, valor_pago, pago_pela_sede, motorista_id")
+        .gte("criado_em", de)
+        .lte("criado_em", ate)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
+    selectTudo<{ id: string; valor: number }>((d, a) =>
+      supabase
+        .from("compras_diretas")
+        .select("id, valor")
+        .gte("data", inicio)
+        .lte("data", fim)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
+    selectTudo<Abast>((d, a) =>
+      supabase
+        .from("abastecimentos")
+        .select("id, valor, pago_na_hora")
+        .gte("criado_em", de)
+        .lte("criado_em", ate)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
+    selectTudo<Manut>((d, a) =>
+      supabase
+        .from("manutencoes")
+        .select("id, valor, tipo")
+        .gte("data", inicio)
+        .lte("data", fim)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
+    selectTudo<Despesa>((d, a) =>
+      supabase
+        .from("despesas")
+        .select("id, valor, pago_na_hora")
+        .gte("criado_em", de)
+        .lte("criado_em", ate)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
     // Só PAGA, e pela data em que foi paga. É o extrato.
-    supabase
-      .from("contas_a_pagar")
-      .select("valor, categoria, pessoa_id")
-      .eq("status", "paga")
-      .gte("pago_em", inicio)
-      .lte("pago_em", fim),
+    selectTudo<ContaPaga>((d, a) =>
+      supabase
+        .from("contas_a_pagar")
+        .select("valor, categoria, pessoa_id")
+        .eq("status", "paga")
+        .gte("pago_em", inicio)
+        .lte("pago_em", fim)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
     // Todo fato que já virou conta — em qualquer época. Não pode ser
     // limitado ao período: uma manutenção de março paga em maio tem conta
     // fora da janela, e o fato continuaria contando duas vezes.
     // PAGINADO (selectTudo): esta lista cresce PRA SEMPRE — truncar em 1000
     // faria a anti-dobra falhar aleatoriamente daqui a uns anos.
+    //
+    // ⚠️ `status <> cancelada` (21/08/2026): conta CANCELADA não paga nada,
+    // então o fato dela precisa voltar a contar sozinho. Sem este filtro, o
+    // gasto sumia do DRE PARA SEMPRE — a conta cancelada não entrava em
+    // contasPagas e continuava escondendo a coleta/abastecimento de origem.
+    // Pior: era o caminho que a própria tela ensina ("cancele a conta e
+    // marque que o motorista pagou").
     selectTudo<{ origem_id: string }>((de, ate) =>
       supabase
         .from("contas_a_pagar")
         .select("origem_id")
         .not("origem_id", "is", null)
+        .neq("status", "cancelada")
         .order("id")
         .range(de, ate)
     ).then((rows) => ({ data: rows, error: null })),

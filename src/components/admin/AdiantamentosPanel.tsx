@@ -230,15 +230,17 @@ function ModalDevolucao({
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [precisaConfirmar, setPrecisaConfirmar] = useState(false);
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [contaId, setContaId] = useState("");
   const [data, setData] = useState(hoje);
   const [obs, setObs] = useState("");
 
-  async function salvar() {
+  async function salvar(confirmado = false) {
     if (!valorCentavos || valorCentavos <= 0) return setErro("Quanto ele devolveu?");
     if (!contaId) return setErro("Diga em qual conta o dinheiro entrou");
     setErro(null);
+    setPrecisaConfirmar(false);
     setSalvando(true);
     try {
       const res = await fetch("/api/admin/devolucoes", {
@@ -250,11 +252,15 @@ function ModalDevolucao({
           data,
           conta_id: contaId,
           observacao: obs.trim() || null,
+          confirmado,
         }),
       });
       const json = await res.json();
       if (!res.ok) {
         setErro(json.error || "erro");
+        // Antiburro de duas etapas: devolver mais do que ele tem na mão, ou
+        // datar antes do último acerto, explica no 1º clique e faz no 2º.
+        if (json.precisaConfirmar) setPrecisaConfirmar(true);
         return;
       }
       router.refresh();
@@ -328,13 +334,23 @@ function ModalDevolucao({
           >
             Cancelar
           </button>
-          <button
-            onClick={salvar}
-            disabled={salvando}
-            className="btn-primario disabled:opacity-40"
-          >
-            {salvando ? "Salvando…" : "Registrar devolução"}
-          </button>
+          {precisaConfirmar ? (
+            <button
+              onClick={() => salvar(true)}
+              disabled={salvando}
+              className="px-4 py-2 rounded-xl border-2 border-amber-400 bg-amber-50 text-sm font-medium"
+            >
+              Está certo, registrar assim
+            </button>
+          ) : (
+            <button
+              onClick={() => salvar(false)}
+              disabled={salvando}
+              className="btn-primario disabled:opacity-40"
+            >
+              {salvando ? "Salvando…" : "Registrar devolução"}
+            </button>
+          )}
         </div>
       </div>
     </div>

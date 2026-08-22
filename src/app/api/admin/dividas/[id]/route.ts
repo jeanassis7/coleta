@@ -21,8 +21,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const body = await req.json();
   const updates: Record<string, unknown> = {};
 
-  if (typeof body.credor === "string" && body.credor.trim()) {
-    updates.credor = body.credor.trim();
+  // Nome vazio não é "não mudou": é apagar sem querer. Antes voltava
+  // ok:true com o nome antigo e nenhuma palavra (régua do dinheiro #6).
+  if (body.credor !== undefined) {
+    const c = String(body.credor).trim();
+    if (!c) {
+      return NextResponse.json({ error: "diga a quem a empresa deve" }, { status: 400 });
+    }
+    updates.credor = c;
   }
   if (body.valor_total != null) {
     const v = Number(body.valor_total);
@@ -32,7 +38,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     updates.valor_total = Math.round(v * 100) / 100;
   }
   if (body.parcelas_total !== undefined) {
-    updates.parcelas_total = body.parcelas_total ? Number(body.parcelas_total) : null;
+    if (body.parcelas_total == null) {
+      updates.parcelas_total = null;
+    } else {
+      const n = Number(body.parcelas_total);
+      if (!Number.isInteger(n) || n <= 0) {
+        return NextResponse.json(
+          { error: "número de parcelas inválido (tem que ser inteiro positivo)" },
+          { status: 400 }
+        );
+      }
+      updates.parcelas_total = n;
+    }
   }
   if (body.valor_parcela !== undefined) {
     updates.valor_parcela = body.valor_parcela
@@ -66,6 +83,43 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const client = getSupabaseAdmin(admin.id);
+
+  // ---------------------------------------------------------------------
+  // A MESMA conferência do POST — que faltava aqui (achado da auditoria de
+  // 21/08). Guard que existe na criação e falta na edição é o padrão que
+  // deixou passar o buraco do pagamento acima do saldo: sem isto, trocar a
+  // parcela pra 1.200 e esquecer o total deixava "8 de 8 parcelas" com
+  // R$ 86.400 ainda em aberto, sem nada dizer que a conta não fecha.
+  // ---------------------------------------------------------------------
+  const { data: atual } = await client
+    .from("dividas")
+    .select("tipo, valor_total, parcelas_total, valor_parcela")
+    .eq("id", id)
+    .maybeSingle();
+  if (!atual) return NextResponse.json({ error: "dívida não encontrada" }, { status: 404 });
+
+  const tipo = atual.tipo as string;
+  const vTotal = Number(updates.valor_total ?? atual.valor_total);
+  const nParc = Number(updates.parcelas_total ?? atual.parcelas_total ?? 0);
+  const vParc = Number(updates.valor_parcela ?? atual.valor_parcela ?? 0);
+  if (tipo === "parcelada" && nParc > 0 && vParc > 0 && !body.confirmado) {
+    const soma = Math.round(nParc * vParc * 100) / 100;
+    const dif = Math.abs(soma - Math.round(vTotal * 100) / 100);
+    if (dif > Math.max(1, vTotal * 0.02)) {
+      return NextResponse.json(
+        {
+          error: `${nParc}× ${vParc.toFixed(2)} dá ${soma.toFixed(
+            2
+          )}, e o total é ${vTotal.toFixed(
+            2
+          )}. Confira — se estiver certo mesmo (entrada, juro na última), confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const { error } = await client.from("dividas").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

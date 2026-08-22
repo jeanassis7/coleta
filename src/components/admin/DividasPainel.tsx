@@ -21,6 +21,7 @@ export function DividasPainel({ dividas }: { dividas: SaldoDivida[] }) {
   const [novo, setNovo] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [precisaConfirmar, setPrecisaConfirmar] = useState(false);
   const [editando, setEditando] = useState<SaldoDivida | null>(null);
   const [quitando, setQuitando] = useState<SaldoDivida | null>(null);
   const [apagando, setApagando] = useState<SaldoDivida | null>(null);
@@ -61,8 +62,10 @@ export function DividasPainel({ dividas }: { dividas: SaldoDivida[] }) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setErro(json.error || "não deu certo");
+        if (json.precisaConfirmar) setPrecisaConfirmar(true);
         return false;
       }
+      setPrecisaConfirmar(false);
       router.refresh();
       return true;
     } finally {
@@ -219,7 +222,7 @@ export function DividasPainel({ dividas }: { dividas: SaldoDivida[] }) {
             <button onClick={() => criar(false)} disabled={salvando} className="btn-primario">
               {salvando ? "Salvando…" : "Cadastrar"}
             </button>
-            {erro?.includes("Confira") && (
+            {precisaConfirmar && (
               <button
                 onClick={() => criar(true)}
                 disabled={salvando}

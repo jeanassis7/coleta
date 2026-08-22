@@ -93,6 +93,50 @@ export async function POST(req: NextRequest) {
 
   const client = getSupabaseAdmin(admin.id);
 
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #1 — cheque MAIOR que a despesa que ele pagou
+  // ---------------------------------------------------------------------
+  // O cheque repassado conta como RECEITA no dia do repasse (R67-b). Pagar
+  // R$ 500 de advogado com um cheque de R$ 3.000 lançava 3.000 de receita
+  // contra 500 de despesa e inflava o resultado do mês em 2.500 — e o
+  // troco ficava fora do sistema. A tela de Contas já avisava disso; esta
+  // não avisava nem no cliente nem no servidor.
+  if (cheque_id) {
+    const { data: chq } = await client
+      .from("cheques")
+      .select("valor, emitente")
+      .eq("id", cheque_id)
+      .maybeSingle();
+    const vChq = Math.round(Number(chq?.valor ?? 0) * 100) / 100;
+    const troco = Math.round((vChq - valor) * 100) / 100;
+    if (troco > 0.009 && !body.confirmado) {
+      return NextResponse.json(
+        {
+          error: `O cheque é de ${vChq.toFixed(2)} e o gasto é ${valor.toFixed(
+            2
+          )} — sobram ${troco.toFixed(
+            2
+          )} de troco. O cheque inteiro vira receita no dia do repasse, então esse troco precisa existir em algum lugar: receba o troco e lance como entrada avulsa no Caixa. Se está certo assim, confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
+    if (troco < -0.009 && !body.confirmado) {
+      return NextResponse.json(
+        {
+          error: `O cheque é de ${vChq.toFixed(2)} e o gasto é ${valor.toFixed(
+            2
+          )} — o cheque não cobre tudo. Faltam ${Math.abs(troco).toFixed(
+            2
+          )}, que saíram de outro lugar e precisam de lançamento próprio. Se está certo assim, confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   // Pagamento MAIOR do que o que falta: não bloqueia (juro que entrou,
   // acordo refeito, arredondamento são reais) mas NUNCA passa calado —
   // avisa quanto passa e pede confirmação. Sem isto, o saldo ficava

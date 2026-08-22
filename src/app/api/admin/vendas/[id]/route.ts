@@ -27,7 +27,7 @@ export async function PATCH(
 
   const { data: venda, error: eVenda } = await client
     .from("vendas")
-    .select("id, comprador_id, peso_total_kg")
+    .select("id, comprador_id, peso_total_kg, preco_kg, valor_total")
     .eq("id", id)
     .maybeSingle();
   if (eVenda) return NextResponse.json({ error: eVenda.message }, { status: 400 });
@@ -42,13 +42,37 @@ export async function PATCH(
     updates.data = body.data;
   }
 
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #6 — o total NÃO é sempre peso × preço
+  // ---------------------------------------------------------------------
+  // A tela convida a arredondar o total ("pode arredondar aqui — o R$/kg
+  // se ajusta sozinho"), então uma venda legítima tem total 20.320 com
+  // preço 1,69 num peso de 12.000 (que daria 20.280). Recalcular o total
+  // em TODA edição — e a tela manda `preco_kg` mesmo quando o usuário só
+  // mexeu no nº da nota — comia R$ 40 da dívida do comprador sem ninguém
+  // tocar em valor. Agora: só recalcula quando o preço MUDOU de verdade.
   if (body.preco_kg !== undefined) {
     const preco = Number(body.preco_kg);
     if (!Number.isFinite(preco) || preco <= 0) {
       return NextResponse.json({ error: "preço inválido" }, { status: 400 });
     }
-    updates.preco_kg = Math.round(preco * 10000) / 10000;
-    updates.valor_total = n2(Number(venda.peso_total_kg) * preco);
+    const precoNovo = Math.round(preco * 10000) / 10000;
+    const precoAtual = Math.round(Number(venda.preco_kg) * 10000) / 10000;
+    if (precoNovo !== precoAtual) {
+      updates.preco_kg = precoNovo;
+      updates.valor_total = n2(Number(venda.peso_total_kg) * precoNovo);
+    }
+  }
+  // Total informado explicitamente manda: é ele que vira a dívida do
+  // comprador, e o preço/kg é que se ajusta (mesma regra da tela de venda).
+  if (body.valor_total !== undefined) {
+    const total = Number(body.valor_total);
+    if (!Number.isFinite(total) || total <= 0) {
+      return NextResponse.json({ error: "valor total inválido" }, { status: 400 });
+    }
+    updates.valor_total = n2(total);
+    const peso = Number(venda.peso_total_kg);
+    if (peso > 0) updates.preco_kg = Math.round((total / peso) * 10000) / 10000;
   }
 
   if (body.comprador_id !== undefined) {

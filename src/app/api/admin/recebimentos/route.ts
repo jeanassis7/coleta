@@ -63,6 +63,41 @@ export async function POST(req: NextRequest) {
 
   const client = getSupabaseAdmin(admin.id);
 
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #1 — receber MAIS do que o comprador deve
+  // ---------------------------------------------------------------------
+  // Errar um zero (R$ 50.000 no lugar de R$ 5.000) entrava calado: o saldo
+  // virava −45.000, a ficha trocava o rótulo pra "Tem crédito de" e a
+  // conta financeira ganhava 45 mil que nunca existiram. A tela de Venda
+  // já tinha esse antiburro; a ficha do comprador — onde a maioria dos
+  // pagamentos é lançada — não tinha.
+  const { data: saldos } = await client.rpc("saldo_compradores");
+  const meu = ((saldos as { comprador_id: string; saldo: number }[]) ?? []).find(
+    (s) => s.comprador_id === comprador_id
+  );
+  const deve = Math.round(Number(meu?.saldo ?? 0) * 100) / 100;
+  const passa = Math.round((valor - deve) * 100) / 100;
+  if (passa > 0.009 && !body.confirmado) {
+    return NextResponse.json(
+      {
+        error:
+          deve <= 0
+            ? `Esse comprador não está devendo nada${
+                deve < 0 ? ` (já tem ${Math.abs(deve).toFixed(2)} de crédito)` : ""
+              }. Receber ${valor.toFixed(
+                2
+              )} vira crédito dele — confira se a venda já foi lançada. Se está certo, confirme.`
+            : `Ele deve ${deve.toFixed(2)} e o recebimento é de ${valor.toFixed(
+                2
+              )} — passa ${passa.toFixed(
+                2
+              )}, que vira crédito dele. Confira se não faltou lançar uma venda, ou se sobrou um zero. Se está certo, confirme.`,
+        precisaConfirmar: true,
+      },
+      { status: 409 }
+    );
+  }
+
   if (forma === "cheque") {
     const banco = String(body.banco || "").trim();
     const emitente = String(body.emitente || "").trim();

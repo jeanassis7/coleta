@@ -674,7 +674,13 @@ function ModalPagar({
   // Pagamento parcial: a conta vira paga pelo que foi pago e o resto nasce
   // como conta nova, em aberto.
   const [parcial, setParcial] = useState(false);
-  const [valorPagoCentavos, setValorPagoCentavos] = useState<number | null>(null);
+  // Prevista: o valor é chute e PRECISA ser confirmado antes de virar
+  // dinheiro que saiu (senão o caixa fica com um número e o banco com
+  // outro). Já vem preenchido com a previsão pra ele só corrigir.
+  const ehPrevista = conta.status === "prevista";
+  const [valorPagoCentavos, setValorPagoCentavos] = useState<number | null>(
+    ehPrevista ? reaisParaCentavos(conta.valor) : null
+  );
   // Juros/multa de atraso — vão pra categoria própria (Juros e multas).
   const [jurosCentavos, setJurosCentavos] = useState<number | null>(null);
   // Vales de acerto que este pagamento (de Salário) desconta.
@@ -695,7 +701,10 @@ function ModalPagar({
     if (forma !== "cheque" && !contaFinId) {
       return setErro("Diga de qual conta saiu o dinheiro");
     }
-    if (parcial) {
+    if (ehPrevista && (!valorPagoCentavos || valorPagoCentavos <= 0)) {
+      return setErro("Confirme quanto veio de verdade na fatura.");
+    }
+    if (parcial && !ehPrevista) {
       if (forma === "cheque") {
         return setErro("Pagamento parcial não funciona com cheque — o papel quita inteiro");
       }
@@ -719,7 +728,7 @@ function ModalPagar({
           cheque_id: forma === "cheque" ? chequeId : null,
           conta_id: forma === "cheque" ? null : contaFinId,
           repassado_para: conta.fornecedor || conta.descricao,
-          ...(parcial && valorPagoCentavos
+          ...((parcial || ehPrevista) && valorPagoCentavos
             ? { valor_pago: centavosParaReais(valorPagoCentavos) }
             : {}),
           ...(jurosCentavos && forma !== "cheque"
@@ -836,7 +845,27 @@ function ModalPagar({
           />
         )}
 
-        {forma !== "cheque" && (
+        {ehPrevista && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
+            <p className="text-sm">
+              <strong>Isso ainda é uma previsão de {formatBRL(conta.valor)}.</strong>{" "}
+              Confirme quanto veio de verdade na fatura — é esse número que vai
+              pro caixa e pro DRE.
+            </p>
+            <div>
+              <label className="block text-xs text-cinza-suave mb-1">
+                Valor real da fatura
+              </label>
+              <InputDinheiro
+                centavos={valorPagoCentavos}
+                onChange={setValorPagoCentavos}
+                grande={false}
+              />
+            </div>
+          </div>
+        )}
+
+        {forma !== "cheque" && !ehPrevista && (
           <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-3">
             <label className="flex items-start gap-2 cursor-pointer">
               <input

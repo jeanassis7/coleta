@@ -7,6 +7,28 @@
 
 ---
 
+## VARREDURA ADVERSARIAL — 21/08/2026 🔍
+
+Três auditorias independentes varreram o financeiro atrás de UMA classe de
+bug: **valor/estado fora de faixa aceito em silêncio**. **30 achados, 8
+graves; 12 corrigidos no mesmo dia.** O padrão é sempre o mesmo: *o guard
+existe num lugar e falta no irmão* (POST valida e PATCH não; a tela de Venda
+avisa e a ficha do Comprador não).
+
+- **Lista completa e o que ficou pendente: `VARREDURA-21-08.md`.**
+- **O método que impede a repetição: `REGUA-DO-DINHEIRO.md`** (8 perguntas
+  obrigatórias pra qualquer mexida em dinheiro, citado no CLAUDE.md).
+- Destaques corrigidos: conta CANCELADA escondia o custo do DRE pra sempre;
+  DRE truncava em 1.000 linhas; devolução/recebimento acima do saldo;
+  cheque repassado maior que a despesa inflando o resultado; conta prevista
+  paga pelo chute; editar venda comia o arredondamento; desativar motorista
+  sumia com o dinheiro do patrimônio.
+- **Todas preventivas** — nenhum dado existente estava errado (conferido).
+- **Próxima leva (alta)**: acerto sem idempotência (TOCTOU), vale maior que
+  o pagamento, custo médio corrompido invisível.
+
+---
+
 ## BACKFILL 2026 — RODOU EM 21/08/2026 ✅
 
 O histórico do ano inteiro (planilhas do Evaner: fluxo, cheques, fundições,

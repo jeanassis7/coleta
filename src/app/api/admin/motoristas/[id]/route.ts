@@ -38,6 +38,31 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         { status: 400 }
       );
     }
+
+    // RÉGUA DO DINHEIRO #1 — desativar quem está com dinheiro na mão.
+    // Ele some da tela de adiantamentos (não dá nem pra fazer o acerto) e
+    // o dinheiro fica na rua sem dono visível. O certo é acertar primeiro.
+    const { data: saldos } = await adminClient.rpc("saldos_motoristas");
+    const meu = ((saldos as { motorista_id: string; saldo: number }[]) ?? []).find(
+      (s) => s.motorista_id === id
+    );
+    const saldo = Math.round(Number(meu?.saldo ?? 0) * 100) / 100;
+    if (Math.abs(saldo) > 0.009 && !body.confirmado) {
+      return NextResponse.json(
+        {
+          error:
+            saldo > 0
+              ? `Ele ainda está com ${saldo.toFixed(
+                  2
+                )} da empresa na mão. Faça o ACERTO antes de desativar — depois de desativado ele some da tela de adiantamentos e o dinheiro fica sem dono. Se é isso mesmo, confirme.`
+              : `A empresa ainda deve ${Math.abs(saldo).toFixed(
+                  2
+                )} pra ele. Faça o ACERTO antes de desativar. Se é isso mesmo, confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
   }
 
   const updates: Record<string, unknown> = {};

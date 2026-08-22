@@ -40,6 +40,67 @@ export async function POST(req: NextRequest) {
   }
 
   const client = getSupabaseAdmin(admin.id);
+
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #1 — devolver MAIS do que ele tem na mão
+  // ---------------------------------------------------------------------
+  // Sem isto, digitar 500000 achando que são R$ 500,00 fazia entrar R$
+  // 5.000 numa conta que nunca recebeu esse dinheiro, e o saldo do
+  // motorista virava −4.500 — estado que o sistema aceita como legítimo
+  // (0011: empresa deve pro motorista), então ninguém estranhava.
+  const { data: saldos } = await client.rpc("saldos_motoristas");
+  const meu = ((saldos as { motorista_id: string; saldo: number }[]) ?? []).find(
+    (s) => s.motorista_id === motorista_id
+  );
+  const naMao = Math.round(Number(meu?.saldo ?? 0) * 100) / 100;
+  const passa = Math.round((valor - naMao) * 100) / 100;
+  if (passa > 0.009 && !body.confirmado) {
+    return NextResponse.json(
+      {
+        error:
+          naMao <= 0
+            ? `Esse motorista não tem dinheiro da empresa na mão (saldo ${naMao.toFixed(
+                2
+              )}). Devolver ${valor.toFixed(2)} deixaria a empresa devendo pra ele.`
+            : `Ele tem ${naMao.toFixed(2)} na mão e a devolução é de ${valor.toFixed(
+                2
+              )} — passa ${passa.toFixed(
+                2
+              )}. Confira se não faltou lançar coleta ou despesa dele. Se está certo mesmo, confirme.`,
+        precisaConfirmar: true,
+      },
+      { status: 409 }
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #4/#5 — data retroativa caindo em ciclo já fechado
+  // ---------------------------------------------------------------------
+  // O DELETE desta mesma rota já tinha esse guard; o POST não tinha. A
+  // devolução desconta do saldo por `criado_em`, então uma datada antes do
+  // último acerto credita a conta no passado e tira do ciclo ATUAL um
+  // valor que o acerto anterior já dividiu.
+  const { data: ultimoAcerto, error: eAcerto } = await client
+    .from("acertos")
+    .select("corte_em")
+    .eq("motorista_id", motorista_id)
+    .order("corte_em", { ascending: false })
+    .limit(1);
+  if (eAcerto) return NextResponse.json({ error: eAcerto.message }, { status: 400 });
+  const corte = (ultimoAcerto ?? [])[0]?.corte_em as string | undefined;
+  if (corte && data < corte.slice(0, 10) && !body.confirmado) {
+    return NextResponse.json(
+      {
+        error: `A data ${data} é anterior ao último acerto dele (${corte.slice(
+          0,
+          10
+        )}), que já dividiu o saldo daquele período. Lançada assim, ela sai do saldo de AGORA. Se é isso mesmo, confirme.`,
+        precisaConfirmar: true,
+      },
+      { status: 409 }
+    );
+  }
+
   const { error } = await client.from("devolucoes_motorista").insert({
     motorista_id,
     valor: Math.round(valor * 100) / 100,
