@@ -37,8 +37,9 @@ const LINHAS_PADRAO = (contasNomes: string[]) => [
   { chave: "oleo_caminhoes", label: "Óleo nos caminhões", ordem: 40 },
   { chave: "cheques_aberto", label: "Cheques em aberto", ordem: 50 },
   { chave: "a_receber", label: "A receber dos compradores", ordem: 60 },
-  { chave: "contas_a_pagar", label: "(−) Contas a pagar em aberto", ordem: 70 },
-  { chave: "total", label: "TOTAL", ordem: 99 },
+  { chave: "total", label: "TOTAL", ordem: 90 },
+  // abaixo do total, sem descontar dele (decisão do Evaner, 21/08)
+  { chave: "contas_a_pagar", label: "Contas a pagar em aberto", ordem: 95 },
 ];
 
 export function FotosCaixaTabela({

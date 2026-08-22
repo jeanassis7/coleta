@@ -383,17 +383,6 @@ export function CaixaPainel({
                 {formatBRL(patrimonio.aReceberCompradores)}
               </td>
             </tr>
-            <tr className="border-b border-cinza-borda">
-              <td className="py-2 pr-3">
-                📤 (−) Contas a pagar em aberto{" "}
-                <span className="text-cinza-suave text-xs">
-                  (dívida certa; prevista fica fora — é palpite)
-                </span>
-              </td>
-              <td className="py-2 text-right font-mono whitespace-nowrap text-alerta">
-                {formatBRL(-patrimonio.contasAPagarAbertas)}
-              </td>
-            </tr>
             <tr>
               <td className="py-3 pr-3 font-semibold">TOTAL</td>
               <td className="py-3 text-right font-bold text-xl whitespace-nowrap">
@@ -404,13 +393,31 @@ export function CaixaPainel({
                     patrimonio.valorOleoCaminhoes +
                     patrimonio.chequesAbertos +
                     patrimonio.adiantamentosPendentes +
-                    patrimonio.aReceberCompradores -
-                    patrimonio.contasAPagarAbertas
+                    patrimonio.aReceberCompradores
                 )}
               </td>
             </tr>
           </tbody>
         </table>
+
+        {/* O que a empresa DEVE fica ABAIXO do total, sem descontar dele —
+            decisão do Evaner (21/08): o patrimônio é o número positivo; a
+            dívida aparece como informação própria. A linha "Dívidas
+            cadastradas" entra aqui quando o cadastro de dívidas nascer. */}
+        <div className="mt-3 pt-3 border-t border-cinza-borda text-sm">
+          <div className="flex items-baseline justify-between gap-3">
+            <span>
+              📤 Contas a pagar em aberto{" "}
+              <span className="text-cinza-suave text-xs">
+                (dívida certa, já com boleto/valor — o estimado e o previsto
+                ficam fora)
+              </span>
+            </span>
+            <span className="font-mono text-alerta whitespace-nowrap">
+              {formatBRL(patrimonio.contasAPagarAbertas)}
+            </span>
+          </div>
+        </div>
 
         <p className="mt-3 text-sm text-cinza-suave">
           Preço de referência:{" "}
