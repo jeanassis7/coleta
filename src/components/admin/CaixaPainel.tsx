@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -13,11 +13,11 @@ import type {
   MovimentoAvulso,
 } from "@/lib/admin/caixa";
 
-// Local de propÃ³sito: importar um VALOR de caixa.ts puxaria o mÃ³dulo
+// Local de propósito: importar um VALOR de caixa.ts puxaria o módulo
 // server-only (getSupabaseServer) pro bundle do cliente e o build quebra.
 const ROTULO_ENTRADA_AVULSA: Record<string, string> = {
-  aporte: "Aporte de sÃ³cio",
-  emprestimo: "EmprÃ©stimo recebido",
+  aporte: "Aporte de sócio",
+  emprestimo: "Empréstimo recebido",
   reembolso: "Reembolso",
   rendimento: "Rendimento",
   venda_ativo: "Venda de bem",
@@ -60,7 +60,7 @@ export function CaixaPainel({
   const [formConta, setFormConta] = useState(false);
   const [apagarTransf, setApagarTransf] = useState<TransferenciaLista | null>(null);
 
-  // --- ediÃ§Ã£o de conta ---
+  // --- edição de conta ---
   const [editando, setEditando] = useState<ContaFinanceira | null>(null);
   const [edNome, setEdNome] = useState("");
   const [edBanco, setEdBanco] = useState("");
@@ -69,14 +69,14 @@ export function CaixaPainel({
   const [confirmarDesativar, setConfirmarDesativar] = useState(false);
   const [confirmarApagarConta, setConfirmarApagarConta] = useState(false);
 
-  // Os dropdowns de lanÃ§amento sÃ³ mostram conta ativa; a lista completa
+  // Os dropdowns de lançamento só mostram conta ativa; a lista completa
   // (com inativas) existe pra editar e reativar.
   const contasAtivas = contas.filter((c) => c.ativa);
   const contasInativas = contas.filter((c) => !c.ativa);
   const contaPorId = new Map(contas.map((c) => [c.id, c]));
   const saldoPorConta = new Map(saldos.map((s) => [s.conta_id, s.saldo]));
 
-  // --- transferÃªncia ---
+  // --- transferência ---
   const [origem, setOrigem] = useState("");
   const [destino, setDestino] = useState("");
   const [valorTransf, setValorTransf] = useState<number | null>(null);
@@ -90,7 +90,7 @@ export function CaixaPainel({
   const [saldoInicial, setSaldoInicial] = useState<number | null>(null);
   const [saldoEm, setSaldoEm] = useState(hoje);
 
-  // --- entrada avulsa (0047: aporte, emprÃ©stimo, reembolsoâ€¦) ---
+  // --- entrada avulsa (0047: aporte, empréstimo, reembolso…) ---
   const [formEntrada, setFormEntrada] = useState(false);
   const [tipoEntrada, setTipoEntrada] = useState("aporte");
   const [valorEntrada, setValorEntrada] = useState<number | null>(null);
@@ -98,7 +98,7 @@ export function CaixaPainel({
   const [contaEntrada, setContaEntrada] = useState("");
   const [descEntrada, setDescEntrada] = useState("");
 
-  // --- ajuste de caixa (conferÃªncia da gaveta) ---
+  // --- ajuste de caixa (conferência da gaveta) ---
   const [formAjuste, setFormAjuste] = useState(false);
   const [contaAjuste, setContaAjuste] = useState("");
   const [direcaoAjuste, setDirecaoAjuste] = useState<"falta" | "sobra">("falta");
@@ -122,7 +122,7 @@ export function CaixaPainel({
       });
       const json = await res.json();
       if (!res.ok) {
-        setErro(json.error || "Falha na operaÃ§Ã£o.");
+        setErro(json.error || "Falha na operação.");
         return false;
       }
       router.refresh();
@@ -224,7 +224,7 @@ export function CaixaPainel({
 
   async function lancarAjuste(e: React.FormEvent) {
     e.preventDefault();
-    if (!valorAjuste) return setErro("Qual foi a diferenÃ§a encontrada?");
+    if (!valorAjuste) return setErro("Qual foi a diferença encontrada?");
     const ok = await chamar("/api/admin/ajustes-caixa", {
       valor:
         (direcaoAjuste === "falta" ? -1 : 1) * centavosParaReais(valorAjuste),
@@ -252,7 +252,7 @@ export function CaixaPainel({
         {saldos.map((c) => (
           <div key={c.conta_id} className="card">
             <div className="text-sm text-cinza-suave">
-              {c.tipo === "especie" ? "ðŸ’µ" : "ðŸ¦"} {c.nome}
+              {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
             </div>
             <div
               className={`text-2xl font-bold mt-1 ${
@@ -263,7 +263,7 @@ export function CaixaPainel({
             </div>
             <div className="text-xs text-cinza-suave mt-1 flex items-center justify-between gap-2">
               <span>
-                entrou {formatBRL(c.entradas)} Â· saiu {formatBRL(c.saidas)}
+                entrou {formatBRL(c.entradas)} · saiu {formatBRL(c.saidas)}
               </span>
               <button
                 onClick={() => {
@@ -280,7 +280,7 @@ export function CaixaPainel({
 
         {naMao.length > 0 && (
           <div className="card bg-slate-50">
-            <div className="text-sm text-cinza-suave">ðŸšš Na mÃ£o dos motoristas</div>
+            <div className="text-sm text-cinza-suave">🚚 Na mão dos motoristas</div>
             <div className="text-2xl font-bold mt-1">{formatBRL(totalNaMao)}</div>
             <div className="text-xs text-cinza-suave mt-1 space-y-0.5">
               {naMao.map((m) => (
@@ -293,15 +293,15 @@ export function CaixaPainel({
         )}
       </div>
 
-      {/* --------------------------------------------------- patrimÃ´nio (R87) */}
+      {/* --------------------------------------------------- patrimônio (R87) */}
       <div className="card">
-        <h2 className="text-lg font-semibold mb-1">PatrimÃ´nio</h2>
+        <h2 className="text-lg font-semibold mb-1">Patrimônio</h2>
         <p className="text-sm text-cinza-suave mb-3">
-          Todo o <strong>giro</strong> da empresa, num nÃºmero sÃ³ â€” dinheiro,
-          Ã³leo, papel, o que hÃ¡ pra receber e o que jÃ¡ se deve. O Ã³leo vale o
-          preÃ§o de referÃªncia, sempre o mesmo, pra dar pra ver se o patrimÃ´nio
-          sobe ou desce sem o preÃ§o do mercado embaralhar a leitura. Bem
-          parado (caminhÃ£o, galpÃ£o) fica fora de propÃ³sito.
+          Todo o <strong>giro</strong> da empresa, num número só — dinheiro,
+          óleo, papel, o que há pra receber e o que já se deve. O óleo vale o
+          preço de referência, sempre o mesmo, pra dar pra ver se o patrimônio
+          sobe ou desce sem o preço do mercado embaralhar a leitura. Bem
+          parado (caminhão, galpão) fica fora de propósito.
         </p>
 
         <table className="w-full text-sm">
@@ -309,7 +309,7 @@ export function CaixaPainel({
             {saldos.map((c) => (
               <tr key={c.conta_id} className="border-b border-cinza-borda">
                 <td className="py-2 pr-3">
-                  {c.tipo === "especie" ? "ðŸ’µ" : "ðŸ¦"} {c.nome}
+                  {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
                 </td>
                 <td className="py-2 text-right font-mono whitespace-nowrap">
                   {formatBRL(c.saldo)}
@@ -317,17 +317,17 @@ export function CaixaPainel({
               </tr>
             ))}
             <tr className="border-b border-cinza-borda">
-              <td className="py-2 pr-3">ðŸšš Em mÃ£os de motoristas</td>
+              <td className="py-2 pr-3">🚚 Em mãos de motoristas</td>
               <td className="py-2 text-right font-mono whitespace-nowrap">
                 {formatBRL(totalNaMao)}
               </td>
             </tr>
             <tr className="border-b border-cinza-borda">
               <td className="py-2 pr-3">
-                ðŸ›¢ Valor em estoque{" "}
+                🛢 Valor em estoque{" "}
                 <span className="text-cinza-suave text-xs">
                   ({Math.round(patrimonio.estoqueLitros).toLocaleString("pt-BR")}{" "}
-                  L Ã— preÃ§o de referÃªncia)
+                  L × preço de referência)
                 </span>
               </td>
               <td className="py-2 text-right font-mono whitespace-nowrap">
@@ -336,10 +336,10 @@ export function CaixaPainel({
             </tr>
             <tr className="border-b border-cinza-borda">
               <td className="py-2 pr-3">
-                ðŸš› Ã“leo nos caminhÃµes{" "}
+                🚛 Óleo nos caminhões{" "}
                 <span className="text-cinza-suave text-xs">
                   ({Math.round(patrimonio.oleoCaminhoesLitros).toLocaleString("pt-BR")}{" "}
-                  L coletados, ainda nÃ£o pesados)
+                  L coletados, ainda não pesados)
                 </span>
               </td>
               <td className="py-2 text-right font-mono whitespace-nowrap">
@@ -348,10 +348,10 @@ export function CaixaPainel({
             </tr>
             <tr className="border-b border-cinza-borda">
               <td className="py-2 pr-3">
-                ðŸ§¾ Cheques em aberto{" "}
+                🧾 Cheques em aberto{" "}
                 <span className="text-cinza-suave text-xs">
-                  (carteira + depositados; devolvido fica fora â€” a dÃ­vida do
-                  comprador jÃ¡ voltou)
+                  (carteira + depositados; devolvido fica fora — a dívida do
+                  comprador já voltou)
                 </span>
               </td>
               <td className="py-2 text-right font-mono whitespace-nowrap">
@@ -361,10 +361,10 @@ export function CaixaPainel({
             {patrimonio.adiantamentosPendentes > 0 && (
               <tr className="border-b border-cinza-borda">
                 <td className="py-2 pr-3">
-                  ðŸ“¨ A caminho{" "}
+                  📨 A caminho{" "}
                   <span className="text-cinza-suave text-xs">
-                    (adiantamento enviado, motorista ainda nÃ£o aceitou â€” jÃ¡
-                    saiu da conta, ainda nÃ£o estÃ¡ na mÃ£o dele)
+                    (adiantamento enviado, motorista ainda não aceitou — já
+                    saiu da conta, ainda não está na mão dele)
                   </span>
                 </td>
                 <td className="py-2 text-right font-mono whitespace-nowrap">
@@ -374,7 +374,7 @@ export function CaixaPainel({
             )}
             <tr className="border-b border-cinza-borda">
               <td className="py-2 pr-3">
-                ðŸ“¥ A receber dos compradores{" "}
+                📥 A receber dos compradores{" "}
                 <span className="text-cinza-suave text-xs">
                   (venda entregue, sem dinheiro e sem cheque ainda)
                 </span>
@@ -385,9 +385,9 @@ export function CaixaPainel({
             </tr>
             <tr className="border-b border-cinza-borda">
               <td className="py-2 pr-3">
-                ðŸ“¤ (âˆ’) Contas a pagar em aberto{" "}
+                📤 (−) Contas a pagar em aberto{" "}
                 <span className="text-cinza-suave text-xs">
-                  (dÃ­vida certa; prevista fica fora â€” Ã© palpite)
+                  (dívida certa; prevista fica fora — é palpite)
                 </span>
               </td>
               <td className="py-2 text-right font-mono whitespace-nowrap text-alerta">
@@ -413,14 +413,14 @@ export function CaixaPainel({
         </table>
 
         <p className="mt-3 text-sm text-cinza-suave">
-          PreÃ§o de referÃªncia:{" "}
+          Preço de referência:{" "}
           <strong>{formatBRL(patrimonio.precoReferenciaLitro)}/litro</strong>{" "}
-          (um sÃ³ pra fino e grosso â€” fixo no cÃ³digo por decisÃ£o de 21/08;
-          mudar Ã© mexer no cÃ³digo, de propÃ³sito)
+          (um só pra fino e grosso — fixo no código por decisão de 21/08;
+          mudar é mexer no código, de propósito)
         </p>
       </div>
 
-      {/* --------------------------------------------------- aÃ§Ãµes */}
+      {/* --------------------------------------------------- ações */}
       <div className="flex gap-4 flex-wrap">
         <button
           onClick={() => {
@@ -438,7 +438,7 @@ export function CaixaPainel({
               : undefined
           }
         >
-          â‡„ Transferir entre contas
+          ⇄ Transferir entre contas
         </button>
         <button
           onClick={() => {
@@ -460,7 +460,7 @@ export function CaixaPainel({
           }}
           className="text-verde hover:underline text-sm font-medium"
         >
-          âš– Conferi a gaveta (ajuste)
+          ⚖ Conferi a gaveta (ajuste)
         </button>
         <button
           onClick={() => setFormConta((v) => !v)}
@@ -475,22 +475,22 @@ export function CaixaPainel({
         <form onSubmit={lancarEntrada} className="card space-y-3">
           <h2 className="text-lg font-semibold">Entrada avulsa</h2>
           <p className="text-sm text-cinza-suave">
-            Dinheiro que entra <strong>sem ser venda de Ã³leo</strong>: aporte
-            de sÃ³cio, emprÃ©stimo recebido, reembolso, rendimento, venda de um
-            bem. Entra no caixa e <strong>fica fora do DRE</strong> â€” nÃ£o Ã©
-            resultado da operaÃ§Ã£o. Pagamento de comprador NÃƒO Ã© aqui: Ã© na
+            Dinheiro que entra <strong>sem ser venda de óleo</strong>: aporte
+            de sócio, empréstimo recebido, reembolso, rendimento, venda de um
+            bem. Entra no caixa e <strong>fica fora do DRE</strong> — não é
+            resultado da operação. Pagamento de comprador NÃO é aqui: é na
             ficha dele.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">O que Ã©</label>
+              <label className="block text-sm font-medium mb-1">O que é</label>
               <select
                 value={tipoEntrada}
                 onChange={(e) => setTipoEntrada(e.target.value)}
                 className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
               >
-                <option value="aporte">Aporte de sÃ³cio</option>
-                <option value="emprestimo">EmprÃ©stimo recebido</option>
+                <option value="aporte">Aporte de sócio</option>
+                <option value="emprestimo">Empréstimo recebido</option>
                 <option value="reembolso">Reembolso</option>
                 <option value="rendimento">Rendimento</option>
                 <option value="venda_ativo">Venda de bem</option>
@@ -534,12 +534,12 @@ export function CaixaPainel({
             <input
               value={descEntrada}
               onChange={(e) => setDescEntrada(e.target.value)}
-              placeholder="ex: aporte do Jean pra virada / emprÃ©stimo BB 24x"
+              placeholder="ex: aporte do Jean pra virada / empréstimo BB 24x"
               className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
             />
           </div>
           <button type="submit" disabled={salvando} className="btn-primario">
-            {salvando ? "Salvandoâ€¦" : "LanÃ§ar entrada"}
+            {salvando ? "Salvando…" : "Lançar entrada"}
           </button>
         </form>
       )}
@@ -549,9 +549,9 @@ export function CaixaPainel({
         <form onSubmit={lancarAjuste} className="card space-y-3">
           <h2 className="text-lg font-semibold">Ajuste de caixa</h2>
           <p className="text-sm text-cinza-suave">
-            Conferiu a gaveta (ou o extrato) e a conta nÃ£o bateu? LanÃ§a aqui a{" "}
-            <strong>diferenÃ§a</strong>, com o motivo â€” igual ao inventÃ¡rio do
-            estoque. Fora do DRE: Ã© conferÃªncia, nÃ£o gasto.
+            Conferiu a gaveta (ou o extrato) e a conta não bateu? Lança aqui a{" "}
+            <strong>diferença</strong>, com o motivo — igual ao inventário do
+            estoque. Fora do DRE: é conferência, não gasto.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
@@ -569,7 +569,7 @@ export function CaixaPainel({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Deuâ€¦</label>
+              <label className="block text-sm font-medium mb-1">Deu…</label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -596,7 +596,7 @@ export function CaixaPainel({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">DiferenÃ§a</label>
+              <label className="block text-sm font-medium mb-1">Diferença</label>
               <InputDinheiro
                 centavos={valorAjuste}
                 onChange={setValorAjuste}
@@ -618,23 +618,23 @@ export function CaixaPainel({
             <input
               value={motivoAjuste}
               onChange={(e) => setMotivoAjuste(e.target.value)}
-              placeholder="ex: troco dado errado na semana / tarifa nÃ£o lanÃ§ada"
+              placeholder="ex: troco dado errado na semana / tarifa não lançada"
               className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
             />
           </div>
           <button type="submit" disabled={salvando} className="btn-primario">
-            {salvando ? "Salvandoâ€¦" : "LanÃ§ar ajuste"}
+            {salvando ? "Salvando…" : "Lançar ajuste"}
           </button>
         </form>
       )}
 
-      {/* --------------------------------------------------- form transferÃªncia */}
+      {/* --------------------------------------------------- form transferência */}
       {formTransf && (
         <form onSubmit={transferir} className="card space-y-3">
           <h2 className="text-lg font-semibold">Transferir</h2>
           <p className="text-sm text-cinza-suave">
-            Saque, depÃ³sito, PIX entre contas suas. Isso <strong>nÃ£o Ã©
-            despesa</strong> â€” Ã© o mesmo dinheiro mudando de lugar, e nÃ£o entra
+            Saque, depósito, PIX entre contas suas. Isso <strong>não é
+            despesa</strong> — é o mesmo dinheiro mudando de lugar, e não entra
             no DRE.
           </p>
           <div className="grid sm:grid-cols-2 gap-3">
@@ -696,7 +696,7 @@ export function CaixaPainel({
             />
           </div>
           <button type="submit" disabled={salvando} className="btn-primario">
-            {salvando ? "Salvandoâ€¦" : "Transferir"}
+            {salvando ? "Salvando…" : "Transferir"}
           </button>
         </form>
       )}
@@ -723,7 +723,7 @@ export function CaixaPainel({
                 className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
               >
                 <option value="banco">Conta de banco</option>
-                <option value="especie">Dinheiro em espÃ©cie</option>
+                <option value="especie">Dinheiro em espécie</option>
               </select>
             </div>
             {tipo === "banco" && (
@@ -750,7 +750,7 @@ export function CaixaPainel({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Esse saldo Ã© de que dia
+                Esse saldo é de que dia
               </label>
               <input
                 type="date"
@@ -761,21 +761,21 @@ export function CaixaPainel({
             </div>
           </div>
           <p className="text-xs text-cinza-suave">
-            O saldo de partida e a data dele sÃ£o o <strong>corte</strong>: nada
-            anterior a essa data Ã© somado, porque jÃ¡ estÃ¡ embutido nesse valor.
+            O saldo de partida e a data dele são o <strong>corte</strong>: nada
+            anterior a essa data é somado, porque já está embutido nesse valor.
             Sem isso o caixa nasce errado e nunca mais bate.
           </p>
           <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
             <strong>Importante:</strong> informe quanto tinha{" "}
-            <strong>ANTES dos lanÃ§amentos desse dia</strong>. Pensa assim: Ã© o
-            dinheiro que estava na gaveta quando o dia comeÃ§ou, antes de
-            entrar ou sair qualquer coisa. Se vocÃª contar o dinheiro no fim do
-            dia, o que entrou e saiu HOJE vai ser contado duas vezes â€” uma no
-            seu nÃºmero, outra pelos lanÃ§amentos. Na dÃºvida, use o saldo de
-            ontem Ã  noite com a data de hoje.
+            <strong>ANTES dos lançamentos desse dia</strong>. Pensa assim: é o
+            dinheiro que estava na gaveta quando o dia começou, antes de
+            entrar ou sair qualquer coisa. Se você contar o dinheiro no fim do
+            dia, o que entrou e saiu HOJE vai ser contado duas vezes — uma no
+            seu número, outra pelos lançamentos. Na dúvida, use o saldo de
+            ontem à noite com a data de hoje.
           </div>
           <button type="submit" disabled={salvando} className="btn-primario">
-            {salvando ? "Salvandoâ€¦" : "Cadastrar conta"}
+            {salvando ? "Salvando…" : "Cadastrar conta"}
           </button>
         </form>
       )}
@@ -784,7 +784,7 @@ export function CaixaPainel({
       {editando && (
         <form onSubmit={salvarEdicao} className="card space-y-3">
           <h2 className="text-lg font-semibold">
-            Editar conta â€” {editando.nome}
+            Editar conta — {editando.nome}
           </h2>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
@@ -819,7 +819,7 @@ export function CaixaPainel({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Esse saldo Ã© de que dia
+                Esse saldo é de que dia
               </label>
               <input
                 type="date"
@@ -831,13 +831,13 @@ export function CaixaPainel({
           </div>
           <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm">
             Mudar o <strong>saldo de partida</strong> ou a <strong>data</strong>{" "}
-            recalcula o saldo da conta desde o comeÃ§o. Use pra corrigir um
-            cadastro que nasceu errado â€” nÃ£o pra "acertar" uma diferenÃ§a de
-            hoje (isso esconderia o motivo da diferenÃ§a).
+            recalcula o saldo da conta desde o começo. Use pra corrigir um
+            cadastro que nasceu errado — não pra "acertar" uma diferença de
+            hoje (isso esconderia o motivo da diferença).
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <button type="submit" disabled={salvando} className="btn-primario">
-              {salvando ? "Salvandoâ€¦" : "Salvar"}
+              {salvando ? "Salvando…" : "Salvar"}
             </button>
             <button
               type="button"
@@ -870,7 +870,7 @@ export function CaixaPainel({
         <div className="card">
           <h2 className="text-lg font-semibold mb-1">Contas desativadas</h2>
           <p className="text-sm text-cinza-suave mb-3">
-            Fora dos lanÃ§amentos e do saldo. O histÃ³rico delas continua de pÃ©.
+            Fora dos lançamentos e do saldo. O histórico delas continua de pé.
           </p>
           <div className="space-y-1">
             {contasInativas.map((c) => (
@@ -879,7 +879,7 @@ export function CaixaPainel({
                 className="flex items-center justify-between text-sm border-b border-cinza-borda py-2"
               >
                 <span>
-                  {c.tipo === "especie" ? "ðŸ’µ" : "ðŸ¦"} {c.nome}
+                  {c.tipo === "especie" ? "💵" : "🏦"} {c.nome}
                 </span>
                 <button
                   onClick={() => mudarAtiva(c, true)}
@@ -899,10 +899,10 @@ export function CaixaPainel({
           titulo={`Desativar ${editando.nome}`}
           descricao={
             (saldoPorConta.get(editando.id) ?? 0) !== 0
-              ? `Essa conta estÃ¡ com saldo de ${formatBRL(
+              ? `Essa conta está com saldo de ${formatBRL(
                   saldoPorConta.get(editando.id) ?? 0
-                )}. Desativada, ela some do painel e do total do patrimÃ´nio â€” o saldo vai junto. O certo Ã© primeiro transferir o dinheiro pra outra conta e desativar quando zerar.`
-              : "A conta sai dos lanÃ§amentos e do saldo. O histÃ³rico continua de pÃ©, e dÃ¡ pra reativar quando quiser."
+                )}. Desativada, ela some do painel e do total do patrimônio — o saldo vai junto. O certo é primeiro transferir o dinheiro pra outra conta e desativar quando zerar.`
+              : "A conta sai dos lançamentos e do saldo. O histórico continua de pé, e dá pra reativar quando quiser."
           }
           confirmarLabel="Desativar mesmo assim"
           perigo
@@ -915,7 +915,7 @@ export function CaixaPainel({
       {editando && confirmarApagarConta && (
         <ModalConfirmar
           titulo={`Apagar ${editando.nome}`}
-          descricao="SÃ³ dÃ¡ pra apagar conta que nunca teve movimento â€” se tiver qualquer lanÃ§amento, o sistema recusa e o caminho Ã© desativar. Use pra desfazer um cadastro errado."
+          descricao="Só dá pra apagar conta que nunca teve movimento — se tiver qualquer lançamento, o sistema recusa e o caminho é desativar. Use pra desfazer um cadastro errado."
           confirmarLabel="Apagar"
           perigo
           carregando={salvando}
@@ -932,10 +932,10 @@ export function CaixaPainel({
         />
       )}
 
-      {/* --------------------------------------------------- transferÃªncias */}
+      {/* --------------------------------------------------- transferências */}
       {transferencias.length > 0 && (
         <div className="card">
-          <h2 className="text-lg font-semibold mb-3">TransferÃªncias recentes</h2>
+          <h2 className="text-lg font-semibold mb-3">Transferências recentes</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -957,7 +957,7 @@ export function CaixaPainel({
                     <td className="py-2 pr-3">{t.origem_nome}</td>
                     <td className="py-2 pr-3">{t.destino_nome}</td>
                     <td className="py-2 pr-3 text-cinza-suave">
-                      {t.descricao || "â€”"}
+                      {t.descricao || "—"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">
                       {formatBRL(t.valor)}
@@ -983,8 +983,8 @@ export function CaixaPainel({
         <div className="card">
           <h2 className="text-lg font-semibold mb-1">Entradas e ajustes</h2>
           <p className="text-sm text-cinza-suave mb-3">
-            O que mexeu no caixa sem ser operaÃ§Ã£o â€” aporte, emprÃ©stimo,
-            reembolso e conferÃªncias da gaveta. Nada daqui entra no DRE.
+            O que mexeu no caixa sem ser operação — aporte, empréstimo,
+            reembolso e conferências da gaveta. Nada daqui entra no DRE.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1014,7 +1014,7 @@ export function CaixaPainel({
                         m.valor < 0 ? "text-alerta" : "text-verde"
                       }`}
                     >
-                      {m.valor < 0 ? "âˆ’" : "+"}
+                      {m.valor < 0 ? "−" : "+"}
                       {formatBRL(Math.abs(m.valor))}
                     </td>
                     <td className="py-2 pr-3">
@@ -1056,7 +1056,7 @@ export function CaixaPainel({
 
       {apagarTransf && (
         <ModalConfirmar
-          titulo="Apagar transferÃªncia"
+          titulo="Apagar transferência"
           descricao={`${formatBRL(apagarTransf.valor)} de ${apagarTransf.origem_nome} pra ${apagarTransf.destino_nome}. Os dois saldos voltam sozinhos.`}
           confirmarLabel="Apagar"
           perigo
