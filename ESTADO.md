@@ -39,9 +39,9 @@ suspeitas**; fechadas as 10 e todas as suspeitas que tocam dinheiro/alerta.
 - **Deixadas SEM paginar de propósito** (teto por regra de negócio):
   cargas ativas com embeds (1 por motorista, índice único) e `buscarLog`/
   listas com limit deliberado (500 recentes é o recorte da tela).
-- **Pendente decidir**: script "conferidor" (auditoria que refaz o dinheiro
-  fechado de ponta a ponta e grita se não bater) — explicado pro Evaner,
-  aguardando OK.
+- **Conferidor DESCARTADO** (decisão do Evaner, 22/08): o script que refaz
+  o dinheiro fechado e grita se não bater. Motivo dele: "tem cara de não
+  conseguir diagnosticar na prática". Não recriar sem ele pedir.
 
 ---
 

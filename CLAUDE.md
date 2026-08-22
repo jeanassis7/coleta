@@ -425,6 +425,7 @@ Categorizado por valor estimado vs esforço. Ordem decidida pelo Evaner conforme
 - ❌ **Distância em metros na sugestão pro motorista** — só nome, sem informação técnica
 - ❌ **Rastreador via WhatsApp Live Location** — alternativa zero-código mencionada se realmente precisar
 - ❌ **Papel `dev` separado de `admin`** — existiu enquanto o Módulo 1 era invisível pro Jean. Depois do flip virou hierarquia sem função: 42 arquivos importando um gate que não gateava mais nada. Decisão do Evaner (19/08/2026): capacidade extra vira **coluna** no cadastro (`ve_log`), nunca papel novo.
+- ❌ **Script "conferidor" (auditoria contínua do dinheiro fechado)** — proposto em 22/08/2026 junto com o backup mensal; Evaner descartou ("tem cara de não conseguir diagnosticar na prática"). O que ficou no lugar: régua do dinheiro + e2e-guards + backup CSV mensal.
 - ❌ **Motorista de teste (`is_teste`)** — sandbox invisível pro admin. Decisão do Evaner: *"se eu quiser testar um real eu crio um perfil do zero e testo na prática como se fosse um real mesmo, entrando nos relatórios tudo, sabendo que dali 1-2h eu deleto tudo"*. Mais simples e mais fiel ao que o motorista vive.
 
 ## Quando o Evaner voltar com bugs
