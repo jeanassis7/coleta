@@ -25,10 +25,18 @@ export default async function FeaturesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-2">Features por motorista</h1>
+      <a
+        href="/admin/motoristas"
+        className="text-sm text-verde hover:underline"
+      >
+        ← Motoristas
+      </a>
+      <h1 className="text-2xl font-bold mb-2 mt-1">
+        Liberar recursos no app
+      </h1>
       <p className="text-cinza-suave mb-6">
-        Liga um recurso novo em um motorista de cada vez. Feature nova nasce
-        desligada pra todos — ligue em um, acompanhe alguns dias, depois
+        Liga um recurso novo em um motorista de cada vez. Recurso novo nasce
+        desligado pra todos — ligue em um, acompanhe alguns dias, depois
         estenda. Desligar não apaga nada que já foi lançado: só some da tela
         dele.
       </p>

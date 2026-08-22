@@ -6,6 +6,12 @@ App PWA para coleta de óleo lubrificante usado (OLUC). Construído pelo **Evane
 > - **`ESTADO.md`** — onde paramos, o que está pendente, qual o próximo passo.
 > - **`NEGOCIOv3.md`** — as 131 regras do negócio, conferidas pelo Evaner uma a uma. É a fonte da verdade sobre **como a empresa funciona**, e a Parte XII dele é a lista de trabalho aberta.
 >
+> **Vai mexer em qualquer coisa que toca DINHEIRO?** `REGUA-DO-DINHEIRO.md` —
+> as 8 perguntas obrigatórias (maior que o limite, zero/negativo, dois
+> cliques, apagar depois, dobra em relatório, tela mascarando, guard no
+> servidor, teste do caminho errado). **Não é opcional**: nasceu de um
+> buraco real que passou por falta de método, não de atenção.
+>
 > Este arquivo aqui é o contexto permanente do CÓDIGO (convenções, decisões, armadilhas).
 
 ## Quem usa

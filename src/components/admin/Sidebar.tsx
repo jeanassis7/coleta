@@ -33,25 +33,46 @@ export function Sidebar({
   const pathname = usePathname();
   const [aberto, setAberto] = useState(false); // drawer no mobile
 
+  // Os grupos seguem o CICLO da empresa, não o tipo técnico da tela — é
+  // assim que o Jean pensa: o dinheiro que tenho, o óleo que entra, o óleo
+  // que sai. Reorganizado em 21/08/2026: "OPERAÇÃO" tinha virado um balaio
+  // de 14 itens (todo o financeiro junto com o campo).
   const grupos: Grupo[] = [
     {
-      titulo: "OPERAÇÃO",
-      icone: "🚚",
+      // "Quanto eu tenho, quanto eu devo, como foi o mês"
+      titulo: "DINHEIRO",
+      icone: "💰",
       itens: [
         { href: "/admin/caixa", label: "Caixa" },
         { href: "/admin/lancamentos", label: "Lançamentos" },
-        { href: "/admin/dre", label: "DRE" },
-        { href: "/admin/remuneracao", label: "Remuneração" },
-        { href: "/admin/estoque", label: "Estoque" },
-        { href: "/admin/vendas", label: "Vendas" },
-        { href: "/admin/cheques", label: "Cheques" },
         { href: "/admin/contas", label: "Contas a pagar" },
         { href: "/admin/dividas", label: "Dívidas" },
+        { href: "/admin/cheques", label: "Cheques" },
+        { href: "/admin/dre", label: "DRE" },
+        { href: "/admin/remuneracao", label: "Remuneração" },
+      ],
+    },
+    {
+      // O óleo ENTRANDO: o que os motoristas fazem em campo e o que custa
+      titulo: "COLETA",
+      icone: "🚚",
+      itens: [
         { href: "/admin/cargas", label: "Cargas" },
+        { href: "/admin/adiantamentos", label: "Adiantamentos" },
         { href: "/admin/abastecimentos", label: "Abastecimentos" },
         { href: "/admin/despesas", label: "Despesas" },
         { href: "/admin/compras", label: "Compra direta" },
-        { href: "/admin/adiantamentos", label: "Adiantamentos" },
+      ],
+    },
+    {
+      // O óleo SAINDO: estoque, quem compra e quanto ainda deve
+      titulo: "VENDA",
+      icone: "🛢️",
+      itens: [
+        { href: "/admin/estoque", label: "Estoque" },
+        { href: "/admin/vendas", label: "Vendas" },
+        // Comprador não é só cadastro: é conta corrente com saldo devedor.
+        { href: "/admin/compradores", label: "Compradores" },
       ],
     },
     {
@@ -66,10 +87,12 @@ export function Sidebar({
       titulo: "CADASTROS",
       icone: "📋",
       itens: [
+        // Features saiu de SISTEMA e virou botão dentro de Motoristas
+        // (pedido do Evaner, 21/08): liberar feature é coisa de cadastro
+        // de pessoa, não de configuração do sistema.
         { href: "/admin/motoristas", label: "Motoristas" },
-        { href: "/admin/curadoria", label: "Locais (curadoria)" },
         { href: "/admin/caminhoes", label: "Caminhões" },
-        { href: "/admin/compradores", label: "Compradores" },
+        { href: "/admin/curadoria", label: "Locais (curadoria)" },
       ],
     },
     {
@@ -77,7 +100,6 @@ export function Sidebar({
       icone: "⚙️",
       itens: [
         { href: "/admin/eventos", label: "Eventos" },
-        { href: "/admin/features", label: "Features" },
         ...(veLog ? [{ href: "/admin/log", label: "🔎 Log" }] : []),
       ],
     },
