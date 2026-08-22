@@ -92,6 +92,37 @@ export async function POST(req: NextRequest) {
   }
 
   const client = getSupabaseAdmin(admin.id);
+
+  // Pagamento MAIOR do que o que falta: não bloqueia (juro que entrou,
+  // acordo refeito, arredondamento são reais) mas NUNCA passa calado —
+  // avisa quanto passa e pede confirmação. Sem isto, o saldo ficava
+  // negativo escondido e a dívida parecia quitada certinha.
+  if (divida_id) {
+    const { data: saldos } = await client.rpc("saldo_dividas");
+    const d = ((saldos as { id: string; credor: string; saldo: number }[]) ?? []).find(
+      (x) => x.id === divida_id
+    );
+    if (!d) {
+      return NextResponse.json({ error: "dívida não encontrada" }, { status: 400 });
+    }
+    const falta = Math.round(Number(d.saldo) * 100) / 100;
+    const passa = Math.round((valor - falta) * 100) / 100;
+    if (passa > 0.009 && !body.confirmado) {
+      return NextResponse.json(
+        {
+          error:
+            falta <= 0
+              ? `A dívida de ${d.credor} já está coberta pelos pagamentos lançados. Este valor passaria ${passa.toFixed(2)} do total.`
+              : `Faltam ${falta.toFixed(2)} na dívida de ${d.credor} e este pagamento é de ${valor.toFixed(
+                  2
+                )} — passa ${passa.toFixed(2)}. Se entrou juro, o certo é atualizar o valor da dívida em /admin/dividas. Se está certo mesmo, confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const { data: criado, error } = await client
     .from("contas_a_pagar")
     .insert({

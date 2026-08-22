@@ -360,6 +360,8 @@ function LinhaDivida({
 }) {
   const pct = d.valor_total > 0 ? Math.min(100, (d.pago / d.valor_total) * 100) : 0;
   const zerada = d.saldo <= 0.009;
+  // Pago a MAIS que a dívida: aparece, nunca vira R$ 0,00 disfarçado.
+  const excedente = d.saldo < -0.009 ? -d.saldo : 0;
 
   return (
     <div className="border border-cinza-borda rounded-xl p-3">
@@ -377,7 +379,11 @@ function LinhaDivida({
           <div className="text-xs text-cinza-suave">
             de {formatBRL(d.valor_total)}
             {d.tipo === "parcelada" && d.parcelas_pagas != null && (
-              <> · {d.parcelas_pagas} de {d.parcelas_total} parcelas</>
+              <>
+                {" "}
+                · {Math.min(d.parcelas_pagas, d.parcelas_total ?? 0)} de{" "}
+                {d.parcelas_total} parcelas
+              </>
             )}
           </div>
         </div>
@@ -393,10 +399,18 @@ function LinhaDivida({
         <p className="mt-2 text-sm text-cinza-suave">{d.observacao}</p>
       )}
 
-      {zerada && (
-        <p className="mt-2 text-sm text-verde">
-          Os pagamentos já cobrem tudo — dá pra quitar.
+      {excedente > 0 ? (
+        <p className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-300 rounded-lg p-2">
+          <strong>Pago {formatBRL(excedente)} a mais</strong> do que o valor
+          cadastrado. Se entrou juro ou o acordo mudou, atualize o valor total
+          em <em>Editar</em> — aí a conta volta a fechar.
         </p>
+      ) : (
+        zerada && (
+          <p className="mt-2 text-sm text-verde">
+            Os pagamentos já cobrem tudo — dá pra quitar.
+          </p>
+        )
       )}
 
       <div className="mt-2 flex gap-3 text-sm">

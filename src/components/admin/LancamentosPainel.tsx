@@ -84,6 +84,8 @@ export function LancamentosPainel({
   const [dividaId, setDividaId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Pagamento que passa do que falta na dívida: explica e pede o 2º clique.
+  const [precisaConfirmar, setPrecisaConfirmar] = useState(false);
   const [ok, setOk] = useState<string | null>(null);
   const [apagando, setApagando] = useState<Lancamento | null>(null);
 
@@ -147,11 +149,12 @@ export function LancamentosPainel({
   const nomeConta = new Map(contas.map((c) => [c.id, c.nome]));
   const total = lancamentos.reduce((s, l) => s + l.valor, 0);
 
-  async function salvar(e: React.FormEvent) {
+  async function salvar(e: React.FormEvent, confirmado = false) {
     e.preventDefault();
     if (!valorCentavos) return setErro("Quanto foi?");
     if (comCheque && !chequeId) return setErro("Escolha qual cheque pagou.");
     setErro(null);
+    setPrecisaConfirmar(false);
     setOk(null);
     setSalvando(true);
     try {
@@ -168,13 +171,17 @@ export function LancamentosPainel({
           pessoa_id: pedePessoa(categoria) ? pessoaId : null,
           divida_id: categoria === "dividas_pf" && dividaId ? dividaId : null,
           descricao: descricao.trim() || null,
+          confirmado,
         }),
       });
       const json = await res.json();
       if (!res.ok) {
         setErro(json.error || "Falha ao lançar.");
+        // Antiburro em duas etapas: o primeiro clique explica, o segundo faz.
+        if (json.precisaConfirmar) setPrecisaConfirmar(true);
         return;
       }
+      setDividaId("");
       // Só o valor e a descrição limpam: a próxima linha do extrato quase
       // sempre é do mesmo dia, da mesma conta e parecida.
       setOk(`${labelCategoria(categoria)} · ${formatBRL(centavosParaReais(valorCentavos))} lançado.`);
@@ -457,9 +464,21 @@ export function LancamentosPainel({
           </span>
         </label>
 
-        <button type="submit" disabled={salvando} className="btn-primario">
-          {salvando ? "Lançando…" : "Lançar"}
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button type="submit" disabled={salvando} className="btn-primario">
+            {salvando ? "Lançando…" : "Lançar"}
+          </button>
+          {precisaConfirmar && (
+            <button
+              type="button"
+              disabled={salvando}
+              onClick={(e) => salvar(e, true)}
+              className="px-4 py-2 rounded-xl border-2 border-amber-400 bg-amber-50 text-sm font-medium"
+            >
+              Está certo, lançar assim
+            </button>
+          )}
+        </div>
       </form>
 
       {/* ------------------------------------------------ filtros */}
