@@ -273,29 +273,51 @@ export async function buscarPatrimonio(): Promise<Patrimonio> {
     { data: dividas, error: eDiv },
   ] = await Promise.all([
     supabase.rpc("estoque_atual"),
-    // Óleo nos caminhões: coletas de cargas AINDA ATIVAS (o join limita o
-    // volume — nunca passa de umas centenas de linhas, é 1 carga por
-    // motorista).
-    supabase
-      .from("coletas")
-      .select("litros, cargas!inner(status)")
-      .eq("cargas.status", "ativa"),
+    // TODOS os braços de tabela PAGINADOS (selectTudo): patrimônio é
+    // dinheiro — truncado em 1000 linhas, a linha aparece MENOR em silêncio,
+    // que é o pior tipo de erro (a 1490 do queries.ts já viveu esse bug).
+    //
+    // Óleo nos caminhões: coletas de cargas AINDA ATIVAS (o join segura o
+    // volume na prática — mas carga esquecida aberta engorda o conjunto).
+    selectTudo<{ litros: number }>((de, ate) =>
+      supabase
+        .from("coletas")
+        .select("litros, cargas!inner(status)")
+        .eq("cargas.status", "ativa")
+        .order("id")
+        .range(de, ate)
+    ).then((rows) => ({ data: rows, error: null })),
     // ⚠️ status é 'em_carteira' (com em_) — filtro errado nunca casa e
     // pareceria "não tem cheque nenhum".
-    supabase
-      .from("cheques")
-      .select("valor")
-      .in("status", ["em_carteira", "depositado"]),
+    selectTudo<{ valor: number }>((de, ate) =>
+      supabase
+        .from("cheques")
+        .select("valor")
+        .in("status", ["em_carteira", "depositado"])
+        .order("id")
+        .range(de, ate)
+    ).then((rows) => ({ data: rows, error: null })),
     // Enviado e não aceito: saiu do caixa, não chegou na mão — está "no ar".
-    supabase.from("adiantamentos").select("valor").eq("status", "pendente"),
+    selectTudo<{ valor: number }>((de, ate) =>
+      supabase
+        .from("adiantamentos")
+        .select("valor")
+        .eq("status", "pendente")
+        .order("id")
+        .range(de, ate)
+    ).then((rows) => ({ data: rows, error: null })),
     supabase.rpc("saldo_compradores"),
     // divida_id is null: parcela de dívida cadastrada já conta na linha das
     // dívidas — contar aqui também dobraria a mesma dívida.
-    supabase
-      .from("contas_a_pagar")
-      .select("valor")
-      .eq("status", "a_pagar")
-      .is("divida_id", null),
+    selectTudo<{ valor: number }>((de, ate) =>
+      supabase
+        .from("contas_a_pagar")
+        .select("valor")
+        .eq("status", "a_pagar")
+        .is("divida_id", null)
+        .order("id")
+        .range(de, ate)
+    ).then((rows) => ({ data: rows, error: null })),
     supabase.rpc("saldo_dividas"),
   ]);
   if (eEstoque) throw eEstoque;
@@ -495,25 +517,27 @@ export async function buscarValesPendentes(
   motoristaId?: string
 ): Promise<ValePendente[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("acertos")
-    .select("id, motorista_id, valor_vale, corte_em, observacao")
-    .neq("valor_vale", 0)
-    .is("vale_quitado_em", null)
-    .order("corte_em", { ascending: true });
-  if (motoristaId) q = q.eq("motorista_id", motoristaId);
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return (
-    (data as {
-      id: string;
-      motorista_id: string;
-      valor_vale: number;
-      corte_em: string;
-      observacao: string | null;
-    }[]) || []
-  ).map((a) => ({
+  // PAGINADO (selectTudo): o fluxo quita o vale no salário, mas nada GARANTE
+  // — vale esquecido não pode sumir da lista por volume.
+  const data = await selectTudo<{
+    id: string;
+    motorista_id: string;
+    valor_vale: number;
+    corte_em: string;
+    observacao: string | null;
+  }>((de, ate) => {
+    let q = supabase
+      .from("acertos")
+      .select("id, motorista_id, valor_vale, corte_em, observacao")
+      .neq("valor_vale", 0)
+      .is("vale_quitado_em", null)
+      .order("corte_em", { ascending: true })
+      .order("id")
+      .range(de, ate);
+    if (motoristaId) q = q.eq("motorista_id", motoristaId);
+    return q;
+  });
+  return data.map((a) => ({
     acerto_id: a.id,
     motorista_id: a.motorista_id,
     valor: Number(a.valor_vale),

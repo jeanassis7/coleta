@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+
+/**
+ * Fatia um array de ids em lotes de 200 — milhares de UUIDs numa
+ * querystring só estouram o limite de URL e a chamada falharia inteira.
+ */
+function emLotes<T>(itens: T[], tamanho = 200): T[][] {
+  const lotes: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) {
+    lotes.push(itens.slice(i, i + tamanho));
+  }
+  return lotes;
+}
 
 
 interface RouteParams {
@@ -194,21 +207,27 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   // deleta). COM forcado, apaga tudo na ordem certa das FKs — é o fluxo do
   // perfil de teste (decisão do Evaner: testa-se com perfil normal e
   // apaga-se depois, com carga, dinheiro e tudo).
-  const [
-    { data: cargasDele },
-    { data: coletasDele },
-    { data: despesasDele },
-    { data: abastDele },
-    { count: nAdiant },
-    { count: nAcertos },
-  ] = await Promise.all([
-    adminClient.from("cargas").select("id, foto_painel_path").eq("motorista_id", id),
-    adminClient.from("coletas").select("id, foto_path").eq("motorista_id", id),
-    adminClient.from("despesas").select("id, foto_path").eq("motorista_id", id),
-    adminClient.from("abastecimentos").select("id, foto_path").eq("motorista_id", id),
-    adminClient.from("adiantamentos").select("id", { count: "exact", head: true }).eq("motorista_id", id),
-    adminClient.from("acertos").select("id", { count: "exact", head: true }).eq("motorista_id", id),
-  ]);
+  // PAGINADO (selectTudo): um motorista antigo passa de 1000 coletas — o
+  // corte silencioso deixava foto órfã no Storage e, pior, cargaIds
+  // incompleto fazia o delete de descargas pular linhas e o delete de
+  // cargas quebrar na FK com o motorista já meio apagado.
+  const [cargasDele, coletasDele, despesasDele, abastDele, { count: nAdiant }, { count: nAcertos }] =
+    await Promise.all([
+      selectTudo<{ id: string; foto_painel_path: string | null }>((de, ate) =>
+        adminClient.from("cargas").select("id, foto_painel_path").eq("motorista_id", id).order("id").range(de, ate)
+      ),
+      selectTudo<{ id: string; foto_path: string | null }>((de, ate) =>
+        adminClient.from("coletas").select("id, foto_path").eq("motorista_id", id).order("id").range(de, ate)
+      ),
+      selectTudo<{ id: string; foto_path: string | null }>((de, ate) =>
+        adminClient.from("despesas").select("id, foto_path").eq("motorista_id", id).order("id").range(de, ate)
+      ),
+      selectTudo<{ id: string; foto_path: string | null }>((de, ate) =>
+        adminClient.from("abastecimentos").select("id, foto_path").eq("motorista_id", id).order("id").range(de, ate)
+      ),
+      adminClient.from("adiantamentos").select("id", { count: "exact", head: true }).eq("motorista_id", id),
+      adminClient.from("acertos").select("id", { count: "exact", head: true }).eq("motorista_id", id),
+    ]);
   const cargaIds = (cargasDele ?? []).map((c) => c.id);
   const coletaIds = (coletasDele ?? []).map((c) => c.id);
   const abastIds = (abastDele ?? []).map((a) => a.id);
@@ -234,29 +253,35 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   if (forcado && resumo.length > 0) {
     // Contas a pagar amarradas ao que é dele (nota assinada por trigger,
     // coleta paga pela sede, despesa faturada) ou registradas por ele —
-    // morrem primeiro.
+    // morrem primeiro. Em LOTES de 200 ids (o `.or()` gigante antigo
+    // estourava o limite de URL com histórico grande).
     const despesaIds = (despesasDele ?? []).map((d) => d.id);
-    const orConta = [
-      `registrado_por.eq.${id}`,
-      abastIds.length
-        ? `and(origem_tipo.eq.abastecimento,origem_id.in.(${abastIds.join(",")}))`
-        : null,
-      coletaIds.length
-        ? `and(origem_tipo.eq.coleta,origem_id.in.(${coletaIds.join(",")}))`
-        : null,
-      despesaIds.length
-        ? `and(origem_tipo.eq.despesa,origem_id.in.(${despesaIds.join(",")}))`
-        : null,
-    ].filter(Boolean) as string[];
-    const { error: eContas } = await adminClient
+    const contasPorOrigem: Array<[string, string[]]> = [
+      ["abastecimento", abastIds],
+      ["coleta", coletaIds],
+      ["despesa", despesaIds],
+    ];
+    const { error: eContasDele } = await adminClient
       .from("contas_a_pagar")
       .delete()
-      .or(orConta.join(","));
-    if (eContas) return NextResponse.json({ error: eContas.message }, { status: 400 });
+      .eq("registrado_por", id);
+    if (eContasDele) return NextResponse.json({ error: eContasDele.message }, { status: 400 });
+    for (const [tipo, ids] of contasPorOrigem) {
+      for (const lote of emLotes(ids)) {
+        const { error: eContas } = await adminClient
+          .from("contas_a_pagar")
+          .delete()
+          .eq("origem_tipo", tipo)
+          .in("origem_id", lote);
+        if (eContas) return NextResponse.json({ error: eContas.message }, { status: 400 });
+      }
+    }
 
     // Ordem das FKs: filhos da carga primeiro, a carga depois.
     const passos: Array<() => PromiseLike<{ error: { message: string } | null }>> = [
-      () => adminClient.from("descargas").delete().in("carga_id", cargaIds.length ? cargaIds : ["00000000-0000-0000-0000-000000000000"]),
+      ...emLotes(cargaIds).map(
+        (lote) => () => adminClient.from("descargas").delete().in("carga_id", lote)
+      ),
       () => adminClient.from("coletas").delete().eq("motorista_id", id),
       () => adminClient.from("despesas").delete().eq("motorista_id", id),
       () => adminClient.from("abastecimentos").delete().eq("motorista_id", id),
@@ -280,7 +305,11 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       ...(cargasDele ?? []).map((c) => c.foto_painel_path),
     ].filter((p): p is string => !!p);
     if (paths.length > 0) {
-      await adminClient.storage.from("fotos-coletas").remove(paths);
+      // Em lotes: uma lista de milhares de paths num request só é pedir
+      // pra falhar calado no meio.
+      for (const lote of emLotes(paths)) {
+        await adminClient.storage.from("fotos-coletas").remove(lote);
+      }
     }
   }
   const numColetas = coletaIds.length;

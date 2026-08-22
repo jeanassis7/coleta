@@ -91,20 +91,23 @@ export async function kmAtualPorCaminhao(): Promise<Map<string, number>> {
   return mapa;
 }
 
-/** Manutenções, mais recente primeiro. */
+/** Manutenções, mais recente primeiro. PAGINADO — histórico sem teto. */
 export async function buscarManutencoes(
   opts: { caminhao_id?: string } = {}
 ): Promise<Manutencao[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("manutencoes")
-    .select("*")
-    .order("data", { ascending: false })
-    .order("criado_em", { ascending: false });
-  if (opts.caminhao_id) q = q.eq("caminhao_id", opts.caminhao_id);
-  const { data, error } = await q;
-  if (error) throw error;
-  return ((data as Manutencao[]) || []).map((m) => ({
+  const data = await selectTudo<Manutencao>((de, ate) => {
+    let q = supabase
+      .from("manutencoes")
+      .select("*")
+      .order("data", { ascending: false })
+      .order("criado_em", { ascending: false })
+      .order("id")
+      .range(de, ate);
+    if (opts.caminhao_id) q = q.eq("caminhao_id", opts.caminhao_id);
+    return q;
+  });
+  return data.map((m) => ({
     ...m,
     valor: Number(m.valor),
   }));
@@ -118,15 +121,18 @@ export async function buscarDocumentos(
   opts: { caminhao_id?: string; motorista_id?: string } = {}
 ): Promise<Documento[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("documentos")
-    .select("*")
-    .order("vencimento", { ascending: true });
-  if (opts.caminhao_id) q = q.eq("caminhao_id", opts.caminhao_id);
-  if (opts.motorista_id) q = q.eq("motorista_id", opts.motorista_id);
-  const { data, error } = await q;
-  if (error) throw error;
-  return ((data as Documento[]) || []).map((d) => ({
+  const data = await selectTudo<Documento>((de, ate) => {
+    let q = supabase
+      .from("documentos")
+      .select("*")
+      .order("vencimento", { ascending: true })
+      .order("id")
+      .range(de, ate);
+    if (opts.caminhao_id) q = q.eq("caminhao_id", opts.caminhao_id);
+    if (opts.motorista_id) q = q.eq("motorista_id", opts.motorista_id);
+    return q;
+  });
+  return data.map((d) => ({
     ...d,
     valor: d.valor == null ? null : Number(d.valor),
   }));
@@ -142,17 +148,24 @@ export async function trocasDeOleoVencidas(): Promise<
   { caminhao_id: string; proxima_km: number; km_atual: number; passou: number }[]
 > {
   const supabase = await getSupabaseServer();
-  const [{ data }, kmAtual] = await Promise.all([
-    supabase
-      .from("manutencoes")
-      .select("caminhao_id, proxima_km")
-      .eq("tipo", "troca_oleo")
-      .not("proxima_km", "is", null),
+  // PAGINADO (selectTudo): uma linha por troca já feita, cresce pra sempre.
+  // Sem paginar (e sem .order()!), o corte de 1000 devolvia linhas em ordem
+  // arbitrária — a troca mais recente podia não vir e o alerta errava.
+  const [data, kmAtual] = await Promise.all([
+    selectTudo<{ caminhao_id: string; proxima_km: number }>((de, ate) =>
+      supabase
+        .from("manutencoes")
+        .select("caminhao_id, proxima_km")
+        .eq("tipo", "troca_oleo")
+        .not("proxima_km", "is", null)
+        .order("id")
+        .range(de, ate)
+    ),
     kmAtualPorCaminhao(),
   ]);
 
   const alvo = new Map<string, number>();
-  for (const m of (data as { caminhao_id: string; proxima_km: number }[]) ?? []) {
+  for (const m of data) {
     if ((alvo.get(m.caminhao_id) ?? 0) < m.proxima_km) {
       alvo.set(m.caminhao_id, m.proxima_km);
     }
@@ -202,54 +215,70 @@ export async function resumoCaminhao(
   const deData = de.slice(0, 10);
   const ateData = ate.slice(0, 10);
 
-  const [{ data: cargas }, { data: abast }, { data: manut }, { data: desp }] =
-    await Promise.all([
+  // PAGINADO (selectTudo): o intervalo da ficha é escolhido livre — truncado,
+  // km/L e gastos do caminhão sairiam menores em silêncio.
+  const [cargas, abast, manut, desp] = await Promise.all([
+    selectTudo<{ km_inicial: number; km_final: number }>((d, a) =>
       supabase
         .from("cargas")
         .select("km_inicial, km_final")
         .eq("caminhao_id", caminhaoId)
         .not("km_final", "is", null)
         .gte("iniciada_em", de)
-        .lte("iniciada_em", ate),
+        .lte("iniciada_em", ate)
+        .order("id")
+        .range(d, a)
+    ),
+    selectTudo<{ litros: number; valor: number; tipo?: string | null }>((d, a) =>
       supabase
         .from("abastecimentos")
         .select("litros, valor, tipo")
         .eq("caminhao_id", caminhaoId)
         .gte("criado_em", de)
-        .lte("criado_em", ate),
+        .lte("criado_em", ate)
+        .order("id")
+        .range(d, a)
+    ),
+    selectTudo<{ valor: number }>((d, a) =>
       supabase
         .from("manutencoes")
         .select("valor")
         .eq("caminhao_id", caminhaoId)
         .gte("data", deData)
-        .lte("data", ateData),
+        .lte("data", ateData)
+        .order("id")
+        .range(d, a)
+    ),
+    selectTudo<{ valor: number }>((d, a) =>
       supabase
         .from("despesas")
         .select("valor")
         .eq("caminhao_id", caminhaoId)
         .gte("criado_em", de)
-        .lte("criado_em", ate),
-    ]);
+        .lte("criado_em", ate)
+        .order("id")
+        .range(d, a)
+    ),
+  ]);
 
-  const km_rodado = ((cargas as { km_inicial: number; km_final: number }[]) ?? [])
+  const km_rodado = cargas
     .reduce((s, c) => s + Math.max(0, c.km_final - c.km_inicial), 0);
 
   // ARLA fica FORA dos litros do consumo (não é combustível — entraria no
   // denominador e derrubaria o km/L sem ninguém entender). O GASTO conta:
   // saiu do posto do mesmo jeito.
-  type AbastRow = { litros: number; valor: number; tipo?: string | null };
-  const litros_combustivel = ((abast as AbastRow[]) ?? [])
+  const litros_combustivel = abast
     .filter((a) => (a.tipo ?? "diesel") !== "arla")
     .reduce((s, a) => s + Number(a.litros || 0), 0);
-  const gasto_combustivel = ((abast as AbastRow[]) ?? []).reduce(
+  const gasto_combustivel = abast.reduce(
     (s, a) => s + Number(a.valor || 0),
     0
   );
-  const gasto_manutencao = ((manut as { valor: number }[]) ?? []).reduce(
+  const gasto_manutencao = manut.reduce(
     (s, m) => s + Number(m.valor || 0),
     0
   );
-  const gasto_despesas = ((desp as { valor: number }[]) ?? []).reduce(
+  const gasto_despesas = desp.reduce(
     (s, d) => s + Number(d.valor || 0),
     0
   );

@@ -385,9 +385,16 @@ async function main() {
   );
 
   // ---- 15. acerto com corte: saldo pós-acerto = valor_saldo carry ----
+  // corte_em EXPLÍCITO com o relógio LOCAL — o mesmo que carimbou aceito_em
+  // e criado_em dos lançamentos acima. Deixar o default now() do banco
+  // misturava dois relógios: com o do Windows ~meio segundo adiantado, os
+  // lançamentos "recém-criados" caíam DEPOIS do corte e o saldo dava
+  // 75+5000-90=4985 em vez de -15 (a armadilha "relógio local ≠ relógio do
+  // banco" do CLAUDE.md, falhando sozinha conforme o skew do dia).
   const { data: acerto, error: e15 } = await svc.from("acertos").insert({
     motorista_id: teste1.id, valor_devolvido: 3000, valor_vale: 800,
     valor_saldo: 75, registrado_por: dev.id,
+    corte_em: new Date().toISOString(),
   }).select("id, corte_em").maybeSingle();
   check("acerto criado com corte_em timestamptz", !e15 && !!acerto?.corte_em, e15?.message);
   criados.acertoId = acerto?.id;

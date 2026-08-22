@@ -266,24 +266,29 @@ export async function buscarCargas(
   opts: { status?: "ativa" | "encerrada" | "cancelada"; motorista_id?: string } = {}
 ): Promise<CargaDetalhada[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("cargas")
-    .select(
-      `id, motorista_id, caminhao_id, km_inicial, km_final, status,
-       iniciada_em, encerrada_em,
-       profiles!cargas_motorista_id_fkey!inner(nome),
-       caminhoes(placa, marca, cor, capacidade_l, tara_kg),
-       coletas(id, litros, valor_pago),
-       despesas(id, valor),
-       abastecimentos(id, valor, litros),
-       descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
-    )
-    .order("iniciada_em", { ascending: false });
-  if (opts.status) q = q.eq("status", opts.status);
-  if (opts.motorista_id) q = q.eq("motorista_id", opts.motorista_id);
-
-  const { data, error } = await q;
-  if (error) throw error;
+  // PAGINADO (selectTudo): a tabela cresce pra sempre e o Supabase corta em
+  // 1000 linhas sem erro — a tela de Cargas e o export CSV iam perdendo o
+  // histórico antigo em silêncio.
+  const data = await selectTudo<Row>((de, ate) => {
+    let q = supabase
+      .from("cargas")
+      .select(
+        `id, motorista_id, caminhao_id, km_inicial, km_final, status,
+         iniciada_em, encerrada_em,
+         profiles!cargas_motorista_id_fkey!inner(nome),
+         caminhoes(placa, marca, cor, capacidade_l, tara_kg),
+         coletas(id, litros, valor_pago),
+         despesas(id, valor),
+         abastecimentos(id, valor, litros),
+         descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
+      )
+      .order("iniciada_em", { ascending: false })
+      .order("id")
+      .range(de, ate);
+    if (opts.status) q = q.eq("status", opts.status);
+    if (opts.motorista_id) q = q.eq("motorista_id", opts.motorista_id);
+    return q;
+  });
 
   type Row = {
     id: string;
@@ -312,7 +317,7 @@ export async function buscarCargas(
       | null;
   };
 
-  const rows = (data as unknown as Row[]) || [];
+  const rows = data;
   return rows.map((r): CargaDetalhada => {
     const coletas = r.coletas || [];
     const despesas = r.despesas || [];
@@ -403,28 +408,33 @@ export async function buscarAbastecimentos(
   // SEM `!inner`: o lançamento avulso do painel tem motorista e carga NULOS
   // e o inner join descartava a linha — o botão "+ Lançar pelo painel"
   // criava algo que nunca aparecia na própria tela (nem podia ser editado).
-  let q = supabase
-    .from("abastecimentos")
-    .select(
-      `id, carga_id, caminhao_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora, tipo,
-       profiles!abastecimentos_motorista_id_fkey(nome),
-       cargas(caminhao_id, caminhoes(placa)),
-       caminhao_direto:caminhoes!abastecimentos_caminhao_id_fkey(placa)`
-    )
-    .order("criado_em", { ascending: false })
-    .limit(1000);
-  if (opts.motorista && opts.motorista !== "todos") {
-    q = q.eq("motorista_id", opts.motorista);
-  }
+  //
+  // PAGINADO (selectTudo): o período "tudo"/customizado não tem teto, e o
+  // limit(1000) antigo coincidia com o corte silencioso do Supabase —
+  // truncamento e limite ficavam indistinguíveis.
   const intervalo = resolveIntervaloOperacao(opts);
-  if (intervalo) {
-    q = q
-      .gte("criado_em", intervalo.inicio.toISOString())
-      .lte("criado_em", intervalo.fim.toISOString());
-  }
-
-  const { data, error } = await q;
-  if (error) throw error;
+  const data = await selectTudo<Row>((de, ate) => {
+    let q = supabase
+      .from("abastecimentos")
+      .select(
+        `id, carga_id, caminhao_id, posto_nome, litros, valor, km_atual, foto_path, criado_em, pago_na_hora, tipo,
+         profiles!abastecimentos_motorista_id_fkey(nome),
+         cargas(caminhao_id, caminhoes(placa)),
+         caminhao_direto:caminhoes!abastecimentos_caminhao_id_fkey(placa)`
+      )
+      .order("criado_em", { ascending: false })
+      .order("id")
+      .range(de, ate);
+    if (opts.motorista && opts.motorista !== "todos") {
+      q = q.eq("motorista_id", opts.motorista);
+    }
+    if (intervalo) {
+      q = q
+        .gte("criado_em", intervalo.inicio.toISOString())
+        .lte("criado_em", intervalo.fim.toISOString());
+    }
+    return q;
+  });
 
   type Row = {
     id: string;
@@ -442,7 +452,7 @@ export async function buscarAbastecimentos(
     cargas: { caminhao_id: string | null; caminhoes: { placa: string } | null } | null;
     caminhao_direto: { placa: string } | null;
   };
-  const rows = (data as unknown as Row[]) || [];
+  const rows = data;
   return rows
     .filter(
       // O filtro de caminhão vale pros dois mundos: carga do motorista OU
@@ -490,28 +500,30 @@ export async function buscarDespesas(
   const supabase = await getSupabaseServer();
   // SEM `!inner` — mesmo motivo do abastecimento: o avulso do painel tem
   // motorista e carga nulos e sumia da própria tela.
-  let q = supabase
-    .from("despesas")
-    .select(
-      `id, carga_id, caminhao_id, valor, descricao, foto_path, criado_em, pago_na_hora,
-       profiles!despesas_motorista_id_fkey(nome),
-       cargas(caminhao_id, caminhoes(placa)),
-       caminhao_direto:caminhoes!despesas_caminhao_id_fkey(placa)`
-    )
-    .order("criado_em", { ascending: false })
-    .limit(1000);
-  if (opts.motorista && opts.motorista !== "todos") {
-    q = q.eq("motorista_id", opts.motorista);
-  }
+  // PAGINADO (selectTudo) — mesmo motivo do abastecimento.
   const intervalo = resolveIntervaloOperacao(opts);
-  if (intervalo) {
-    q = q
-      .gte("criado_em", intervalo.inicio.toISOString())
-      .lte("criado_em", intervalo.fim.toISOString());
-  }
-
-  const { data, error } = await q;
-  if (error) throw error;
+  const data = await selectTudo<Row>((de, ate) => {
+    let q = supabase
+      .from("despesas")
+      .select(
+        `id, carga_id, caminhao_id, valor, descricao, foto_path, criado_em, pago_na_hora,
+         profiles!despesas_motorista_id_fkey(nome),
+         cargas(caminhao_id, caminhoes(placa)),
+         caminhao_direto:caminhoes!despesas_caminhao_id_fkey(placa)`
+      )
+      .order("criado_em", { ascending: false })
+      .order("id")
+      .range(de, ate);
+    if (opts.motorista && opts.motorista !== "todos") {
+      q = q.eq("motorista_id", opts.motorista);
+    }
+    if (intervalo) {
+      q = q
+        .gte("criado_em", intervalo.inicio.toISOString())
+        .lte("criado_em", intervalo.fim.toISOString());
+    }
+    return q;
+  });
 
   type Row = {
     id: string;
@@ -526,7 +538,7 @@ export async function buscarDespesas(
     cargas: { caminhao_id: string | null; caminhoes: { placa: string } | null } | null;
     caminhao_direto: { placa: string } | null;
   };
-  const rows = (data as unknown as Row[]) || [];
+  const rows = data;
   return rows
     .filter(
       (r) =>
@@ -580,24 +592,26 @@ export async function buscarComprasDiretas(
   opts: { periodo?: string; inicio?: string; fim?: string } = {}
 ): Promise<CompraDireta[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("compras_diretas")
-    .select("*")
-    .order("data", { ascending: false })
-    .order("criado_em", { ascending: false })
-    .limit(1000);
-
+  // PAGINADO (selectTudo) — período "tudo" não tem teto; o limit(1000)
+  // antigo coincidia com o corte silencioso do Supabase.
   const intervalo = resolveIntervaloOperacao(opts);
-  if (intervalo) {
-    // coluna `data` é DATE — compara em aaaa-mm-dd DO DIA BRASILEIRO.
-    // toISOString() puro pega o dia UTC: um fim de período às 23:59 BR já é
-    // o dia seguinte em UTC, e o filtro engolia +1 dia de compras.
-    q = q.gte("data", diaBrIso(intervalo.inicio)).lte("data", diaBrIso(intervalo.fim));
-  }
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return ((data as CompraDireta[]) || []).map((c) => ({
+  const data = await selectTudo<CompraDireta>((de, ate) => {
+    let q = supabase
+      .from("compras_diretas")
+      .select("*")
+      .order("data", { ascending: false })
+      .order("criado_em", { ascending: false })
+      .order("id")
+      .range(de, ate);
+    if (intervalo) {
+      // coluna `data` é DATE — compara em aaaa-mm-dd DO DIA BRASILEIRO.
+      // toISOString() puro pega o dia UTC: um fim de período às 23:59 BR já é
+      // o dia seguinte em UTC, e o filtro engolia +1 dia de compras.
+      q = q.gte("data", diaBrIso(intervalo.inicio)).lte("data", diaBrIso(intervalo.fim));
+    }
+    return q;
+  });
+  return data.map((c) => ({
     ...c,
     valor: Number(c.valor),
     quantidade: Number(c.quantidade),
@@ -615,13 +629,19 @@ export async function resumoComprasDiretas(
   fim: Date
 ): Promise<{ valor: number; kg: number }> {
   const supabase = await getSupabaseServer();
-  const { data } = await supabase
-    .from("compras_diretas")
-    .select("valor, peso_kg")
-    .gte("data", diaBrIso(inicio))
-    .lte("data", diaBrIso(fim));
-  const valor = (data || []).reduce((s, c) => s + Number(c.valor), 0);
-  const kg = (data || []).reduce((s, c) => s + Number(c.peso_kg), 0);
+  // PAGINADO (selectTudo): o período do dashboard pode ser customizado sem
+  // teto — truncado, o custo do óleo cairia calado nos KPIs.
+  const data = await selectTudo<{ valor: number; peso_kg: number }>((de, ate) =>
+    supabase
+      .from("compras_diretas")
+      .select("valor, peso_kg")
+      .gte("data", diaBrIso(inicio))
+      .lte("data", diaBrIso(fim))
+      .order("id")
+      .range(de, ate)
+  );
+  const valor = data.reduce((s, c) => s + Number(c.valor), 0);
+  const kg = data.reduce((s, c) => s + Number(c.peso_kg), 0);
   return { valor: Math.round(valor * 100) / 100, kg: Math.round(kg * 100) / 100 };
 }
 
@@ -800,11 +820,17 @@ export async function buscarMotoristasComSaldo(): Promise<MotoristaComSaldo[]> {
       qM,
       // A conta inteira feita dentro do Postgres (migration 0013)
       supabase.rpc("saldos_motoristas"),
-      // Todos os adiantamentos de uma vez; o "último de cada" sai em memória
-      supabase
-        .from("adiantamentos")
-        .select("*")
-        .order("criado_em", { ascending: false }),
+      // Todos os adiantamentos de uma vez; o "último de cada" sai em memória.
+      // PAGINADO (selectTudo): truncado em 1000, um motorista parado há
+      // tempo perdia o "último" e o contador de pulos zerava em silêncio.
+      selectTudo<Adiantamento>((de, ate) =>
+        supabase
+          .from("adiantamentos")
+          .select("*")
+          .order("criado_em", { ascending: false })
+          .order("id")
+          .range(de, ate)
+      ).then((rows) => ({ data: rows, error: null })),
     ]);
   if (errM) throw errM;
 
@@ -848,29 +874,38 @@ export interface DevolucaoMotorista {
 
 export async function buscarHistoricoAdiantamentos(motoristaId: string) {
   const supabase = await getSupabaseServer();
-  const [{ data: adiantamentos }, { data: acertos }, { data: devolucoes }] =
-    await Promise.all([
+  // PAGINADO (selectTudo): é o histórico INTEIRO do motorista — cresce pra
+  // sempre e a tela promete tudo.
+  const [adiantamentos, acertos, devolucoes] = await Promise.all([
+    selectTudo<Adiantamento>((de, ate) =>
       supabase
         .from("adiantamentos")
         .select("*")
         .eq("motorista_id", motoristaId)
-        .order("criado_em", { ascending: false }),
+        .order("criado_em", { ascending: false })
+        .order("id")
+        .range(de, ate)
+    ),
+    selectTudo<Acerto>((de, ate) =>
       supabase
         .from("acertos")
         .select("*")
         .eq("motorista_id", motoristaId)
-        .order("criado_em", { ascending: false }),
+        .order("criado_em", { ascending: false })
+        .order("id")
+        .range(de, ate)
+    ),
+    selectTudo<DevolucaoMotorista>((de, ate) =>
       supabase
         .from("devolucoes_motorista")
         .select("*")
         .eq("motorista_id", motoristaId)
-        .order("criado_em", { ascending: false }),
-    ]);
-  return {
-    adiantamentos: (adiantamentos as Adiantamento[]) || [],
-    acertos: (acertos as Acerto[]) || [],
-    devolucoes: (devolucoes as DevolucaoMotorista[]) || [],
-  };
+        .order("criado_em", { ascending: false })
+        .order("id")
+        .range(de, ate)
+    ),
+  ]);
+  return { adiantamentos, acertos, devolucoes };
 }
 
 /**
@@ -1627,14 +1662,12 @@ export async function buscarAtoresDoLog(): Promise<
   Array<{ id: string; nome: string }>
 > {
   const supabase = await getSupabaseServer();
-  const { data } = await supabase
-    .from("log_admin")
-    .select("ator_id, ator_nome")
-    .not("ator_id", "is", null)
-    .limit(2000);
-  const mapa = new Map<string, string>();
-  for (const r of (data as Array<{ ator_id: string; ator_nome: string }>) || []) {
-    mapa.set(r.ator_id, r.ator_nome);
-  }
-  return [...mapa].map(([id, nome]) => ({ id, nome }));
+  // DISTINCT dentro do Postgres (RPC da 0055). O select cru com limit(2000)
+  // era mentira dupla: o Supabase corta em 1000 de qualquer jeito e, sem
+  // .order(), as 1000 que vinham eram arbitrárias — um admin antigo sumia
+  // do dropdown. log_admin é a tabela que mais cresce; paginar ela inteira
+  // pra montar meia dúzia de nomes seria pagar caro pelo mesmo resultado.
+  const { data, error } = await supabase.rpc("atores_do_log");
+  if (error) throw error;
+  return (data as Array<{ id: string; nome: string }>) || [];
 }

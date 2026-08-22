@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import { formatBRL, formatDataHora } from "@/lib/format";
 
 interface Dados {
@@ -48,24 +49,40 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
           // As linhas de detalhe seguem a mesma regra do saldo: só o que
           // saiu DA MÃO DELE (coleta paga pela sede e nota assinada ficam
           // fora — o dinheiro não era dele).
-          supabase
-            .from("coletas")
-            .select("valor_pago")
-            .eq("motorista_id", motoristaId)
-            .eq("pago_pela_sede", false)
-            .gt("criado_em", corte),
-          supabase
-            .from("despesas")
-            .select("valor")
-            .eq("motorista_id", motoristaId)
-            .eq("pago_na_hora", true)
-            .gt("criado_em", corte),
-          supabase
-            .from("abastecimentos")
-            .select("valor")
-            .eq("motorista_id", motoristaId)
-            .eq("pago_na_hora", true)
-            .gt("criado_em", corte),
+          //
+          // PAGINADAS (selectTudo): motorista que nunca teve acerto lê o
+          // histórico INTEIRO — truncado em 1000, o detalhe não fecharia
+          // com o número grande da RPC, na tela dele.
+          selectTudo<{ valor_pago: number }>((de, ate) =>
+            supabase
+              .from("coletas")
+              .select("valor_pago")
+              .eq("motorista_id", motoristaId)
+              .eq("pago_pela_sede", false)
+              .gt("criado_em", corte)
+              .order("id")
+              .range(de, ate)
+          ).then((rows) => ({ data: rows, error: null })),
+          selectTudo<{ valor: number }>((de, ate) =>
+            supabase
+              .from("despesas")
+              .select("valor")
+              .eq("motorista_id", motoristaId)
+              .eq("pago_na_hora", true)
+              .gt("criado_em", corte)
+              .order("id")
+              .range(de, ate)
+          ).then((rows) => ({ data: rows, error: null })),
+          selectTudo<{ valor: number }>((de, ate) =>
+            supabase
+              .from("abastecimentos")
+              .select("valor")
+              .eq("motorista_id", motoristaId)
+              .eq("pago_na_hora", true)
+              .gt("criado_em", corte)
+              .order("id")
+              .range(de, ate)
+          ).then((rows) => ({ data: rows, error: null })),
           supabase
             .from("adiantamentos")
             .select("valor, data_envio, forma_pagamento")

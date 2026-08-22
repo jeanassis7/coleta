@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import { kmAtualPorCaminhao } from "@/lib/admin/frota";
 import { labelDocumento, situacaoDocumento } from "@/lib/documentos";
 import type { Alerta } from "@/lib/admin/alertas";
@@ -30,12 +31,28 @@ export async function alertasFrota(): Promise<Alerta[]> {
   // Documento vencido ou vencendo — caminhão e motorista
   // -------------------------------------------------------------------
   try {
-    const [{ data: docs }, { data: caminhoes }, { data: perfis }] =
-      await Promise.all([
-        supabase.from("documentos").select("*").order("vencimento"),
-        supabase.from("caminhoes").select("id, placa"),
-        supabase.from("profiles").select("id, nome"),
-      ]);
+    // documentos PAGINADO (selectTudo): a tabela cresce pra sempre e o
+    // alerta de vencimento não pode depender de quais 1000 linhas vieram.
+    const [docs, { data: caminhoes }, { data: perfis }] = await Promise.all([
+      selectTudo<{
+        id: string;
+        caminhao_id: string | null;
+        motorista_id: string | null;
+        tipo: string;
+        descricao: string | null;
+        vencimento: string;
+        alerta_dias: number;
+      }>((de, ate) =>
+        supabase
+          .from("documentos")
+          .select("*")
+          .order("vencimento")
+          .order("id")
+          .range(de, ate)
+      ),
+      supabase.from("caminhoes").select("id, placa"),
+      supabase.from("profiles").select("id, nome"),
+    ]);
 
     const placa = new Map(
       ((caminhoes as { id: string; placa: string }[]) ?? []).map((c) => [
@@ -50,15 +67,7 @@ export async function alertasFrota(): Promise<Alerta[]> {
       ])
     );
 
-    for (const d of (docs as {
-      id: string;
-      caminhao_id: string | null;
-      motorista_id: string | null;
-      tipo: string;
-      descricao: string | null;
-      vencimento: string;
-      alerta_dias: number;
-    }[]) ?? []) {
+    for (const d of docs) {
       const { situacao, dias } = situacaoDocumento(
         d.vencimento,
         d.alerta_dias
@@ -112,13 +121,23 @@ export async function alertasFrota(): Promise<Alerta[]> {
   // vencer PRIMEIRO manda.
   // -------------------------------------------------------------------
   try {
-    const [{ data: trocas }, { data: caminhoes }, kmAtual] = await Promise.all([
-      supabase
-        .from("manutencoes")
-        .select("caminhao_id, proxima_km, proxima_data, criado_em")
-        .eq("tipo", "troca_oleo")
-        .or("proxima_km.not.is.null,proxima_data.not.is.null")
-        .order("criado_em", { ascending: false }),
+    // trocas PAGINADO (selectTudo): uma linha por troca já feita, cresce pra
+    // sempre — truncado, a mais recente de um caminhão podia ficar de fora.
+    const [trocas, { data: caminhoes }, kmAtual] = await Promise.all([
+      selectTudo<{
+        caminhao_id: string;
+        proxima_km: number | null;
+        proxima_data: string | null;
+      }>((de, ate) =>
+        supabase
+          .from("manutencoes")
+          .select("caminhao_id, proxima_km, proxima_data, criado_em")
+          .eq("tipo", "troca_oleo")
+          .or("proxima_km.not.is.null,proxima_data.not.is.null")
+          .order("criado_em", { ascending: false })
+          .order("id")
+          .range(de, ate)
+      ),
       supabase.from("caminhoes").select("id, placa, ativo"),
       kmAtualPorCaminhao(),
     ]);
@@ -126,11 +145,7 @@ export async function alertasFrota(): Promise<Alerta[]> {
     // A troca que vale é a MAIS RECENTE lançada de cada caminhão — é ela
     // que carrega o alvo atual (km e/ou data).
     const alvo = new Map<string, { km: number | null; data: string | null }>();
-    for (const t of (trocas as {
-      caminhao_id: string;
-      proxima_km: number | null;
-      proxima_data: string | null;
-    }[]) ?? []) {
+    for (const t of trocas) {
       if (!alvo.has(t.caminhao_id)) {
         alvo.set(t.caminhao_id, { km: t.proxima_km, data: t.proxima_data });
       }
@@ -185,23 +200,29 @@ export async function alertasFrota(): Promise<Alerta[]> {
   // ⚠️ O status é 'em_carteira', não 'carteira'. Errar aqui não dá erro
   // nenhum: só faz o alerta nunca acender.
   try {
-    const { data: cheques } = await supabase
-      .from("cheques")
-      .select("id, banco, emitente, valor, bom_para")
-      .eq("status", "em_carteira");
+    // PAGINADO (selectTudo): a carteira costuma se esvaziar sozinha, mas um
+    // maço grande de cheques longos passa de 1000 e o alerta apagava.
+    const cheques = await selectTudo<{
+      id: string;
+      banco: string | null;
+      emitente: string | null;
+      valor: number;
+      bom_para: string;
+    }>((de, ate) =>
+      supabase
+        .from("cheques")
+        .select("id, banco, emitente, valor, bom_para")
+        .eq("status", "em_carteira")
+        .order("id")
+        .range(de, ate)
+    );
 
     const hoje = new Date();
     const hojeIso = new Date(
       Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())
     );
 
-    for (const ch of (cheques as {
-      id: string;
-      banco: string | null;
-      emitente: string | null;
-      valor: number;
-      bom_para: string;
-    }[]) ?? []) {
+    for (const ch of cheques) {
       const dias = Math.round(
         (new Date(`${ch.bom_para.slice(0, 10)}T00:00:00Z`).getTime() -
           hojeIso.getTime()) /

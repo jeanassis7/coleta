@@ -1,9 +1,47 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 21/08/2026 (rodada de edição pós-varredura do dinheiro).
+> Atualizado em 22/08/2026 (varredura do teto de 1.000 linhas + backup mensal).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
 > `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
 > fechado de dinheiro, mapeados em 20/08).
+
+---
+
+## VARREDURA DO TETO DE 1.000 LINHAS + BACKUP MENSAL — 22/08/2026 📄
+
+Pergunta do Evaner ("o banco vai encher e bugar?") virou auditoria. Resposta
+medida: banco em **18 MB de 500 MB** (anos de folga); o perigo real era o
+**corte silencioso de 1.000 linhas do Supabase** — e `contas_a_pagar` já
+tinha 1.038 (backfill). Varredura achou **10 consultas furadas + 16
+suspeitas**; fechadas as 10 e todas as suspeitas que tocam dinheiro/alerta.
+
+- **Fechadas com `selectTudo`**: buscarCargas (tela+CSV), adiantamentos do
+  saldo, histórico do motorista, abastecimentos/despesas/compras (o
+  `limit(1000)` coincidia com o corte), patrimônio (4 braços), vales
+  pendentes, receita do DRE (as 3 únicas não paginadas), comissão,
+  alertas (descargas 90d, "quem lançou" 15d, fora-da-curva 30d, documentos,
+  troca de óleo, cheques), CardSaldo do motorista, ficha do caminhão.
+- **DELETE de motorista**: levantamento paginado + deletes **em lotes de
+  200 ids** (o `.or()` gigante estourava URL com histórico grande).
+- **`selectTudo` afrouxou a assinatura** (`data: unknown`): o postgrest-js
+  infere tipo de embed errado e rejeitava consulta com join.
+- **0055**: RPC `atores_do_log()` (DISTINCT no banco — o `limit(2000)` do
+  dropdown já truncava em 1000 sem ordem).
+- **0056 + `/api/cron/backup` + `vercel.json`**: **backup mensal em CSV**.
+  Todo dia 1º às 6h UTC o cron da Vercel despeja TODAS as tabelas (lista vem
+  do catálogo — tabela nova entra sozinha) no bucket privado `backups`,
+  pasta `aaaa-mm`, com `_manifesto.json` de contagens. Idempotente; admin
+  logado também pode disparar na mão (GET na rota). Motivo: free tier só
+  guarda backup de 7 dias — bug notado tarde não teria volta.
+- **E2E**: 2 falhas eram a armadilha "relógio local ≠ relógio do banco"
+  (corte_em do banco vs aceito_em local ~450 ms adiantado) — o script agora
+  carimba `corte_em` com o mesmo relógio. **56/56 verdes.**
+- **Deixadas SEM paginar de propósito** (teto por regra de negócio):
+  cargas ativas com embeds (1 por motorista, índice único) e `buscarLog`/
+  listas com limit deliberado (500 recentes é o recorte da tela).
+- **Pendente decidir**: script "conferidor" (auditoria que refaz o dinheiro
+  fechado de ponta a ponta e grita se não bater) — explicado pro Evaner,
+  aguardando OK.
 
 ---
 

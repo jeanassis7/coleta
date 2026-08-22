@@ -142,18 +142,31 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     // ABATIMENTO também fica de fora: baixa a dívida do comprador sem
     // dinheiro entrar (perdão/desconto combinado, 0047) — receita que
     // nunca virou caixa não é receita sob regime de caixa.
-    supabase
-      .from("recebimentos")
-      .select("valor, forma")
-      .not("forma", "in", '("cheque","abatimento")')
-      .gte("data", inicio)
-      .lte("data", fim),
-    supabase
-      .from("cheques")
-      .select("valor")
-      .eq("status", "compensado")
-      .gte("compensado_em", inicio)
-      .lte("compensado_em", fim),
+    //
+    // PAGINADAS (22/08/2026): eram as três ÚNICAS consultas do calcularDre
+    // sem selectTudo — num período customizado longo, a RECEITA caía calada
+    // enquanto as despesas vinham inteiras. Resultado subestimado é o mesmo
+    // bug que a paginação de 21/08 matou do outro lado.
+    selectTudo<{ valor: number; forma: string }>((d, a) =>
+      supabase
+        .from("recebimentos")
+        .select("valor, forma")
+        .not("forma", "in", '("cheque","abatimento")')
+        .gte("data", inicio)
+        .lte("data", fim)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
+    selectTudo<{ valor: number }>((d, a) =>
+      supabase
+        .from("cheques")
+        .select("valor")
+        .eq("status", "compensado")
+        .gte("compensado_em", inicio)
+        .lte("compensado_em", fim)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
     // Cheque REPASSADO também é receita — no dia do repasse. É o espelho da
     // regra do gasto (Parte XIII): a conta paga com o cheque conta no dia do
     // repasse; se a despesa conta, a receita que a pagou conta junto, senão
@@ -161,12 +174,16 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     // Evaner em 20/08/2026: "usou o cheque pra pagar fornecedor = entrada do
     // cheque e saída pro fornecedor". Se o cheque voltar, o status vira
     // 'devolvido' e ele sai daqui sozinho — igual à conta, que volta a dever.
-    supabase
-      .from("cheques")
-      .select("valor")
-      .eq("status", "repassado")
-      .gte("repassado_em", inicio)
-      .lte("repassado_em", fim),
+    selectTudo<{ valor: number }>((d, a) =>
+      supabase
+        .from("cheques")
+        .select("valor")
+        .eq("status", "repassado")
+        .gte("repassado_em", inicio)
+        .lte("repassado_em", fim)
+        .order("id")
+        .range(d, a)
+    ).then((rows) => ({ data: rows, error: null })),
     // ⚠️ TODAS PAGINADAS (21/08/2026): o Supabase trunca em 1.000 linhas SEM
     // ERRO. Três motoristas a ~12 coletas/dia passam de 1.000 coletas num
     // mês — a partir daí o custo do óleo caía calado, que é o pior tipo de

@@ -18,10 +18,14 @@
  *   );
  */
 export async function selectTudo<T>(
+  // `data: unknown` de propósito: o postgrest-js infere o tipo do embed
+  // ERRADO (promete array onde o runtime entrega objeto) e a assinatura
+  // estrita rejeitava toda consulta com join. O chamador declara T e o
+  // cast acontece aqui dentro, num lugar só.
   montarPagina: (
     de: number,
     ate: number
-  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
   tamanhoPagina = 1000
 ): Promise<T[]> {
   const tudo: T[] = [];
@@ -32,7 +36,7 @@ export async function selectTudo<T>(
     const de = pagina * tamanhoPagina;
     const { data, error } = await montarPagina(de, de + tamanhoPagina - 1);
     if (error) throw new Error(error.message);
-    const lote = data ?? [];
+    const lote = (data as T[] | null) ?? [];
     tudo.push(...lote);
     if (lote.length < tamanhoPagina) return tudo;
   }

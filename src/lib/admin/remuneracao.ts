@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { selectTudo } from "@/lib/supabase/select-tudo";
 import type {
   TipoRemuneracao,
   Vigencia,
@@ -103,10 +104,12 @@ export async function calcularComissao(
   const de = new Date(`${inicio}T00:00:00.000-03:00`).toISOString();
   const ate = new Date(`${fim}T23:59:59.999-03:00`).toISOString();
 
-  const [{ data: descargas, error: eDesc }, { data: perfis }, vigencias] =
-    await Promise.all([
-      // descargas não tem motorista_id — o dono vem da carga. Só carga
-      // ENCERRADA: a descarga é o que encerra, e cancelada nunca pesa.
+  const [descargas, { data: perfis }, vigencias] = await Promise.all([
+    // descargas não tem motorista_id — o dono vem da carga. Só carga
+    // ENCERRADA: a descarga é o que encerra, e cancelada nunca pesa.
+    // PAGINADO (selectTudo): comissão é dinheiro — truncada, pagaria menos
+    // do que o motorista descarregou, em silêncio.
+    selectTudo<DescargaRow>((d, a) =>
       supabase
         .from("descargas")
         .select(
@@ -114,11 +117,13 @@ export async function calcularComissao(
         )
         .eq("cargas.status", "encerrada")
         .gte("criado_em", de)
-        .lte("criado_em", ate),
-      supabase.from("profiles").select("id, nome").eq("role", "motorista"),
-      buscarVigencias(),
-    ]);
-  if (eDesc) throw eDesc;
+        .lte("criado_em", ate)
+        .order("id")
+        .range(d, a)
+    ),
+    supabase.from("profiles").select("id, nome").eq("role", "motorista"),
+    buscarVigencias(),
+  ]);
 
   const nome = new Map(
     ((perfis as { id: string; nome: string }[]) ?? []).map((p) => [p.id, p.nome])
@@ -135,7 +140,7 @@ export async function calcularComissao(
     criado_em: string;
     cargas: { motorista_id: string; status: string } | null;
   };
-  for (const d of ((descargas as unknown as DescargaRow[]) ?? [])) {
+  for (const d of descargas) {
     const motoristaId = d.cargas?.motorista_id;
     if (!motoristaId) continue;
     // litros_estimados é anulável no schema — o fallback é o próprio peso

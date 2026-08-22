@@ -152,19 +152,6 @@ export async function buscarAlertas(
   // Descargas → peso divergente + umidade pendente
   // ---------------------------------------------------------------------
   try {
-    let q = supabase
-      .from("descargas")
-      .select(
-        `id, peso_liquido_kg, umidade_pct, criado_em,
-         cargas!inner(
-           profiles!cargas_motorista_id_fkey!inner(nome),
-           coletas(litros)
-         )`
-      )
-      .gte("criado_em", new Date(Date.now() - 90 * DIA_MS).toISOString())
-      .order("criado_em", { ascending: false });
-    const { data } = await q;
-
     type Row = {
       id: string;
       peso_liquido_kg: number;
@@ -176,7 +163,26 @@ export async function buscarAlertas(
       } | null;
     };
 
-    for (const d of (data as unknown as Row[]) || []) {
+    // PAGINADO (selectTudo): 90 dias seguram o volume hoje, mas crescem
+    // junto com a frota — e alerta truncado é alerta que não acende.
+    const desde90 = new Date(Date.now() - 90 * DIA_MS).toISOString();
+    const data = await selectTudo<Row>((de, ate) =>
+      supabase
+        .from("descargas")
+        .select(
+          `id, peso_liquido_kg, umidade_pct, criado_em,
+           cargas!inner(
+             profiles!cargas_motorista_id_fkey!inner(nome),
+             coletas(litros)
+           )`
+        )
+        .gte("criado_em", desde90)
+        .order("criado_em", { ascending: false })
+        .order("id")
+        .range(de, ate)
+    );
+
+    for (const d of data) {
       const nome = d.cargas?.profiles?.nome || "Um motorista";
       const litros = (d.cargas?.coletas || []).reduce(
         (s, x) => s + Number(x.litros),
@@ -272,19 +278,40 @@ export async function buscarAlertas(
     if (candidatos.length > 0) {
       // Quem lançou ALGO nos últimos dias — 3 consultas no total, não 3
       // por motorista (era outro pedaço da lentidão do dashboard).
+      // PAGINADAS (selectTudo): a janela de 15 dias de coletas passa de
+      // 1000 linhas com o uso pleno — truncada, um motorista ATIVO caía
+      // fora do set e este alerta acendia sem motivo.
       const desde = new Date(Date.now() - DIAS_SEM_GASTO * DIA_MS).toISOString();
-      const [{ data: lc }, { data: ld }, { data: la }] = await Promise.all([
-        supabase.from("coletas").select("motorista_id").gte("criado_em", desde),
-        supabase.from("despesas").select("motorista_id").gte("criado_em", desde),
-        supabase
-          .from("abastecimentos")
-          .select("motorista_id")
-          .gte("criado_em", desde),
+      const [lc, ld, la] = await Promise.all([
+        selectTudo<{ motorista_id: string }>((de, ate) =>
+          supabase
+            .from("coletas")
+            .select("motorista_id")
+            .gte("criado_em", desde)
+            .order("id")
+            .range(de, ate)
+        ),
+        selectTudo<{ motorista_id: string }>((de, ate) =>
+          supabase
+            .from("despesas")
+            .select("motorista_id")
+            .gte("criado_em", desde)
+            .order("id")
+            .range(de, ate)
+        ),
+        selectTudo<{ motorista_id: string }>((de, ate) =>
+          supabase
+            .from("abastecimentos")
+            .select("motorista_id")
+            .gte("criado_em", desde)
+            .order("id")
+            .range(de, ate)
+        ),
       ]);
       const ativos = new Set<string>([
-        ...(lc || []).map((x) => x.motorista_id),
-        ...(ld || []).map((x) => x.motorista_id),
-        ...(la || []).map((x) => x.motorista_id),
+        ...lc.map((x) => x.motorista_id),
+        ...ld.map((x) => x.motorista_id),
+        ...la.map((x) => x.motorista_id),
       ]);
 
       for (const s of candidatos) {
@@ -439,17 +466,6 @@ export async function buscarAlertas(
   // A chave é o id da coleta, então "OK, VI" dispensa aquela ocorrência e
   // uma nova coleta torta vira alerta novo.
   try {
-    const desde = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    let q = supabase
-      .from("coletas")
-      .select(
-        "id, litros, valor_pago, local_nome, criado_em, profiles!coletas_motorista_id_fkey!inner(nome)"
-      )
-      .gte("criado_em", desde)
-      .order("criado_em", { ascending: false })
-      .limit(500);
-    const { data } = await q;
-
     type Row = {
       id: string;
       litros: number;
@@ -459,7 +475,23 @@ export async function buscarAlertas(
       profiles: { nome: string } | null;
     };
 
-    for (const c of (data as unknown as Row[]) || []) {
+    // PAGINADO (selectTudo): o limit(500) antigo prometia "últimos 30 dias"
+    // mas varria só as 500 coletas mais recentes — no uso pleno, metade da
+    // janela nunca era conferida e a coleta torta escapava da rede.
+    const desde = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const data = await selectTudo<Row>((de, ate) =>
+      supabase
+        .from("coletas")
+        .select(
+          "id, litros, valor_pago, local_nome, criado_em, profiles!coletas_motorista_id_fkey!inner(nome)"
+        )
+        .gte("criado_em", desde)
+        .order("criado_em", { ascending: false })
+        .order("id")
+        .range(de, ate)
+    );
+
+    for (const c of data) {
       const litros = Number(c.litros);
       const valor = Number(c.valor_pago);
       if (!(litros > 0)) continue;
