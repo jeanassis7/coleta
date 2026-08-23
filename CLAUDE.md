@@ -64,6 +64,8 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
 
 **Admin não é desativável nem deletável pelo painel** — no servidor e na tela. Sem o papel `dev` não existe backdoor: quem perde o acesso só volta por SQL.
 
+**`profiles.protegido` não é um toggle** (0059). As 6 pessoas de verdade (Evaner, Jean, Lucimar, Lucinei, Luiz, Valdecir) são inapagáveis pelo app: o campo saiu da tela e da API, e o trigger `trg_impedir_delete_protegido` recusa o DELETE **no banco** — vale pra API, script e SQL Editor. Perfil de teste nasce sem a trava e continua apagável (é o fluxo de "crio um perfil normal, testo de verdade, apago depois"). Pra apagar um protegido: `update profiles set protegido=false` por SQL, com intenção, e só então apagar.
+
 ## Arquitetura — visão rápida
 
 ```
@@ -197,6 +199,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0043`–`0054` — ver `ESTADO.md` (troca de óleo por data, ARLA, compra vinculada à carga, motorista×caminhões, caixa fecha de verdade, venda idempotente, perfil protegido, custo da compra na descarga, fotos do caixa, dívidas, buracos financeiros)
 - `0055_atores_do_log.sql` — RPC `atores_do_log()`: DISTINCT no banco pro filtro da tela de log (o select cru truncava em 1000 sem ordem)
 - `0056_backup_mensal.sql` — bucket privado `backups` + RPC `listar_tabelas_backup()` (lista vem do catálogo: tabela nova entra no backup sozinha)
+- `0059_trava_de_apagar_nao_e_toggle.sql` — `profiles.protegido` sai do painel e da API; trigger `trg_impedir_delete_protegido` recusa o DELETE no banco (as 6 pessoas de verdade ficam inapagáveis pelo app)
 - `0058_coleta_pagamento_parcial_da_sede.sql` — `coletas.valor_sede`: a sede pode bancar SÓ UMA PARTE da coleta (+ CHECK amarrando o par e `saldos_motoristas()` descontando a diferença)
 - `0057_umidade_nao_analisada.sql` — `descargas.umidade_nao_analisada`: "a análise não foi feita" vira LANÇAMENTO, não campo vazio (+ CHECK de coerência e backfill das 131 descargas históricas)
 

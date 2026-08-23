@@ -666,6 +666,22 @@ async function main() {
   check("coleta retroativa desconta do saldo do motorista (75 carry - 90)",
     saldoAposColeta === -15, `saldo=${saldoAposColeta}`);
 
+  // ---- trava de apagar (0059): o BANCO recusa, nao so a API ----
+  // O bot nasce desprotegido (default false). Protege, tenta apagar com a
+  // chave de servico — que ignora RLS — e so entao desprotege de volta, pro
+  // cleanup do fim conseguir remover o perfil.
+  await svc.from("profiles").update({ protegido: true }).eq("id", teste1.id);
+  const { error: eProt } = await svc.from("profiles").delete().eq("id", teste1.id);
+  check(
+    "banco RECUSA apagar perfil protegido (nem com service_role)",
+    !!eProt,
+    eProt ? "" : "apagou e nao devia"
+  );
+  const { data: aindaLa } = await svc
+    .from("profiles").select("id").eq("id", teste1.id).maybeSingle();
+  check("o perfil protegido continua no banco depois da tentativa", !!aindaLa);
+  await svc.from("profiles").update({ protegido: false }).eq("id", teste1.id);
+
   await mot.auth.signOut();
 }
 

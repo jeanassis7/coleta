@@ -81,9 +81,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const updates: Record<string, unknown> = {};
   if (typeof body.ativo === "boolean") updates.ativo = body.ativo;
   if (typeof body.exige_foto === "boolean") updates.exige_foto = body.exige_foto;
-  // Blindagem contra apagar (0049). Ligar/desligar é livre pro admin — a
-  // trava de verdade é no DELETE, que recusa perfil protegido.
-  if (typeof body.protegido === "boolean") updates.protegido = body.protegido;
+  // `protegido` NÃO entra mais aqui (0059). A trava de apagar deixou de ser
+  // um toggle: uma proteção que se desliga com um clique, do lado do botão
+  // que ela protege, protege pouco. Quem precisar mexer faz por SQL, com
+  // intenção — e o trigger trg_impedir_delete_protegido garante o resto.
   // O saldo no app é UMA experiência só: a tela de aceite de adiantamento
   // (gated por features.saldo) e o card "Seu dinheiro" (mostra_saldo_app).
   // Ligar só metade deixaria o motorista com card sem tela de aceite —
@@ -196,7 +197,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   if (alvo?.protegido) {
     return NextResponse.json(
       {
-        error: `${alvo.nome} é um perfil PROTEGIDO — motorista de verdade se desativa, não se apaga. Se for mesmo pra apagar (não é), desmarque a proteção no cadastro primeiro.`,
+        error: `${alvo.nome} é um perfil PROTEGIDO — motorista de verdade se desativa, não se apaga. A proteção não se desliga pelo painel (0059): se for mesmo pra apagar, tire a trava por SQL primeiro.`,
       },
       { status: 400 }
     );

@@ -40,7 +40,7 @@ const AJUDA = {
   saldo:
     "Mostra pra ele quanto tem de dinheiro da empresa na mão, e liga a tela de aceite quando você envia adiantamento. Desligado, adiantamento pendente fica invisível pra ele.",
   protegido:
-    "Trava contra apagar. Marcado, o botão Deletar recusa — inclusive no modo forçado, que levaria junto coletas, cargas e dinheiro. Motorista de verdade se DESATIVA (coluna Ativo), nunca se apaga: desmarque isto só num perfil de teste.",
+    "Trava de apagar, e ela não se desliga pelo painel: quem está com o cadeado é inapagável pelo app, inclusive no modo forçado que levaria junto coletas, cargas e dinheiro. Motorista de verdade se DESATIVA (coluna Ativo), nunca se apaga. Perfil de teste nasce sem o cadeado e continua apagável.",
 } as const;
 
 export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
@@ -366,17 +366,18 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   className="w-5 h-5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
+              {/* Deixou de ser caixinha (0059): é um ESTADO, não um botão.
+                  Enquanto dava pra desmarcar, a trava ficava a dois cliques
+                  distraídos do botão que ela protege. */}
               <td className="py-3 pr-3">
-                <input
-                  type="checkbox"
-                  checked={!!m.protegido}
-                  disabled={loadingId === m.id || m.role === "admin"}
+                <span
                   title={AJUDA.protegido}
-                  onChange={(e) =>
-                    atualizar(m.id, { protegido: e.target.checked })
+                  className={
+                    m.protegido ? "cursor-help" : "cursor-help text-cinza-suave"
                   }
-                  className="w-5 h-5 cursor-pointer"
-                />
+                >
+                  {m.protegido ? "🔒" : "—"}
+                </span>
               </td>
               <td className="py-3 pr-3">
                 <div className="flex flex-col gap-1 text-sm">
@@ -388,8 +389,10 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                     Resetar senha
                   </button>
                   {/* Admin não é deletável: o usuário sairia do Supabase Auth
-                      e só voltaria por script. O servidor também recusa. */}
-                  {m.role !== "admin" && (
+                      e só voltaria por script. Perfil protegido idem (0059).
+                      O servidor e o banco recusam os dois — esconder o botão
+                      é só pra não oferecer o que não vai acontecer. */}
+                  {m.role !== "admin" && !m.protegido && (
                     <button
                       onClick={() => setModalDeletar({ id: m.id, nome: m.nome })}
                       disabled={loadingId === m.id}
