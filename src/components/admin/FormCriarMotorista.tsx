@@ -11,6 +11,10 @@ export function FormCriarMotorista() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [role, setRole] = useState<"motorista" | "admin">("motorista");
+  // A trava de apagar (0059) não é mais um toggle na tabela: escolhe-se UMA
+  // vez, aqui. Começa em null de propósito — sem escolha o botão não libera,
+  // porque as duas saídas são irreversíveis em direções opostas.
+  const [permanente, setPermanente] = useState<boolean | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   // Auto-gera email a partir do nome
@@ -30,7 +34,7 @@ export function FormCriarMotorista() {
       const res = await fetch("/api/admin/motoristas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome, email, senha, role }),
+        body: JSON.stringify({ nome, email, senha, role, permanente }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -41,6 +45,7 @@ export function FormCriarMotorista() {
       setEmail("");
       setSenha("");
       setRole("motorista");
+      setPermanente(null);
       setAberto(false);
       router.refresh();
     } catch (err) {
@@ -106,6 +111,59 @@ export function FormCriarMotorista() {
           <option value="admin">Admin</option>
         </select>
       </div>
+      {/* O dilema, na cara de quem cria — porque depois não tem toggle.
+          As duas saídas erram feio em direções opostas: trancar um perfil
+          de teste dá trabalho de SQL; deixar destrancada uma pessoa de
+          verdade deixa o histórico dela a dois cliques do fim. */}
+      <div className="border border-cinza-borda rounded-xl p-3 space-y-2">
+        <label className="block text-sm font-medium">
+          Esse perfil é de quem?
+        </label>
+        <div className="flex gap-2">
+          {(
+            [
+              [true, "🔒 Pessoa de verdade"],
+              [false, "🧪 Perfil de teste"],
+            ] as const
+          ).map(([v, r]) => (
+            <button
+              key={String(v)}
+              type="button"
+              onClick={() => setPermanente(v)}
+              className={`px-3 py-2 rounded-xl border-2 text-sm ${
+                permanente === v
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        {permanente === null && (
+          <p className="text-xs text-cinza-suave">
+            Escolha uma das duas pra continuar — isso não se muda depois pelo
+            painel.
+          </p>
+        )}
+        {permanente === true && (
+          <p className="text-xs text-cinza-texto">
+            <strong>Nasce trancado.</strong> Não vai dar pra apagar pelo
+            painel, nem por engano. Quem sair da empresa você
+            <strong> desativa</strong>, e o histórico dele fica de pé. Pra
+            destrancar depois, só por SQL — é de propósito.
+          </p>
+        )}
+        {permanente === false && (
+          <p className="text-xs text-cinza-texto">
+            <strong>Nasce destrancado</strong>, pra você usar de verdade umas
+            horas e apagar depois. Apagar leva junto{" "}
+            <strong>tudo que ele lançou</strong> — coletas, cargas, despesas,
+            adiantamentos e o próprio login, sem lixeira. Não use isso pra
+            gente de verdade.
+          </p>
+        )}
+      </div>
       {erro && (
         <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
           {erro}
@@ -114,8 +172,8 @@ export function FormCriarMotorista() {
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={carregando}
-          className="px-4 py-2 bg-verde text-white rounded-xl font-medium"
+          disabled={carregando || permanente === null}
+          className="px-4 py-2 bg-verde text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {carregando ? "Criando..." : "Criar"}
         </button>

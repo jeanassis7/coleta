@@ -12,6 +12,8 @@ export async function POST(req: NextRequest) {
     email?: string;
     senha?: string;
     role?: string;
+    /** true = pessoa de verdade (nasce com a trava de apagar, 0059). */
+    permanente?: boolean;
   };
   try {
     body = await req.json();
@@ -23,6 +25,11 @@ export async function POST(req: NextRequest) {
   const email = body.email?.trim().toLowerCase();
   const senha = body.senha;
   const role = body.role === "admin" ? "admin" : "motorista";
+  // A trava de apagar (0059) se escolhe UMA vez, no nascimento — não existe
+  // mais toggle depois. O default é TRANCADO de propósito: se um caminho
+  // futuro esquecer de mandar o campo, o estrago é ter que destrancar por
+  // SQL, não ter apagado o histórico de uma pessoa sem querer.
+  const permanente = body.permanente !== false;
 
   if (!nome || !email || !senha) {
     return NextResponse.json(
@@ -58,6 +65,7 @@ export async function POST(req: NextRequest) {
     ativo: true,
     exige_foto: false,
     senha_visivel: senha,
+    protegido: permanente,
   });
 
   if (errProfile) {
