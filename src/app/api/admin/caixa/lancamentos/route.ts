@@ -167,6 +167,61 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #5 — a MESMA saída lançada duas vezes
+  // ---------------------------------------------------------------------
+  // Esta tela é o ritmo do extrato: o gestor desce linha a linha do banco e
+  // lança tudo. Só que parte dessas saídas JÁ NASCEU no sistema por outro
+  // caminho — a coleta paga pela sede, o abastecimento com nota assinada, a
+  // manutenção. Quando ele chega na linha do extrato, ela já está lá.
+  //
+  // Sem aviso, o erro só aparece muito depois: o saldo da conta no app fica
+  // menor que o do banco e alguém precisa caçar a diferença. Com aviso, o
+  // sistema mostra a linha que já existe e ele decide em dois cliques.
+  //
+  // Janela de 3 dias porque data de pix e data de extrato divergem em fim de
+  // semana. Não bloqueia — pagamento repetido de verdade existe (duas
+  // parcelas iguais, dois fretes do mesmo valor); só nunca passa calado.
+  if (!body.confirmado && conta_id) {
+    const dia = (d: number) =>
+      new Date(new Date(`${data}T12:00:00Z`).getTime() + d * 86400000)
+        .toISOString()
+        .slice(0, 10);
+    const { data: parecidas } = await client
+      .from("contas_a_pagar")
+      .select("id, descricao, valor, pago_em, origem_tipo")
+      .eq("status", "paga")
+      .eq("conta_id", conta_id)
+      .eq("valor", Math.round(valor * 100) / 100)
+      .gte("pago_em", dia(-3))
+      .lte("pago_em", dia(3))
+      .limit(1);
+    const igual = (parecidas ?? [])[0];
+    if (igual) {
+      const nasceuDe: Record<string, string> = {
+        coleta: "nasceu de uma coleta paga pela sede",
+        abastecimento: "nasceu de um abastecimento com nota assinada",
+        manutencao: "nasceu de uma manutenção",
+        compra_direta: "nasceu de uma compra direta",
+        documento: "nasceu de um documento",
+      };
+      const origem = igual.origem_tipo
+        ? nasceuDe[igual.origem_tipo] || "veio de outro lançamento"
+        : "foi lançada na mão";
+      return NextResponse.json(
+        {
+          error:
+            `Já existe uma saída de R$ ${Number(igual.valor).toFixed(2).replace(".", ",")} nessa mesma conta em ` +
+            `${String(igual.pago_em).slice(0, 10).split("-").reverse().join("/")}: "${igual.descricao}" — ` +
+            `essa ${origem}. Se for a MESMA linha do extrato, não lance de novo: o saldo da conta no app ficaria ` +
+            `abaixo do saldo do banco. Se forem dois pagamentos diferentes de mesmo valor, confirme.`,
+          precisaConfirmar: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const { data: criado, error } = await client
     .from("contas_a_pagar")
     .insert({

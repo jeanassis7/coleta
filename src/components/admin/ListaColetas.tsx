@@ -17,6 +17,7 @@ interface Coleta {
   litros_certificado: number | null;
   observacao: string | null;
   pago_pela_sede?: boolean;
+  valor_sede?: number;
   latitude: number | null;
   longitude: number | null;
   gps_accuracy: number | null;
@@ -217,14 +218,26 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
                     </p>
                     <p className="text-base text-cinza-suave">
                       {formatLitros(c.litros)} · {formatBRL(c.valor_pago)} · R$ {custoLitro.toFixed(2).replace(".", ",")}/L
-                      {c.pago_pela_sede && (
-                        <span
-                          className="ml-2 inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-medium align-middle"
-                          title="O escritório paga o fornecedor direto — não desconta do saldo do motorista."
-                        >
-                          🏢 sede
-                        </span>
-                      )}
+                      {c.pago_pela_sede &&
+                        (() => {
+                          // Parcial (0058) precisa se distinguir do total na
+                          // lista: são situações de dinheiro diferentes e o
+                          // mesmo selo pras duas escondia isso.
+                          const sede = c.valor_sede ?? c.valor_pago;
+                          const parcial = sede < c.valor_pago;
+                          return (
+                            <span
+                              className="ml-2 inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-medium align-middle"
+                              title={
+                                parcial
+                                  ? `A sede pagou ${formatBRL(sede)} direto ao fornecedor; ${formatBRL(c.valor_pago - sede)} saiu do bolso do motorista.`
+                                  : "O escritório paga o fornecedor direto — não desconta do saldo do motorista."
+                              }
+                            >
+                              🏢 sede{parcial ? ` ${formatBRL(sede)}` : ""}
+                            </span>
+                          );
+                        })()}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-base shrink-0">

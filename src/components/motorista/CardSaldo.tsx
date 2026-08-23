@@ -58,12 +58,14 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
           // PAGINADAS (selectTudo): motorista que nunca teve acerto lê o
           // histórico INTEIRO — truncado em 1000, o detalhe não fecharia
           // com o número grande da RPC, na tela dele.
-          selectTudo<{ valor_pago: number }>((de, ate) =>
+          // Desde a 0058 a sede pode ter bancado SÓ UMA PARTE: filtrar por
+          // "não é da sede" jogaria fora a coleta inteira e o detalhe deixaria
+          // de fechar com o número grande da RPC.
+          selectTudo<{ valor_pago: number; valor_sede: number }>((de, ate) =>
             supabase
               .from("coletas")
-              .select("valor_pago")
+              .select("valor_pago, valor_sede")
               .eq("motorista_id", motoristaId)
-              .eq("pago_pela_sede", false)
               .gt("criado_em", corte)
               .order("id")
               .range(de, ate)
@@ -100,7 +102,7 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
         if (eSaldo) return; // sem número oficial não mostra número nenhum
 
         const somaC = (coletas || []).reduce(
-          (s, c) => s + Number(c.valor_pago),
+          (s, c) => s + (Number(c.valor_pago) - Number(c.valor_sede || 0)),
           0
         );
         const somaD = (despesas || []).reduce((s, d) => s + Number(d.valor), 0);

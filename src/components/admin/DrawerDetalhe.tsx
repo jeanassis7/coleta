@@ -22,6 +22,8 @@ interface Coleta {
   litros_certificado: number | null;
   observacao: string | null;
   pago_pela_sede?: boolean;
+  /** Quanto DESTA coleta a sede bancou (0058). O resto saiu do bolso dele. */
+  valor_sede?: number;
   latitude: number | null;
   longitude: number | null;
   gps_accuracy: number | null;
@@ -71,6 +73,11 @@ export function DrawerDetalhe({
   // Óleo que o escritório paga direto no fornecedor. O valor conta no custo
   // do óleo mas NÃO desconta do saldo do motorista, porque ele não pagou.
   const [pagoPelaSede, setPagoPelaSede] = useState(!!coleta.pago_pela_sede);
+  // Quanto a sede bancou (0058). Vazio + caixa marcada = ela pagou o óleo
+  // inteiro, que é o caso mais comum e o comportamento de antes.
+  const [sedeValorTexto, setSedeValorTexto] = useState(
+    coleta.valor_sede ? String(coleta.valor_sede) : ""
+  );
   const [vencimento, setVencimento] = useState("");
   // "Já paguei à vista": a conta nasce PAGA (forma + conta + data) em vez
   // de a pagar. As contas financeiras são buscadas na hora, só se precisar.
@@ -178,6 +185,23 @@ export function DrawerDetalhe({
       return;
     }
 
+    // Parte da sede (0058): em branco = ela pagou tudo.
+    const sedeValor = pagoPelaSede
+      ? (parseValorInteiro(sedeValorTexto) ?? valor)
+      : 0;
+    if (pagoPelaSede && sedeValor > valor) {
+      setErro(
+        `A sede não pode ter pago R$ ${sedeValor.toLocaleString("pt-BR")} de um óleo que custou R$ ${valor.toLocaleString("pt-BR")}. Corrija o valor total primeiro.`
+      );
+      return;
+    }
+    if (pagoPelaSede && sedeValor <= 0) {
+      setErro(
+        "Quanto a sede pagou? Se ela não pagou nada, desmarque o pagamento pela sede."
+      );
+      return;
+    }
+
     setErro(null);
     setSalvando(true);
     const res = await fetch(`/api/admin/coletas/${coleta.id}`, {
@@ -191,6 +215,7 @@ export function DrawerDetalhe({
         litros_certificado,
         observacao: observacao.trim() || null,
         pago_pela_sede: pagoPelaSede,
+        valor_sede: sedeValor,
         ...(pagoPelaSede && vencimento ? { vencimento } : {}),
         ...(pagoPelaSede && sedeJaPagou
           ? {
@@ -251,9 +276,11 @@ export function DrawerDetalhe({
                 <Linha
                   label="Quem pagou"
                   valor={
-                    coleta.pago_pela_sede
-                      ? "🏢 Sede (não desconta do motorista)"
-                      : "Motorista (do saldo dele)"
+                    !coleta.pago_pela_sede
+                      ? "Motorista (do saldo dele)"
+                      : (coleta.valor_sede ?? 0) >= coleta.valor_pago
+                        ? "🏢 Sede (não desconta do motorista)"
+                        : `🏢 Sede ${formatBRL(coleta.valor_sede ?? 0)} + motorista ${formatBRL(coleta.valor_pago - (coleta.valor_sede ?? 0))}`
                   }
                 />
                 <Linha
@@ -378,7 +405,14 @@ export function DrawerDetalhe({
                   <input
                     type="checkbox"
                     checked={pagoPelaSede}
-                    onChange={(e) => setPagoPelaSede(e.target.checked)}
+                    onChange={(e) => {
+                      const ligou = e.target.checked;
+                      setPagoPelaSede(ligou);
+                      // Ligou e não disse quanto: assume o óleo inteiro — é o
+                      // caso comum, e deixar vazio faria o campo parecer opcional
+                      // quando é ele que decide o saldo do motorista.
+                      if (ligou && !sedeValorTexto) setSedeValorTexto(valorTexto);
+                    }}
                     className="mt-1"
                   />
                   <span className="text-sm">
@@ -389,6 +423,35 @@ export function DrawerDetalhe({
                     </span>
                   </span>
                 </label>
+
+                {/* Pagamento PARCIAL (0058): o motorista deu uma parte do
+                    bolso e a empresa bancou o resto. Antes só existia tudo
+                    ou nada, e o gestor tinha que escolher qual mentira contar. */}
+                {pagoPelaSede && (
+                  <div>
+                    <label className="block text-xs text-cinza-suave mb-1">
+                      Quanto a SEDE pagou (R$) — o resto fica com o motorista
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="flex-1 px-3 py-2 border border-cinza-borda rounded-xl"
+                        value={sedeValorTexto}
+                        onChange={(e) => setSedeValorTexto(e.target.value)}
+                        placeholder={valorTexto || "0"}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSedeValorTexto(valorTexto)}
+                        className="px-3 py-2 rounded-xl border border-cinza-borda text-xs whitespace-nowrap hover:bg-white"
+                      >
+                        pagou tudo
+                      </button>
+                    </div>
+                    <ResumoDivisao total={valorTexto} sede={sedeValorTexto} />
+                  </div>
+                )}
                 {pagoPelaSede && !coleta.pago_pela_sede && (
                   <div className="space-y-2">
                     {/* A sede pode já ter pagado na hora (PIX pro fornecedor
@@ -580,6 +643,35 @@ export function DrawerDetalhe({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A conta da divisão, na cara do gestor enquanto ele digita (0058).
+ *
+ * O número que importa não é o que ele digitou — é o que SOBRA pro
+ * motorista, porque é esse que desconta do saldo. Mostrar só o campo da
+ * sede deixaria a consequência invisível até o saldo mudar sozinho.
+ */
+function ResumoDivisao({ total, sede }: { total: string; sede: string }) {
+  const t = parseValorInteiro(total);
+  const sTxt = sede.trim();
+  const sv = sTxt === "" ? t : parseValorInteiro(sTxt);
+  if (t == null || sv == null) return null;
+  if (sv > t) {
+    return (
+      <p className="text-xs text-alerta mt-1">
+        A sede não pode ter pago mais do que o óleo custou ({formatBRL(t)}).
+      </p>
+    );
+  }
+  const doMotorista = t - sv;
+  return (
+    <p className="text-xs text-cinza-suave mt-1">
+      Sede <strong>{formatBRL(sv)}</strong> · sai do bolso do motorista{" "}
+      <strong>{formatBRL(doMotorista)}</strong>
+      {doMotorista === 0 ? " (nada — a sede pagou tudo)" : ""}
+    </p>
   );
 }
 

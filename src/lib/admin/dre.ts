@@ -191,7 +191,7 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     selectTudo<Coleta>((d, a) =>
       supabase
         .from("coletas")
-        .select("id, valor_pago, pago_pela_sede, motorista_id")
+        .select("id, valor_pago, valor_sede, pago_pela_sede, motorista_id")
         .gte("criado_em", de)
         .lte("criado_em", ate)
         .order("id")
@@ -289,21 +289,25 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   type Coleta = {
     id: string;
     valor_pago: number;
+    valor_sede: number;
     pago_pela_sede: boolean;
     motorista_id: string;
   };
   const todasColetas = (coletas as Coleta[]) ?? [];
-  // Coleta paga pela sede vira conta a pagar (0021) — sai do caixa quando a
-  // conta for paga, não quando o óleo foi coletado.
-  const doMotorista = todasColetas.filter(
-    (c) => !c.pago_pela_sede && !jaTemConta.has(c.id)
-  );
-
+  // A parte da SEDE vira conta a pagar (0021/0058) e entra no DRE quando a
+  // conta é paga, não quando o óleo foi coletado. O que entra aqui é só o
+  // que saiu do bolso do MOTORISTA — e desde a 0058 isso é uma subtração,
+  // não um filtro: a mesma coleta pode ter os dois pedaços.
+  //
+  // Não há como dobrar: a conta a pagar de origem 'coleta' nasce valendo
+  // exatamente `valor_sede`, que é justamente o pedaço descontado aqui.
   const oleoPorMotorista = new Map<string, number>();
-  for (const c of doMotorista) {
+  for (const c of todasColetas) {
+    const doBolsoDele = Number(c.valor_pago || 0) - Number(c.valor_sede || 0);
+    if (doBolsoDele <= 0) continue;
     oleoPorMotorista.set(
       c.motorista_id,
-      (oleoPorMotorista.get(c.motorista_id) ?? 0) + Number(c.valor_pago || 0)
+      (oleoPorMotorista.get(c.motorista_id) ?? 0) + doBolsoDele
     );
   }
 
@@ -335,7 +339,9 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const automatico: Record<string, number> = {
     venda_oleo:
       receitaAVista + receitaChequesCompensados + receitaChequesRepassados,
-    oleo_motorista: soma(doMotorista, (c) => c.valor_pago),
+    // Mesma fonte do detalhe por pessoa — somar por fora daria chance dos
+    // dois números divergirem numa correção futura.
+    oleo_motorista: [...oleoPorMotorista.values()].reduce((t, v) => t + v, 0),
     oleo_sede: soma(
       ((compras as { id: string; valor: number }[]) ?? []).filter(
         (c) => !jaTemConta.has(c.id)

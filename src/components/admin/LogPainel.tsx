@@ -51,6 +51,7 @@ const CAMPOS: Record<string, string> = {
   capacidade_l: "capacidade",
   placa: "placa",
   pago_pela_sede: "pago pela sede",
+  valor_sede: "parte paga pela sede",
   pago_na_hora: "pago na hora",
   vencimento: "vencimento",
   pago_em: "pago em",

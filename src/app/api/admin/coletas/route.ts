@@ -78,8 +78,26 @@ export async function POST(req: NextRequest) {
   )
     ? String(body.pagamento)
     : "motorista";
-  const pagoPelaSede = pagamento !== "motorista";
-  if (pagamento === "sede_ja_pagou") {
+  // Quanto DESSE óleo a sede bancou (0058). Sem o campo, a sede pagou o
+  // óleo inteiro — que é exatamente o comportamento de antes. `valorSede`
+  // manda no booleano: o CHECK do banco exige que os dois concordem, e
+  // óleo doado (R$ 0) marcado como sede não gera parte nenhuma.
+  const sedePedida = pagamento !== "motorista";
+  let valorSede = 0;
+  if (sedePedida) {
+    const bruto = Number((body as { valor_sede?: unknown }).valor_sede);
+    valorSede = Number.isFinite(bruto) ? Math.max(0, Math.round(bruto)) : valor_pago;
+    if (valorSede > valor_pago) {
+      return NextResponse.json(
+        {
+          error: `a sede não pode ter pago R$ ${valorSede.toLocaleString("pt-BR")} de um óleo que custou R$ ${valor_pago.toLocaleString("pt-BR")}`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+  const pagoPelaSede = valorSede > 0;
+  if (pagamento === "sede_ja_pagou" && valorSede > 0) {
     if (
       !body.conta_id ||
       !["pix", "dinheiro", "deposito"].includes(String(body.forma_pagamento))
@@ -117,6 +135,7 @@ export async function POST(req: NextRequest) {
       client_id: randomUUID(),
       lancado_por_admin: admin.id,
       pago_pela_sede: pagoPelaSede,
+      valor_sede: valorSede,
     })
     .select("id")
     .maybeSingle();
@@ -126,7 +145,9 @@ export async function POST(req: NextRequest) {
 
   // A dívida com o fornecedor nasce junto (mesma regra do drawer). Valor 0
   // é doação: sede marcada, dívida nenhuma.
-  if (pagoPelaSede && valor_pago > 0) {
+  // A dívida é da PARTE DA SEDE (0058) — o que o motorista tirou do bolso
+  // não é dívida da empresa com o fornecedor, é saldo dele.
+  if (valorSede > 0) {
     const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000);
     const vencDefault = new Date(
       Date.UTC(hojeBr.getUTCFullYear(), hojeBr.getUTCMonth() + 1, 1)
@@ -148,7 +169,7 @@ export async function POST(req: NextRequest) {
       descricao: `Óleo — ${local_nome}`,
       fornecedor: local_nome,
       categoria: "oleo_sede",
-      valor: valor_pago,
+      valor: valorSede,
       vencimento: jaPagou ? pagoEm : vencimento,
       status: jaPagou ? "paga" : "a_pagar",
       ...(jaPagou

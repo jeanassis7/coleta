@@ -154,8 +154,9 @@ try {
     // então o fato tem que voltar a contar sozinho.
     const coleta = (
       await client.query(
-        `insert into coletas (motorista_id, client_id, litros, valor_pago, local_nome, certificado_tipo, pago_pela_sede, criado_em)
-         values ($1, gen_random_uuid(), 100, 250, 'E2E Guard', 'nao', true, now()) returning id`,
+        // valor_sede junto (0058): o CHECK exige que os dois concordem.
+        `insert into coletas (motorista_id, client_id, litros, valor_pago, valor_sede, local_nome, certificado_tipo, pago_pela_sede, criado_em)
+         values ($1, gen_random_uuid(), 100, 250, 250, 'E2E Guard', 'nao', true, now()) returning id`,
         [evaner]
       )
     ).rows[0].id;

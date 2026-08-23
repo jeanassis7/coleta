@@ -52,7 +52,10 @@ export async function PATCH(
     if (cancelada.origem_tipo === "coleta" && cancelada.origem_id) {
       const { error: eFlag } = await client
         .from("coletas")
-        .update({ pago_pela_sede: false })
+        // valor_sede junto: o CHECK da 0058 exige que os dois concordem, e
+        // sem ele o UPDATE morreria — deixando a conta cancelada e a coleta
+        // ainda sem descontar de ninguém.
+        .update({ pago_pela_sede: false, valor_sede: 0 })
         .eq("id", cancelada.origem_id);
       aviso = eFlag
         ? `a coleta de origem não foi desmarcada (${eFlag.message}) — confira no detalhe dela`
@@ -664,7 +667,7 @@ export async function DELETE(
   if (conta?.origem_tipo === "coleta" && conta.origem_id) {
     const { error: eFlag } = await client
       .from("coletas")
-      .update({ pago_pela_sede: false })
+      .update({ pago_pela_sede: false, valor_sede: 0 })
       .eq("id", conta.origem_id);
     desfeito.push(
       eFlag

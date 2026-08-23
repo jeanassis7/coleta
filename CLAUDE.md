@@ -197,6 +197,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0043`–`0054` — ver `ESTADO.md` (troca de óleo por data, ARLA, compra vinculada à carga, motorista×caminhões, caixa fecha de verdade, venda idempotente, perfil protegido, custo da compra na descarga, fotos do caixa, dívidas, buracos financeiros)
 - `0055_atores_do_log.sql` — RPC `atores_do_log()`: DISTINCT no banco pro filtro da tela de log (o select cru truncava em 1000 sem ordem)
 - `0056_backup_mensal.sql` — bucket privado `backups` + RPC `listar_tabelas_backup()` (lista vem do catálogo: tabela nova entra no backup sozinha)
+- `0058_coleta_pagamento_parcial_da_sede.sql` — `coletas.valor_sede`: a sede pode bancar SÓ UMA PARTE da coleta (+ CHECK amarrando o par e `saldos_motoristas()` descontando a diferença)
 - `0057_umidade_nao_analisada.sql` — `descargas.umidade_nao_analisada`: "a análise não foi feita" vira LANÇAMENTO, não campo vazio (+ CHECK de coerência e backfill das 131 descargas históricas)
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
@@ -240,6 +241,20 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 **O caixa é a fundação.** Dinheiro não aparece nem some: toda saída sai de uma
 conta, toda entrada entra em uma. Sem `conta_id` o movimento não existe pro
 caixa — e o DRE em cima disso seria número sem lastro.
+
+**Na coleta, "quanto custou" e "de quem saiu" são números diferentes.**
+`valor_pago` é o custo do óleo (é ele que entra no estoque); `valor_sede` é
+a parte que a empresa pagou direto ao fornecedor; a diferença é o que saiu
+do bolso do motorista e desconta do saldo dele. Os três podem coexistir na
+MESMA coleta (0058) — o `pago_pela_sede` virou só "a sede entrou nessa", com
+CHECK amarrando os dois. Query nova que fala de saldo soma a **diferença**,
+nunca filtra por `not pago_pela_sede`.
+
+**A saída que nasce de um fato NÃO se lança de novo pelo extrato.** A conta
+a pagar de origem `coleta`/`abastecimento`/`manutencao` já é a linha do
+banco. Lançar a mesma de novo em /admin/lancamentos deixa o saldo do app
+abaixo do saldo real — por isso o endpoint avisa quando encontra uma saída
+igual (mesma conta, mesmo valor, ±3 dias) e pede o segundo clique.
 
 **Saque e depósito são `transferencias`**, não despesa. É o mesmo dinheiro
 mudando de bolso, e por isso mora em tabela própria: é o que faz o caixa

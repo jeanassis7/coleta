@@ -372,6 +372,9 @@ async function main() {
     session_id: "e2e",
     app_version: "e2e",
     pago_pela_sede: true,
+    // valor_sede junto (0058): o CHECK exige que os dois concordem. Insert
+    // direto na tabela nao passa pela API, entao o par vem na mao aqui.
+    valor_sede: 4000,
     criado_em: new Date().toISOString(),
   });
   check("coleta paga pela sede insere", !eSede, eSede?.message);
@@ -382,6 +385,81 @@ async function main() {
     "R$ 4.000 pagos pela sede NÃO mexem no saldo do motorista (segue 3875)",
     Number(saldoDepois?.saldo) === 3875,
     `saldo=${saldoDepois?.saldo}`
+  );
+
+  // -------------------------------------------------------------------
+  // 0058 — pagamento PARCIAL da sede
+  // -------------------------------------------------------------------
+  // Caso do Luiz: R$ 4.005 de oleo, R$ 3.105 pela empresa, R$ 900 do bolso
+  // dele. So os 900 podem descontar do saldo.
+  criados.coletaParcialClientId = randomUUID();
+  const { error: eParcial } = await svc.from("coletas").insert({
+    client_id: criados.coletaParcialClientId,
+    motorista_id: teste1.id,
+    litros: 2225,
+    local_nome: "Fornecedor E2E (sede paga parte)",
+    valor_pago: 4005,
+    valor_sede: 3105,
+    pago_pela_sede: true,
+    certificado_tipo: "nao",
+    gps_capturado: false,
+    device_id: "e2e",
+    session_id: "e2e",
+    app_version: "e2e",
+    criado_em: new Date().toISOString(),
+  });
+  check("coleta com pagamento parcial da sede insere", !eParcial, eParcial?.message);
+
+  const { data: saldosParcial } = await svc.rpc("saldos_motoristas");
+  const saldoParcial = (saldosParcial || []).find((x) => x.motorista_id === teste1.id);
+  check(
+    "parcial desconta SO a parte do motorista (3875 - 900 = 2975)",
+    Number(saldoParcial?.saldo) === 2975,
+    `saldo=${saldoParcial?.saldo}`
+  );
+
+  // Caminho que da errado (regua #8): a sede nao pode pagar mais que o oleo
+  const { error: eMaior } = await svc.from("coletas").insert({
+    client_id: randomUUID(),
+    motorista_id: teste1.id,
+    litros: 100,
+    local_nome: "Fornecedor E2E (sede maior que o oleo)",
+    valor_pago: 100,
+    valor_sede: 500,
+    pago_pela_sede: true,
+    certificado_tipo: "nao",
+    gps_capturado: false,
+    device_id: "e2e",
+    session_id: "e2e",
+    app_version: "e2e",
+    criado_em: new Date().toISOString(),
+  });
+  check(
+    "banco RECUSA sede pagando mais do que o oleo custou",
+    !!eMaior,
+    eMaior ? "" : "inseriu e nao devia"
+  );
+
+  // E os dois campos nao podem discordar
+  const { error: eDiscorda } = await svc.from("coletas").insert({
+    client_id: randomUUID(),
+    motorista_id: teste1.id,
+    litros: 100,
+    local_nome: "Fornecedor E2E (flag sem valor)",
+    valor_pago: 100,
+    valor_sede: 0,
+    pago_pela_sede: true,
+    certificado_tipo: "nao",
+    gps_capturado: false,
+    device_id: "e2e",
+    session_id: "e2e",
+    app_version: "e2e",
+    criado_em: new Date().toISOString(),
+  });
+  check(
+    "banco RECUSA marcado como sede sem parte da sede",
+    !!eDiscorda,
+    eDiscorda ? "" : "inseriu e nao devia"
   );
 
   // ---- 15. acerto com corte: saldo pós-acerto = valor_saldo carry ----
@@ -625,6 +703,7 @@ async function cleanup() {
     }
     await del("abastecimentos", "client_id", criados.abastAssinadoClientId);
     await del("coletas", "client_id", criados.coletaSedeClientId);
+    await del("coletas", "client_id", criados.coletaParcialClientId);
     await del("coletas", "client_id", criados.coletaClientId);
     await del("cargas", "id", criados.cargaId);
     await del("caminhoes", "id", criados.caminhaoId);

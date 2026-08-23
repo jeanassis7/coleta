@@ -46,6 +46,8 @@ export function AdicionarColetaNaCarga({
     "motorista" | "sede" | "sede_ja_pagou"
   >("motorista");
   const [vencimento, setVencimento] = useState("");
+  // Quanto a sede bancou (0058) — em branco = o óleo inteiro.
+  const [valorSede, setValorSede] = useState("");
   const [sedeForma, setSedeForma] = useState<"pix" | "dinheiro" | "deposito">("pix");
   const [sedePagoEm, setSedePagoEm] = useState(
     new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -89,6 +91,28 @@ export function AdicionarColetaNaCarga({
     if (pagamento === "sede_ja_pagou" && !sedeContaId) {
       return setErro("A sede já pagou? Diga de qual conta o dinheiro saiu.");
     }
+    // Parte da sede (0058): em branco = ela pagou tudo.
+    const sedeNum =
+      pagamento === "motorista"
+        ? 0
+        : valorSede.trim() === ""
+          ? valorNum
+          : Number(valorSede.trim());
+    if (pagamento !== "motorista") {
+      if (!/^d*$/.test(valorSede.trim()) || !Number.isFinite(sedeNum)) {
+        return setErro("A parte da sede é número inteiro, sem vírgula");
+      }
+      if (sedeNum > valorNum) {
+        return setErro(
+          `A sede não pode ter pago R$ ${sedeNum.toLocaleString("pt-BR")} de um óleo que custou R$ ${valorNum.toLocaleString("pt-BR")}`
+        );
+      }
+      if (sedeNum <= 0) {
+        return setErro(
+          "Quanto a sede pagou? Se ela não pagou nada, escolha o bolso do motorista."
+        );
+      }
+    }
     setErro(null);
     setSalvando(true);
     try {
@@ -105,6 +129,7 @@ export function AdicionarColetaNaCarga({
           observacao: observacao.trim() || null,
           criado_em: quando ? new Date(quando).toISOString() : undefined,
           pagamento,
+          valor_sede: sedeNum,
           ...(pagamento === "sede" && vencimento ? { vencimento } : {}),
           ...(pagamento === "sede_ja_pagou"
             ? {
@@ -294,10 +319,46 @@ export function AdicionarColetaNaCarga({
             </button>
           ))}
         </div>
-        {pagamento === "motorista" && (
+        {pagamento === "motorista" ? (
           <p className="text-xs text-cinza-suave">
             O valor desconta do saldo dele — o dinheiro saiu da mão dele.
           </p>
+        ) : (
+          /* Pagamento PARCIAL (0058): ele deu uma parte do bolso e a empresa
+             bancou o resto. Deixar em branco mantém o caso comum num toque. */
+          <div>
+            <label className="block text-xs text-cinza-suave mb-1">
+              Quanto a SEDE pagou (R$) — em branco = ela pagou tudo
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={valorSede}
+              onChange={(e) => setValorSede(e.target.value)}
+              placeholder={valor || "0"}
+            />
+            {(() => {
+              const t = Number(valor.trim());
+              const sv =
+                valorSede.trim() === "" ? t : Number(valorSede.trim());
+              if (!Number.isFinite(t) || !Number.isFinite(sv)) return null;
+              if (sv > t)
+                return (
+                  <p className="text-xs text-alerta mt-1">
+                    A sede não pode ter pago mais do que o óleo custou.
+                  </p>
+                );
+              const dele = t - sv;
+              return (
+                <p className="text-xs text-cinza-suave mt-1">
+                  Sede R$ {sv.toLocaleString("pt-BR")} · sai do bolso de{" "}
+                  {motoristaNome} R$ {dele.toLocaleString("pt-BR")}
+                  {dele === 0 ? " (nada)" : ""}
+                </p>
+              );
+            })()}
+          </div>
         )}
         {pagamento === "sede" && (
           <div>

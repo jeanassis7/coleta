@@ -15,6 +15,7 @@ const CAMPOS_EDITAVEIS = [
   "litros_certificado",
   "observacao",
   "pago_pela_sede",
+  "valor_sede",
 ] as const;
 
 type CampoEditavel = (typeof CAMPOS_EDITAVEIS)[number];
@@ -67,23 +68,66 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     updates.observacao = trimmed || null;
   }
 
-  if (typeof body.pago_pela_sede === "boolean") {
-    updates.pago_pela_sede = body.pago_pela_sede;
+  const adminClient = getSupabaseAdmin(admin.id);
+
+  // Estado ANTES: diz se está marcando agora ou se já estava marcada (evita
+  // criar a mesma dívida duas vezes ao salvar de novo) e, desde a 0058,
+  // serve pra validar a parte da sede contra o valor total.
+  const { data: antes } = await adminClient
+    .from("coletas")
+    .select("pago_pela_sede, valor_pago, valor_sede, local_nome, criado_em")
+    .eq("id", id)
+    .maybeSingle();
+
+  // -------------------------------------------------------------------
+  // Quanto a SEDE bancou (0058) — são três números, não dois
+  // -------------------------------------------------------------------
+  //   valor_pago  = quanto o óleo custou (vai pro estoque)
+  //   valor_sede  = quanto disso a empresa pagou direto ao fornecedor
+  //   a diferença = quanto saiu do bolso do motorista
+  //
+  // O banco tem CHECK amarrando `pago_pela_sede = (valor_sede > 0)`, então o
+  // par é gravado JUNTO aqui. Deixar a tela mandar os dois separados criaria
+  // dois donos da mesma verdade — e o save morreria num erro de constraint
+  // que pro gestor não quer dizer nada.
+  const valorAntes = Number(antes?.valor_pago ?? 0);
+  const sedeAntes = Number(antes?.valor_sede ?? 0);
+  const valorFinal =
+    updates.valor_pago !== undefined ? Number(updates.valor_pago) : valorAntes;
+
+  let sedeFinal: number | null = null;
+  if (typeof body.valor_sede === "number" && Number.isFinite(body.valor_sede)) {
+    sedeFinal = Math.max(0, Math.round(body.valor_sede));
+  } else if (body.pago_pela_sede === true) {
+    // Compat com quem manda só o sim/não: a sede bancou o óleo inteiro.
+    sedeFinal = valorFinal;
+  } else if (body.pago_pela_sede === false) {
+    sedeFinal = 0;
+  } else if (updates.valor_pago !== undefined && sedeAntes > 0) {
+    // Corrigiu só o total de uma coleta que já tinha parte da sede: a parte
+    // dela não muda sozinha — mas não pode passar do total novo.
+    sedeFinal = sedeAntes;
+  }
+
+  if (sedeFinal !== null && sedeFinal > valorFinal) {
+    return NextResponse.json(
+      {
+        error:
+          `a sede não pode ter pago R$ ${sedeFinal.toLocaleString("pt-BR")} de um óleo que custou ` +
+          `R$ ${valorFinal.toLocaleString("pt-BR")}. Corrija o valor total da coleta primeiro, ou baixe a parte da sede.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  if (sedeFinal !== null) {
+    updates.valor_sede = sedeFinal;
+    updates.pago_pela_sede = sedeFinal > 0;
   }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
   }
-
-  const adminClient = getSupabaseAdmin(admin.id);
-
-  // Estado ANTES, pra saber se está marcando agora ou se já estava marcada
-  // (evita criar a mesma dívida duas vezes ao salvar de novo).
-  const { data: antes } = await adminClient
-    .from("coletas")
-    .select("pago_pela_sede, valor_pago, local_nome, criado_em")
-    .eq("id", id)
-    .maybeSingle();
 
   const { error } = await adminClient
     .from("coletas")
@@ -96,7 +140,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     updates.pago_pela_sede === true && antes?.pago_pela_sede !== true;
 
   if (marcandoAgora) {
-    const valor = Number(updates.valor_pago ?? antes?.valor_pago ?? 0);
+    // A dívida é da PARTE DA SEDE (0058), não do valor cheio da coleta: o
+    // que o motorista tirou do bolso já saiu do caixa dele, não do da empresa.
+    const valor = Number(updates.valor_sede ?? antes?.valor_sede ?? 0);
     const fornecedor = String(updates.local_nome ?? antes?.local_nome ?? "").trim();
     // Sem vencimento informado, cai no dia 1 do mês que vem — que é como
     // o combinado costuma ser ("pago início mês que vem").
@@ -211,12 +257,15 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     antes?.pago_pela_sede === true &&
     updates.pago_pela_sede !== false &&
     !marcandoAgora &&
-    (updates.valor_pago !== undefined || updates.local_nome !== undefined)
+    (updates.valor_pago !== undefined ||
+      updates.valor_sede !== undefined ||
+      updates.local_nome !== undefined)
   ) {
+    // De novo: a conta segue a PARTE DA SEDE, não o valor cheio.
     const valorNovo =
-      updates.valor_pago !== undefined
-        ? Number(updates.valor_pago)
-        : Number(antes?.valor_pago ?? 0);
+      updates.valor_sede !== undefined
+        ? Number(updates.valor_sede)
+        : Number(antes?.valor_sede ?? 0);
     const nomeNovo = String(updates.local_nome ?? antes?.local_nome ?? "").trim();
 
     const { data: contasDaColeta } = await adminClient
@@ -230,7 +279,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     if (contaPaga) {
       if (
-        updates.valor_pago !== undefined &&
+        (updates.valor_pago !== undefined || updates.valor_sede !== undefined) &&
         Math.round(Number(contaPaga.valor) * 100) !== Math.round(valorNovo * 100)
       ) {
         avisos.push(
@@ -258,7 +307,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         await adminClient.from("contas_a_pagar").delete().eq("id", contaAberta.id);
         avisos.push("valor zerado (doação): a dívida com o fornecedor foi removida");
       }
-    } else if (valorNovo > 0 && updates.valor_pago !== undefined) {
+    } else if (
+      valorNovo > 0 &&
+      (updates.valor_pago !== undefined || updates.valor_sede !== undefined)
+    ) {
       // A coleta era da sede com R$ 0 e ganhou valor: a dívida nasce AGORA.
       const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000);
       const venc = new Date(
