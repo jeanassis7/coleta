@@ -25,7 +25,7 @@ interface Motorista {
 /**
  * O que cada toggle FAZ, em português, no title de cada um.
  *
- * Cabeçalho de duas palavras ("Exige foto", "🔒") só faz sentido pra quem
+ * Cabeçalho de duas palavras ("Exige foto", "Cargas") só diz muito pra quem
  * escreveu. O texto aqui responde a pergunta do gestor — "o que acontece se
  * eu marcar isso?" — e mora num lugar só, pra cabeçalho e caixinha nunca
  * contarem histórias diferentes.
@@ -39,8 +39,6 @@ const AJUDA = {
     "Liga o fluxo de CARGA no celular dele: iniciar carga, escolher caminhão, abastecimento, despesas e descarregar. Desligado, ele enxerga só a tela de coleta. Desligar depois não apaga nada que já foi lançado.",
   saldo:
     "Mostra pra ele quanto tem de dinheiro da empresa na mão, e liga a tela de aceite quando você envia adiantamento. Desligado, adiantamento pendente fica invisível pra ele.",
-  protegido:
-    "Trava de apagar, e ela não se desliga pelo painel: quem está com o cadeado é inapagável pelo app, inclusive no modo forçado que levaria junto coletas, cargas e dinheiro. Motorista de verdade se DESATIVA (coluna Ativo), nunca se apaga. Perfil de teste nasce sem o cadeado e continua apagável.",
 } as const;
 
 export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
@@ -218,9 +216,6 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
             <th className="py-2 pr-3" title={AJUDA.saldo}>
               Saldo no app
             </th>
-            <th className="py-2 pr-3" title={AJUDA.protegido}>
-              🔒
-            </th>
             <th className="py-2 pr-3">Ações</th>
           </tr>
         </thead>
@@ -366,19 +361,6 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   className="w-5 h-5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
-              {/* Deixou de ser caixinha (0059): é um ESTADO, não um botão.
-                  Enquanto dava pra desmarcar, a trava ficava a dois cliques
-                  distraídos do botão que ela protege. */}
-              <td className="py-3 pr-3">
-                <span
-                  title={AJUDA.protegido}
-                  className={
-                    m.protegido ? "cursor-help" : "cursor-help text-cinza-suave"
-                  }
-                >
-                  {m.protegido ? "🔒" : "—"}
-                </span>
-              </td>
               <td className="py-3 pr-3">
                 <div className="flex flex-col gap-1 text-sm">
                   <button
@@ -391,7 +373,13 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   {/* Admin não é deletável: o usuário sairia do Supabase Auth
                       e só voltaria por script. Perfil protegido idem (0059).
                       O servidor e o banco recusam os dois — esconder o botão
-                      é só pra não oferecer o que não vai acontecer. */}
+                      é só pra não oferecer o que não vai acontecer.
+
+                      A coluna 🔒 saiu da tela em 23/08/2026 (Evaner): virou
+                      regra interna, não informação de painel. Quem é pessoa
+                      de verdade simplesmente não tem o botão Deletar, e é
+                      isso que o gestor precisa ver. O campo continua vivo no
+                      banco, escolhido na criação do perfil. */}
                   {m.role !== "admin" && !m.protegido && (
                     <button
                       onClick={() => setModalDeletar({ id: m.id, nome: m.nome })}
