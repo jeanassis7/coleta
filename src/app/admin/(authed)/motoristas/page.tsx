@@ -16,15 +16,17 @@ export default async function MotoristasPage() {
             href="/admin/features"
             className="px-4 py-2 rounded-xl border border-cinza-borda text-sm font-medium hover:border-verde hover:text-verde"
           >
-            ⚙️ Liberar recursos no app
+            ⚙️ O que cada recurso faz
           </a>
           <FormCriarMotorista />
         </div>
       </div>
       <p className="text-sm text-cinza-suave mb-6">
-        Quem entra no aplicativo. <strong>Liberar recursos</strong> é onde se
-        liga carga, saldo e as demais telas no celular de cada um — um
-        motorista de cada vez.
+        Quem entra no aplicativo, e o que cada um enxerga no celular. Os
+        toggles ficam todos aqui — <strong>passe o mouse em cima</strong> de
+        qualquer um pra ver o que ele faz na prática. Recurso novo nasce
+        desligado: ligue em um motorista, acompanhe alguns dias, depois
+        estenda.
       </p>
       <TabelaMotoristas motoristas={motoristas} />
     </div>

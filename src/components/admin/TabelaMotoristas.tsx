@@ -15,10 +15,33 @@ interface Motorista {
   exige_foto: boolean;
   senha_visivel: string | null;
   mostra_saldo_app?: boolean | null;
+  /** profiles.features (jsonb) — hoje só "carga" mora aqui sem coluna própria. */
+  features?: Record<string, unknown> | null;
   /** Blindado contra apagar (0049) — motorista de verdade nunca se apaga. */
   protegido?: boolean;
   criado_em: string;
 }
+
+/**
+ * O que cada toggle FAZ, em português, no title de cada um.
+ *
+ * Cabeçalho de duas palavras ("Exige foto", "🔒") só faz sentido pra quem
+ * escreveu. O texto aqui responde a pergunta do gestor — "o que acontece se
+ * eu marcar isso?" — e mora num lugar só, pra cabeçalho e caixinha nunca
+ * contarem histórias diferentes.
+ */
+const AJUDA = {
+  ativo:
+    "Deixa (ou impede) esta pessoa de entrar no aplicativo. Desmarcar NÃO apaga nada do que ela já lançou — é assim que se tira do ar quem saiu da empresa.",
+  exige_foto:
+    "Obriga a foto da fachada em toda coleta desse motorista. Sem a foto, a coleta não salva no celular dele.",
+  carga:
+    "Liga o fluxo de CARGA no celular dele: iniciar carga, escolher caminhão, abastecimento, despesas e descarregar. Desligado, ele enxerga só a tela de coleta. Desligar depois não apaga nada que já foi lançado.",
+  saldo:
+    "Mostra pra ele quanto tem de dinheiro da empresa na mão, e liga a tela de aceite quando você envia adiantamento. Desligado, adiantamento pendente fica invisível pra ele.",
+  protegido:
+    "Trava contra apagar. Marcado, o botão Deletar recusa — inclusive no modo forçado, que levaria junto coletas, cargas e dinheiro. Motorista de verdade se DESATIVA (coluna Ativo), nunca se apaga: desmarque isto só num perfil de teste.",
+} as const;
 
 export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
   const router = useRouter();
@@ -90,6 +113,33 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
     }
   }
 
+  /**
+   * Liga/desliga uma feature do app (profiles.features).
+   *
+   * Endpoint diferente do `atualizar`: features moram num jsonb e o servidor
+   * faz o merge — mandar o objeto inteiro daqui apagaria o que ele não
+   * conhece. É o MESMO endpoint da tela "Liberar recursos no app", então os
+   * dois lugares nunca divergem.
+   */
+  async function toggleFeature(id: string, feature: string, valor: boolean) {
+    setLoadingId(id);
+    try {
+      const res = await fetch(`/api/admin/motoristas/${id}/feature`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feature, valor }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        mostrarAviso("Erro: " + (err.error || "falha ao mudar o recurso"));
+      } else {
+        router.refresh();
+      }
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
   async function executarDeletar(id: string, nome: string, forcado: boolean) {
     setLoadingId(id);
     try {
@@ -156,18 +206,19 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
             <th className="py-2 pr-3">Role</th>
             <th className="py-2 pr-3">Senha</th>
             <th className="py-2 pr-3">Criado</th>
-            <th className="py-2 pr-3">Ativo</th>
-            <th className="py-2 pr-3">Exige foto</th>
-            <th
-              className="py-2 pr-3"
-              title="Motorista vê quanto tem de dinheiro da empresa na mão e recebe a tela de aceite quando o gestor envia adiantamento"
-            >
+            <th className="py-2 pr-3" title={AJUDA.ativo}>
+              Ativo
+            </th>
+            <th className="py-2 pr-3" title={AJUDA.exige_foto}>
+              Exige foto
+            </th>
+            <th className="py-2 pr-3" title={AJUDA.carga}>
+              Cargas
+            </th>
+            <th className="py-2 pr-3" title={AJUDA.saldo}>
               Saldo no app
             </th>
-            <th
-              className="py-2 pr-3"
-              title="Perfil protegido não pode ser apagado pelo painel, nem no modo forçado. Pros de verdade; perfil de teste fica desmarcado e o apagar-tudo funciona."
-            >
+            <th className="py-2 pr-3" title={AJUDA.protegido}>
               🔒
             </th>
             <th className="py-2 pr-3">Ações</th>
@@ -268,7 +319,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   title={
                     m.role === "admin"
                       ? "Admin não pode ser desativado pelo painel"
-                      : undefined
+                      : AJUDA.ativo
                   }
                   onChange={(e) => atualizar(m.id, { ativo: e.target.checked })}
                   className="w-5 h-5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
@@ -279,10 +330,28 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   type="checkbox"
                   checked={m.exige_foto}
                   disabled={loadingId === m.id || m.role === "admin"}
+                  title={AJUDA.exige_foto}
                   onChange={(e) =>
                     atualizar(m.id, { exige_foto: e.target.checked })
                   }
                   className="w-5 h-5 cursor-pointer"
+                />
+              </td>
+              {/* Cargas (features.carga) veio da tela "Liberar recursos no
+                  app" pra cá: o gestor já está aqui olhando quem é quem, e
+                  trocar de tela pra ligar um toggle era um passo a mais sem
+                  motivo. A tela de lá continua existindo com a explicação
+                  longa de cada recurso — e usa o MESMO endpoint. */}
+              <td className="py-3 pr-3">
+                <input
+                  type="checkbox"
+                  checked={!!m.features?.carga}
+                  disabled={loadingId === m.id || m.role !== "motorista"}
+                  title={AJUDA.carga}
+                  onChange={(e) =>
+                    toggleFeature(m.id, "carga", e.target.checked)
+                  }
+                  className="w-5 h-5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
               <td className="py-3 pr-3">
@@ -290,10 +359,11 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   type="checkbox"
                   checked={!!m.mostra_saldo_app}
                   disabled={loadingId === m.id || m.role !== "motorista"}
+                  title={AJUDA.saldo}
                   onChange={(e) =>
                     atualizar(m.id, { mostra_saldo_app: e.target.checked })
                   }
-                  className="w-5 h-5 cursor-pointer"
+                  className="w-5 h-5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
               <td className="py-3 pr-3">
@@ -301,7 +371,7 @@ export function TabelaMotoristas({ motoristas }: { motoristas: Motorista[] }) {
                   type="checkbox"
                   checked={!!m.protegido}
                   disabled={loadingId === m.id || m.role === "admin"}
-                  title="Protegido: não pode ser apagado, nem forçado."
+                  title={AJUDA.protegido}
                   onChange={(e) =>
                     atualizar(m.id, { protegido: e.target.checked })
                   }
