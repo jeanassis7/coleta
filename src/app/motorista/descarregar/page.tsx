@@ -14,6 +14,7 @@ import { captureGPS, type GpsResult } from "@/lib/gps/capture";
 import { logEvent } from "@/lib/events/log";
 import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
+import { InputInteiro } from "@/components/InputInteiro";
 import type { CargaAtivaCache, DescargaLocal } from "@/lib/types";
 
 const DENSIDADE_KG_POR_L = 0.9;
@@ -32,8 +33,8 @@ export default function DescarregarPage() {
   const [resumo, setResumo] = useState<ResumoCarga>({ litros: 0, coletas: 0 });
   const [salvando, setSalvando] = useState(false);
 
-  const [pesoBrutoTexto, setPesoBrutoTexto] = useState("");
-  const [kmTexto, setKmTexto] = useState("");
+  const [pesoBrutoValor, setPesoBrutoValor] = useState<number | null>(null);
+  const [kmValor, setKmValor] = useState<number | null>(null);
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
   // Validações aparecem SÓ quando aperta confirmar (nunca enquanto digita)
@@ -41,6 +42,7 @@ export default function DescarregarPage() {
   const [aviso, setAviso] = useState<
     | { tipo: "sem_coletas" }
     | { tipo: "divergencia"; diffPct: number; esperadoKg: number }
+    | { tipo: "km_menor_inicio"; ultimoKm: number }
     | { tipo: "km_menor"; ultimoKm: number }
     | { tipo: "km_salto"; salto: number }
     | null
@@ -66,7 +68,7 @@ export default function DescarregarPage() {
     // Sugere o último km conhecido do caminhão (do início da carga ou do
     // último abastecimento) — motorista só confirma ou corrige.
     const kmSug = localStorage.getItem(LAST_KM_KEY_PREFIX + c.caminhao_id);
-    setKmTexto(kmSug || String(c.km_inicial));
+    setKmValor(kmSug ? Number(kmSug) || c.km_inicial : c.km_inicial);
   }, [router]);
 
   useEffect(() => {
@@ -80,29 +82,29 @@ export default function DescarregarPage() {
     };
   }, [motoristaId]);
 
-  const pesoBruto = Number(pesoBrutoTexto);
-  const pesoDigitado = pesoBrutoTexto.trim() !== "" && Number.isFinite(pesoBruto);
+  const pesoBruto = pesoBrutoValor ?? 0;
+  const pesoDigitado = pesoBrutoValor !== null;
   const pesoLiquidoKg = pesoDigitado && carga ? pesoBruto - carga.tara_kg : 0;
   const litrosEstimados =
     pesoLiquidoKg > 0 ? Math.round(pesoLiquidoKg / DENSIDADE_KG_POR_L) : 0;
 
-  const km = Number(kmTexto);
-  const kmDigitado = kmTexto.trim() !== "" && Number.isFinite(km) && km > 0;
+  const km = kmValor ?? 0;
+  const kmDigitado = kmValor !== null && kmValor > 0;
 
   // Botão fica clicável assim que digitou os números — validações no clique
   const podeSalvar =
     !!carga && !!motoristaId && pesoDigitado && kmDigitado && !salvando;
 
-  function trocarPeso(s: string) {
-    setPesoBrutoTexto(s);
+  function trocarPeso(v: number | null) {
+    setPesoBrutoValor(v);
     // Editou o número → validações antigas não valem mais
     setErro(null);
     setAviso(null);
     setAvisosConfirmados([]);
   }
 
-  function trocarKm(s: string) {
-    setKmTexto(s);
+  function trocarKm(v: number | null) {
+    setKmValor(v);
     setErro(null);
     setAviso(null);
     setAvisosConfirmados([]);
@@ -111,21 +113,21 @@ export default function DescarregarPage() {
   async function salvar() {
     if (!podeSalvar || !carga || !motoristaId) return;
 
-    // Validação 1: peso bruto tem que ser maior que a tara
+    // ÚNICA TRAVA que sobrou no app (decisão do Evaner, 22/08): peso menor
+    // que a tara é impossível, e liberar entraria como óleo NEGATIVO no
+    // estoque, corrompendo o custo médio. Com o campo já rejeitando ponto
+    // e vírgula, isto só dispara se ele digitar um número pequeno mesmo.
     if (pesoLiquidoKg <= 0) {
       setErro(
-        `Peso bruto menor que a tara (${carga.tara_kg.toLocaleString("pt-BR")} kg) — confira o número.`
+        `Esse caminhão vazio já pesa ${carga.tara_kg.toLocaleString("pt-BR")} kg. Confere o peso do papel da balança.`
       );
       return;
     }
-    // Validação 2: odômetro não anda pra trás
+    // ⚠️ 22/08/2026 — "km menor que o início da carga" deixou de TRAVAR e
+    // virou aviso (decisão do Evaner): ele está na balança, com o papel na
+    // mão. Travar ali deixava a carga impossível de encerrar quando o km
+    // inicial tinha sido digitado errado. O aviso está na cadeia abaixo.
     const kmNum = Math.round(km);
-    if (kmNum < carga.km_inicial) {
-      setErro(
-        `Km menor que o km do início da carga (${carga.km_inicial.toLocaleString("pt-BR")}) — confere se lançou certo.`
-      );
-      return;
-    }
     setErro(null);
 
     // Antiburros em duas etapas: primeiro clique mostra o aviso NO APP,
@@ -142,6 +144,10 @@ export default function DescarregarPage() {
       setAviso(null);
     }
     {
+      if (!confirmados.includes("km_menor_inicio") && kmNum < carga.km_inicial) {
+        setAviso({ tipo: "km_menor_inicio", ultimoKm: carga.km_inicial });
+        return;
+      }
       const ultimoKmRaw = localStorage.getItem(
         LAST_KM_KEY_PREFIX + carga.caminhao_id
       );
@@ -209,7 +215,18 @@ export default function DescarregarPage() {
     };
 
     const db = getLocalDB();
-    await db.descargas_locais.add(descarga);
+    try {
+      await db.descargas_locais.add(descarga);
+    } catch (e) {
+      // O celular recusou gravar (memória cheia, duas janelas do app
+      // abertas durante uma atualização). Sem isto o botão ficava
+      // travado em "Salvando..." e nada aparecia na tela.
+      setSalvando(false);
+      setErro(
+        "O celular não conseguiu guardar o lançamento. Feche o aplicativo e abra de novo — se continuar, fala com o Jean."
+      );
+      return;
+    }
     // Guarda o km pra sugerir na próxima carga desse caminhão
     localStorage.setItem(
       LAST_KM_KEY_PREFIX + carga.caminhao_id,
@@ -295,13 +312,13 @@ export default function DescarregarPage() {
           <label className="block text-xl font-semibold mb-3">
             ⚖️ Peso bruto (kg)
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="input-grande text-2xl"
-            value={pesoBrutoTexto}
-            onChange={(e) => trocarPeso(e.target.value)}
+          {/* Peso é número cheio: o ponto não entra. Era o "12.850"
+              virando 12,85 kg — menor que a tara — que travava a descarga. */}
+          <InputInteiro
+            valor={pesoBrutoValor}
+            onChange={trocarPeso}
             autoFocus
+            sufixo="kg"
           />
           <p className="text-sm text-cinza-suave mt-1">
             Peso que vem no papelzinho da balança
@@ -328,13 +345,7 @@ export default function DescarregarPage() {
           <label className="block text-xl font-semibold mb-3">
             📍 Km do painel agora
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="input-grande text-2xl"
-            value={kmTexto}
-            onChange={(e) => trocarKm(e.target.value)}
-          />
+          <InputInteiro valor={kmValor} onChange={trocarKm} sufixo="km" />
           <p className="text-sm text-cinza-suave mt-1">
             Saiu com {carga.km_inicial.toLocaleString("pt-BR")} km
           </p>
@@ -362,6 +373,17 @@ export default function DescarregarPage() {
               Essa carga não tem nenhuma coleta lançada. Se você coletou e
               esqueceu de lançar, volta e lança primeiro. Se quer descarregar
               assim mesmo, aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
+        {aviso?.tipo === "km_menor_inicio" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Km menor que o início da carga</p>
+            <p>
+              A carga começou com {aviso.ultimoKm.toLocaleString("pt-BR")} km —
+              confere se lançou certo. Se o número estiver certo mesmo, aperta
+              o botão de novo.
             </p>
           </div>
         )}

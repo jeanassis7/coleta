@@ -17,8 +17,13 @@ interface Dados {
   saldo: number;
 }
 
+const CACHE_KEY = "coleta_saldo_cache_";
+
 export function CardSaldo({ motoristaId }: { motoristaId: string }) {
   const [dados, setDados] = useState<Dados | null>(null);
+  // true = número veio do cache (sem sinal agora)
+  const [offline, setOffline] = useState(false);
+  const [desdeQuando, setDesdeQuando] = useState<number | null>(null);
   const [aberto, setAberto] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -103,7 +108,7 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
 
         // Centavos existem (despesas/combustível) — arredonda pra 2 casas
         const cent = (x: number) => Math.round(x * 100) / 100;
-        setDados({
+        const novo = {
           ultimo_recebido: ultimo
             ? {
                 valor: Number(ultimo.valor),
@@ -115,9 +120,33 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
           gasto_despesas: cent(somaD),
           gasto_abast: cent(somaA),
           saldo: cent(Number(saldoRpc ?? 0)),
-        });
+        };
+        setDados(novo);
+        setOffline(false);
+        // Guarda o último saldo conhecido: sem isto o card SUMIA inteiro
+        // offline — justo quando ele está na rota com dinheiro no bolso e
+        // quer conferir quanto ainda tem (varredura 22/08).
+        try {
+          localStorage.setItem(
+            CACHE_KEY + motoristaId,
+            JSON.stringify({ dados: novo, em: Date.now() })
+          );
+        } catch {
+          // localStorage cheio — o card só perde a memória, não quebra
+        }
       } catch {
-        // silencioso — card só aparece se conseguir dados
+        // Sem sinal: mostra o último número conhecido, nomeado como tal.
+        try {
+          const raw = localStorage.getItem(CACHE_KEY + motoristaId);
+          if (raw) {
+            const c = JSON.parse(raw) as { dados: Dados; em: number };
+            setDados(c.dados);
+            setDesdeQuando(c.em);
+            setOffline(true);
+          }
+        } catch {
+          // cache ilegível — segue sem card, como era antes
+        }
       }
   }, [motoristaId]);
 
@@ -146,6 +175,16 @@ export function CardSaldo({ motoristaId }: { motoristaId: string }) {
       <div className="mt-3 text-lg font-bold text-right">
         Na mão: {formatBRL(dados.saldo)}
       </div>
+      {offline && (
+        <p className="text-xs text-cinza-suave text-right mt-1">
+          Sem sinal — último número que o app viu
+          {desdeQuando
+            ? `, ${new Date(desdeQuando).toLocaleDateString("pt-BR")} às ${new Date(
+                desdeQuando
+              ).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+            : ""}
+        </p>
+      )}
       {aberto && (
         <div className="mt-4 space-y-2 text-sm border-t border-cinza-borda pt-3">
           {dados.ultimo_recebido && (

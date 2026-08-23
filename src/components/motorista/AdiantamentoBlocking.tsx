@@ -63,12 +63,39 @@ export function AdiantamentoBlocking({ motoristaId }: { motoristaId: string }) {
         .select()
         .maybeSingle();
       if (error) {
-        setErro(error.message);
+        // Mensagem crua do postgrest ("TypeError: Failed to fetch") na cara
+        // de quem está confirmando dinheiro não ajuda ninguém.
+        const m = String(error.message || "").toLowerCase();
+        setErro(
+          m.includes("fetch") || m.includes("network") || m.includes("timeout")
+            ? "Sem sinal agora. Tenta de novo quando pegar internet."
+            : "Não deu pra confirmar agora. Tenta de novo."
+        );
         return;
       }
       if (!data) {
-        setErro("Esse adiantamento foi cancelado pelo Jean. Fala com ele.");
-        // Some da tela
+        // ⚠️ 22/08/2026 — ZERO LINHAS NÃO É CANCELAMENTO.
+        // Se o UPDATE chegou no servidor mas a resposta se perdeu (sinal
+        // marginal), o adiantamento JÁ está aceito: no segundo toque o
+        // `.eq("status","pendente")` não casa mais e vinha null. A tela
+        // acusava "cancelado pelo Jean" sobre R$ 2.000 que ele tinha
+        // confirmado corretamente. Agora relê antes de acusar.
+        const { data: agora } = await supabase
+          .from("adiantamentos")
+          .select("status")
+          .eq("id", pendente.id)
+          .maybeSingle();
+        if (agora?.status === "aceito") {
+          // Deu certo na tentativa anterior — segue o fluxo de sucesso.
+          setPendente(null);
+          window.dispatchEvent(new Event("coleta-saldo-mudou"));
+          return;
+        }
+        setErro(
+          agora?.status === "cancelado"
+            ? "Esse adiantamento foi cancelado pelo Jean. Fala com ele."
+            : "Não deu pra confirmar agora. Tenta de novo."
+        );
         setTimeout(() => setPendente(null), 3000);
         return;
       }

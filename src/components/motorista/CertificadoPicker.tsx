@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatLitros, parseLitros } from "@/lib/format";
+import { formatLitros } from "@/lib/format";
+import { InputInteiro } from "@/components/InputInteiro";
 import type { CertificadoTipo } from "@/lib/types";
 
 interface Props {
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export function CertificadoPicker({ litros, valor, onChange }: Props) {
-  const [parcialTexto, setParcialTexto] = useState("");
+  const [parcialLitros, setParcialLitros] = useState<number | null>(null);
 
   // Se trocar litros, e estiver em "integral", atualiza litros_certificado
   useEffect(() => {
@@ -32,17 +33,18 @@ export function CertificadoPicker({ litros, valor, onChange }: Props) {
     if (tipo === "integral") {
       onChange({ tipo: "integral", litrosCert: litros });
     } else if (tipo === "parcial") {
-      const parsed = parseLitros(parcialTexto);
-      onChange({ tipo: "parcial", litrosCert: parsed });
+      onChange({ tipo: "parcial", litrosCert: parcialLitros });
     } else {
       onChange({ tipo: "nao", litrosCert: null });
     }
   }
 
-  function handleParcialChange(s: string) {
-    setParcialTexto(s);
-    const parsed = parseLitros(s);
-    onChange({ tipo: "parcial", litrosCert: parsed });
+  // Certificado segue a MESMA regra do óleo (decisão do Evaner, 22/08):
+  // número cheio, sem ponto nem vírgula. Era aqui que "1.200" virava 1,2 L
+  // e entrava calado no relatório de certificados.
+  function handleParcialChange(v: number | null) {
+    setParcialLitros(v);
+    onChange({ tipo: "parcial", litrosCert: v });
   }
 
   return (
@@ -76,14 +78,11 @@ export function CertificadoPicker({ litros, valor, onChange }: Props) {
           <label className="block text-base font-medium mb-2">
             Quantos litros no certificado?
           </label>
-          <input
-            type="text"
-            inputMode="decimal"
-            className="input-grande"
-            placeholder=""
-            value={parcialTexto}
-            onChange={(e) => handleParcialChange(e.target.value)}
+          <InputInteiro
+            valor={parcialLitros}
+            onChange={handleParcialChange}
             autoFocus
+            sufixo="L"
           />
         </div>
       )}

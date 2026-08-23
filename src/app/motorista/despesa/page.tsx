@@ -10,6 +10,7 @@ import { logEvent } from "@/lib/events/log";
 import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
+import { formatBRL } from "@/lib/format";
 import type { CargaAtivaCache, DespesaLocal } from "@/lib/types";
 
 /**
@@ -29,6 +30,10 @@ export default function DespesaPage() {
   const [pagoNaHora, setPagoNaHora] = useState(true);
   const [foto, setFoto] = useState<Blob | null>(null);
   const [gpsResultado, setGpsResultado] = useState<GpsResult | null>(null);
+  // Aviso só aparece ao tocar SALVAR, nunca enquanto digita.
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [avisoConfirmado, setAvisoConfirmado] = useState(false);
+  const [falta, setFalta] = useState<string | null>(null);
 
   useEffect(() => {
     const id = sessionStorage.getItem("coleta_motorista_id");
@@ -66,9 +71,34 @@ export default function DespesaPage() {
     foto !== null &&
     !salvando;
 
+  // Maior despesa de viagem real da operação: R$ 658. Acima de R$ 800 é
+  // quase sempre um zero a mais (450,00 virando 4.500,00). Só AVISA.
+  const VALOR_ALTO_CENTAVOS = 80000;
+
   async function salvar() {
-    if (!podeSalvar || !motoristaId || !carga || valorCentavos === null || !foto)
+    if (salvando) return;
+    if (!podeSalvar || !motoristaId || !carga || valorCentavos === null || !foto) {
+      // O botão nunca fica cinza mudo: ao tocar, ele diz o que falta.
+      setFalta(
+        !carga
+          ? "Você não tem carga aberta."
+          : valorCentavos === null || valorCentavos <= 0
+            ? "Falta o valor."
+            : descricao.trim().length < 3
+              ? "Falta dizer o que foi (pelo menos 3 letras)."
+              : "Falta a foto."
+      );
       return;
+    }
+    setFalta(null);
+
+    if (aviso) setAvisoConfirmado(true);
+    if (!avisoConfirmado && !aviso && valorCentavos > VALOR_ALTO_CENTAVOS) {
+      setAviso(`Você digitou ${formatBRL(centavosParaReais(valorCentavos))} nessa despesa.`);
+      return;
+    }
+    setAviso(null);
+
     setSalvando(true);
 
     const valor = centavosParaReais(valorCentavos);
@@ -93,7 +123,18 @@ export default function DespesaPage() {
     };
 
     const db = getLocalDB();
-    await db.despesas_locais.add(despesa);
+    try {
+      await db.despesas_locais.add(despesa);
+    } catch (e) {
+      // O celular recusou gravar (memória cheia, duas janelas do app
+      // abertas durante uma atualização). Sem isto o botão ficava
+      // travado em "Salvando..." e nada aparecia na tela.
+      setSalvando(false);
+      setFalta(
+        "O celular não conseguiu guardar o lançamento. Feche o aplicativo e abra de novo — se continuar, fala com o Jean."
+      );
+      return;
+    }
 
     await logEvent(motoristaId, "despesa_saved_local", {
       client_id,
@@ -142,7 +183,13 @@ export default function DespesaPage() {
           </label>
           <InputDinheiro
             centavos={valorCentavos}
-            onChange={setValorCentavos}
+            onChange={(v) => {
+              setValorCentavos(v);
+              // Corrigiu o valor: o aviso volta a valer.
+              setAviso(null);
+              setAvisoConfirmado(false);
+              setFalta(null);
+            }}
             autoFocus
           />
         </div>
@@ -208,12 +255,33 @@ export default function DespesaPage() {
           </div>
         )}
 
+        {falta && (
+          <div className="bg-alerta/10 border-2 border-alerta rounded-2xl p-4">
+            <p className="text-lg font-bold text-alerta">{falta}</p>
+          </div>
+        )}
+
+        {aviso && !falta && (
+          <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4">
+            <p className="text-xl font-bold mb-1">⚠️ Confere o lançamento</p>
+            <p className="text-lg">{aviso}</p>
+          </div>
+        )}
+
         <button
           onClick={salvar}
-          disabled={!podeSalvar}
-          className="btn-primario text-2xl"
+          disabled={salvando}
+          className={
+            aviso && !falta
+              ? "btn-primario text-2xl bg-amber-500 active:bg-amber-600"
+              : "btn-primario text-2xl"
+          }
         >
-          {salvando ? "Salvando..." : "✅ SALVAR DESPESA"}
+          {salvando
+            ? "Salvando..."
+            : aviso && !falta
+              ? "SALVAR ASSIM MESMO"
+              : "✅ SALVAR DESPESA"}
         </button>
       </div>
     </main>

@@ -6,6 +6,7 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { getLocalDB } from "@/lib/db/dexie";
 import { logEvent } from "@/lib/events/log";
 import { clearCargaAtivaCached } from "@/lib/motorista/carga";
+import { countTravados } from "@/lib/sync/queue";
 
 export function MenuLogout({ nome, motoristaId }: { nome: string; motoristaId: string }) {
   const [aberto, setAberto] = useState(false);
@@ -50,9 +51,14 @@ export function MenuLogout({ nome, motoristaId }: { nome: string; motoristaId: s
     ]);
     const pendentes = coletasP + despesasP + abastP + descargasP;
 
-    if (pendentes > 0) {
+    // ⚠️ TRAVADO não bloqueia (varredura 22/08): lançamento que desistiu de
+    // subir por erro de dado não vai subir com sinal nenhum, e mantê-lo aqui
+    // prendia o motorista na conta pra sempre. Ele sai; o Jean resolve.
+    const travados = await countTravados(motoristaId);
+    if (pendentes > travados) {
+      const faltam = pendentes - travados;
       setMensagem(
-        `Você tem ${pendentes} ${pendentes === 1 ? "lançamento não enviado" : "lançamentos não enviados"}. Conecte na internet e envie antes de sair.`
+        `Você tem ${faltam} ${faltam === 1 ? "lançamento não enviado" : "lançamentos não enviados"}. Conecte na internet e envie antes de sair.`
       );
       return;
     }

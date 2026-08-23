@@ -53,6 +53,33 @@ function classificarErro(motivo: string): SyncErrorKind {
 }
 
 /**
+ * TETO DE TENTATIVAS (varredura de 22/08/2026).
+ *
+ * Antes não existia teto nenhum: um lançamento com erro PERMANENTE — o
+ * caso real é o abastecimento apontando pra um posto que o gestor mesclou
+ * na curadoria enquanto o motorista passou dias sem sinal — voltava em
+ * TODO sync, pra sempre. E como o menu recusa logout com pendência, o
+ * motorista ficava preso na conta até alguém limpar o IndexedDB do
+ * aparelho dele.
+ *
+ * Depois de 5 tentativas com erro de DADO (não de rede), o item vira
+ * TRAVADO: para de ser tentado, para de contar como pendência que bloqueia
+ * o logout, e aparece nomeado pro motorista ("precisa do Jean"). Erro de
+ * rede nunca trava — esse é pra tentar pra sempre mesmo.
+ */
+const MAX_TENTATIVAS = 5;
+
+export function estaTravado(item: {
+  tentativas?: number;
+  ultimo_erro?: string | null;
+}): boolean {
+  if ((item.tentativas || 0) < MAX_TENTATIVAS) return false;
+  if (!item.ultimo_erro) return false;
+  const kind = classificarErro(item.ultimo_erro);
+  return kind === "data" || kind === "unknown";
+}
+
+/**
  * Tenta sincronizar todas as coletas pendentes e eventos pendentes.
  * Idempotente. Não rejeita — sempre resolve com resumo.
  */
@@ -533,6 +560,14 @@ async function sincronizarEventos(): Promise<void> {
   const db = getLocalDB();
   const supabase = getSupabaseBrowser();
 
+  // A poda dos 7 dias roda SEMPRE — antes ela morava depois do return
+  // abaixo, então com a fila vazia (o caso normal!) os eventos já enviados
+  // nunca eram apagados e cresciam sem teto no celular (varredura 22/08).
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  await db.eventos_locais
+    .filter((e) => e.enviado && e.criado_em < cutoff)
+    .delete();
+
   const pendentes = await db.eventos_locais
     .filter((e) => !e.enviado)
     .limit(50)
@@ -556,12 +591,6 @@ async function sincronizarEventos(): Promise<void> {
   await db.eventos_locais.bulkUpdate(
     pendentes.map((e) => ({ key: e.id, changes: { enviado: true } }))
   );
-
-  // Limpa enviados com mais de 7 dias
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  await db.eventos_locais
-    .filter((e) => e.enviado && e.criado_em < cutoff)
-    .delete();
 }
 
 /**
@@ -570,25 +599,47 @@ async function sincronizarEventos(): Promise<void> {
  */
 export async function countPendentes(): Promise<number> {
   const db = getLocalDB();
+  // TRAVADO não conta como pendente: ele não vai subir por mais que se
+  // tente, e mantê-lo aqui deixava o badge eterno e o logout bloqueado.
   const [coletas, despesas, abastecimentos, descargas] = await Promise.all([
     db.coletas_locais
-      .filter((c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente)
+      .filter(
+        (c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente && !estaTravado(c)
+      )
       .count(),
     db.despesas_locais
-      .filter((d) => (!d.registro_subido || !d.foto_subida) && !d.gps_pendente)
+      .filter(
+        (d) => (!d.registro_subido || !d.foto_subida) && !d.gps_pendente && !estaTravado(d)
+      )
       .count(),
     db.abastecimentos_locais
-      .filter((a) => (!a.registro_subido || !a.foto_subida) && !a.gps_pendente)
+      .filter(
+        (a) => (!a.registro_subido || !a.foto_subida) && !a.gps_pendente && !estaTravado(a)
+      )
       .count(),
     db.descargas_locais
       .filter(
         (d) =>
           (!d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor) &&
-          !d.gps_pendente
+          !d.gps_pendente &&
+          !estaTravado(d)
       )
       .count(),
   ]);
   return coletas + despesas + abastecimentos + descargas;
+}
+
+/** Lançamentos que desistiram de subir — precisam do Jean, não de sinal. */
+export async function countTravados(motoristaId: string): Promise<number> {
+  const db = getLocalDB();
+  const meu = (i: { motorista_id: string }) => i.motorista_id === motoristaId;
+  const [a, b, c, d] = await Promise.all([
+    db.coletas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+    db.despesas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+    db.abastecimentos_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+    db.descargas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+  ]);
+  return a + b + c + d;
 }
 
 /**

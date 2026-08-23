@@ -10,6 +10,7 @@ import {
 import { manualSync } from "@/lib/sync/trigger";
 import { logEvent } from "@/lib/events/log";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
+import { InputInteiro } from "@/components/InputInteiro";
 
 interface CaminhaoAtivo {
   id: string;
@@ -44,6 +45,8 @@ export default function IniciarCargaPage() {
   const [caminhoes, setCaminhoes] = useState<CaminhaoAtivo[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Salto grande de km: primeiro toque avisa, segundo confirma.
+  const [avisoSalto, setAvisoSalto] = useState<number | null>(null);
   const [caminhaoId, setCaminhaoId] = useState<string>("");
   const [kmInicial, setKmInicial] = useState<string>("");
   const [fotoPainel, setFotoPainel] = useState<Blob | null>(null);
@@ -139,15 +142,47 @@ export default function IniciarCargaPage() {
     if (kmSug) setKmInicial(kmSug);
   }, [caminhaoId]);
 
+  // Salto acima disso pede confirmação — mesma régua das outras telas.
+  const SALTO_MAXIMO_KM = 1500;
+
   async function iniciar(e: React.FormEvent) {
     e.preventDefault();
+    if (salvando) return;
     if (!motoristaId || !caminhaoId) return;
     const kmNum = Number(kmInicial);
     if (!Number.isFinite(kmNum) || kmNum <= 0) {
-      setErro("Km inicial inválido");
+      setErro("Falta o km do painel.");
       return;
     }
+
+    // ---------------------------------------------------------------
+    // ANTIBURRO DO KM INICIAL (varredura de 22/08) — não existia NADA
+    // ---------------------------------------------------------------
+    // As telas irmãs (abastecimento, descarga) comparavam o km com o
+    // anterior; esta não comparava com nada, MESMO tendo o último km em
+    // mãos (é ele que pré-preenche o campo). Um zero a mais aqui
+    // envenenava a carga inteira.
+    //
+    // Aqui o km TRAVA pra trás — e é o único lugar onde travar é barato:
+    // ele está parado, é só apagar e digitar. Nas outras telas ele está
+    // no posto ou na balança, e lá vira aviso.
+    const ultimoRaw = localStorage.getItem(LAST_KM_KEY_PREFIX + caminhaoId);
+    const ultimoKm = ultimoRaw ? Number(ultimoRaw) : null;
+    if (ultimoKm !== null && Number.isFinite(ultimoKm) && ultimoKm > 0) {
+      if (kmNum < ultimoKm) {
+        setErro(
+          `Esse caminhão já estava com ${ultimoKm.toLocaleString("pt-BR")} km. O km só anda pra frente.`
+        );
+        return;
+      }
+      if (kmNum - ultimoKm > SALTO_MAXIMO_KM && !avisoSalto) {
+        setErro(null);
+        setAvisoSalto(kmNum - ultimoKm);
+        return;
+      }
+    }
     setErro(null);
+    setAvisoSalto(null);
     setSalvando(true);
 
     const supabase = getSupabaseBrowser();
@@ -336,14 +371,16 @@ export default function IniciarCargaPage() {
           <label className="block text-xl font-semibold mb-3">
             📍 Km inicial
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="input-grande text-2xl"
-            value={kmInicial}
-            onChange={(e) => setKmInicial(e.target.value)}
-            required
-            min={1}
+          {/* Km é número cheio: o ponto não entra. Era o type="number"
+              que lia "456.000" como 456 e envenenava a carga inteira. */}
+          <InputInteiro
+            valor={kmInicial === "" ? null : Number(kmInicial)}
+            onChange={(v) => {
+              setKmInicial(v === null ? "" : String(v));
+              setErro(null);
+              setAvisoSalto(null);
+            }}
+            sufixo="km"
           />
         </div>
 
@@ -362,12 +399,31 @@ export default function IniciarCargaPage() {
           </div>
         )}
 
+        {avisoSalto !== null && !erro && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Salto grande de km</p>
+            <p>
+              Esse caminhão andou {avisoSalto.toLocaleString("pt-BR")} km desde
+              o último registro? Confere se lançou certo. Se estiver certo
+              mesmo, aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={salvando || !caminhaoId || !kmInicial}
-          className="btn-primario text-2xl"
+          className={
+            avisoSalto !== null && !erro
+              ? "btn-primario text-2xl bg-amber-500 active:bg-amber-600"
+              : "btn-primario text-2xl"
+          }
         >
-          {salvando ? "Iniciando..." : "🚀 INICIAR CARGA"}
+          {salvando
+            ? "Iniciando..."
+            : avisoSalto !== null && !erro
+              ? "INICIAR ASSIM MESMO"
+              : "🚀 INICIAR CARGA"}
         </button>
       </form>
     </main>

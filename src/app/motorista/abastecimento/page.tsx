@@ -11,6 +11,7 @@ import { triggerSyncAfterSave } from "@/lib/sync/trigger";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { SugestaoLocal } from "@/components/motorista/SugestaoLocal";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
+import { InputInteiro } from "@/components/InputInteiro";
 import { InputLitros, centilitrosParaLitros } from "@/components/InputLitros";
 import type { CargaAtivaCache, AbastecimentoLocal } from "@/lib/types";
 
@@ -40,12 +41,14 @@ export default function AbastecimentoPage() {
   // direita com duas casas (12345 → 123,45 L). Trafega em centilitros.
   const [litrosCentilitros, setLitrosCentilitros] = useState<number | null>(null);
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
-  const [kmTexto, setKmTexto] = useState("");
+  const [kmValor, setKmValor] = useState<number | null>(null);
   // Antiburro do km — erro duro e avisos de segundo toque, tudo no app
   const [erroKm, setErroKm] = useState<string | null>(null);
   const [avisoKm, setAvisoKm] = useState<
+    | { tipo: "menor_que_inicio"; ultimoKm: number }
     | { tipo: "menor_que_ultimo"; ultimoKm: number }
     | { tipo: "salto_grande"; salto: number }
+    | { tipo: "litros_alto"; litros: number }
     | null
   >(null);
   // Avisos já confirmados neste preenchimento — confirmar um não pula os
@@ -68,7 +71,7 @@ export default function AbastecimentoPage() {
     }
     setCarga(c);
     const kmSug = localStorage.getItem(LAST_KM_KEY_PREFIX + c.caminhao_id);
-    if (kmSug) setKmTexto(kmSug);
+    if (kmSug) setKmValor(Number(kmSug) || null);
   }, [router]);
 
   useEffect(() => {
@@ -84,7 +87,7 @@ export default function AbastecimentoPage() {
 
   const litros =
     litrosCentilitros !== null ? centilitrosParaLitros(litrosCentilitros) : null;
-  const km = Number(kmTexto);
+  const km = kmValor ?? 0;
   const podeSalvar =
     !!motoristaId &&
     !!carga &&
@@ -100,9 +103,11 @@ export default function AbastecimentoPage() {
 
   // Salto entre abastecimentos acima disso pede confirmação extra
   const SALTO_MAXIMO_KM = 1500;
+  // Tanque de caminhão toco não passa disso (validado pelo Evaner, 22/08).
+  const LITROS_MAXIMO = 600;
 
-  function trocarKm(s: string) {
-    setKmTexto(s);
+  function trocarKm(v: number | null) {
+    setKmValor(v);
     setErroKm(null);
     setAvisoKm(null);
     setAvisosConfirmados([]);
@@ -120,20 +125,16 @@ export default function AbastecimentoPage() {
       return;
 
     const kmNum = Math.round(km);
-
-    // REGRA DURA: odômetro nunca volta — km menor que o início da carga
-    // é fisicamente impossível (provável dígito a menos).
-    if (kmNum < carga.km_inicial) {
-      setErroKm(
-        `Km menor que o km do início da carga (${carga.km_inicial.toLocaleString("pt-BR")}) — confere se lançou certo.`
-      );
-      return;
-    }
     setErroKm(null);
 
     // AVISOS de segundo toque (primeiro toque mostra, segundo confirma).
     // Confirmar UM aviso não pula os outros — a cadeia re-roda e o próximo
     // ainda aparece. Editar o km zera as confirmações.
+    //
+    // ⚠️ 22/08/2026 — "km menor que o início da carga" deixou de TRAVAR e
+    // virou aviso (decisão do Evaner). Ele está no posto, com a bomba na
+    // mão: travar ali deixava a carga impossível de tocar quando o km
+    // inicial tinha sido digitado errado. Aviso ele lê e segue.
     const confirmados = [...avisosConfirmados];
     if (avisoKm) {
       confirmados.push(avisoKm.tipo);
@@ -141,6 +142,10 @@ export default function AbastecimentoPage() {
       setAvisoKm(null);
     }
     {
+      if (!confirmados.includes("menor_que_inicio") && kmNum < carga.km_inicial) {
+        setAvisoKm({ tipo: "menor_que_inicio", ultimoKm: carga.km_inicial });
+        return;
+      }
       const ultimoKmRaw = localStorage.getItem(
         LAST_KM_KEY_PREFIX + carga.caminhao_id
       );
@@ -163,6 +168,11 @@ export default function AbastecimentoPage() {
         kmNum - referencia > SALTO_MAXIMO_KM
       ) {
         setAvisoKm({ tipo: "salto_grande", salto: kmNum - referencia });
+        return;
+      }
+      // Tanque de caminhão toco não passa disso — acima é dígito a mais.
+      if (!confirmados.includes("litros_alto") && litros > LITROS_MAXIMO) {
+        setAvisoKm({ tipo: "litros_alto", litros });
         return;
       }
     }
@@ -195,7 +205,18 @@ export default function AbastecimentoPage() {
     };
 
     const db = getLocalDB();
-    await db.abastecimentos_locais.add(abastecimento);
+    try {
+      await db.abastecimentos_locais.add(abastecimento);
+    } catch (e) {
+      // O celular recusou gravar (memória cheia, duas janelas do app
+      // abertas durante uma atualização). Sem isto o botão ficava
+      // travado em "Salvando..." e nada aparecia na tela.
+      setSalvando(false);
+      setErroKm(
+        "O celular não conseguiu guardar o lançamento. Feche o aplicativo e abra de novo — se continuar, fala com o Jean."
+      );
+      return;
+    }
     localStorage.setItem(
       LAST_KM_KEY_PREFIX + carga.caminhao_id,
       String(Math.round(km))
@@ -353,13 +374,9 @@ export default function AbastecimentoPage() {
           <label className="block text-xl font-semibold mb-3">
             📍 Km atual
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="input-grande text-2xl"
-            value={kmTexto}
-            onChange={(e) => trocarKm(e.target.value)}
-          />
+          {/* Km é número cheio: o ponto não entra. Era o `type="number"`
+              que lia "456.000" como 456 (varredura de 22/08). */}
+          <InputInteiro valor={kmValor} onChange={trocarKm} sufixo="km" />
         </div>
 
         {motoristaId && (
@@ -377,6 +394,27 @@ export default function AbastecimentoPage() {
         {erroKm && (
           <div className="bg-alerta/10 border-2 border-alerta text-alerta rounded-2xl p-4 text-center text-lg font-medium">
             {erroKm}
+          </div>
+        )}
+
+        {avisoKm?.tipo === "menor_que_inicio" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Km menor que o início da carga</p>
+            <p>
+              A carga começou com {avisoKm.ultimoKm.toLocaleString("pt-BR")} km
+              — confere se lançou certo. Se o número estiver certo mesmo,
+              aperta o botão de novo.
+            </p>
+          </div>
+        )}
+
+        {avisoKm?.tipo === "litros_alto" && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-900 rounded-2xl p-4 text-base">
+            <p className="font-bold mb-1">⚠️ Confere os litros</p>
+            <p>
+              Você digitou {avisoKm.litros.toLocaleString("pt-BR")} litros. Se
+              estiver certo mesmo, aperta o botão de novo.
+            </p>
           </div>
         )}
 
