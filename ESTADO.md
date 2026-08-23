@@ -467,6 +467,10 @@ página. Otimização pendente: `prefetch={false}` na sidebar e colapsar os 3
    que existiam foram marcadas de uma vez pela própria migration. Quando a
    máquina chegar, o campo do número já está lá — e aí entra a conversa de
    qual é a consequência de "essa carga tem 7%".
+   **Quem digita o número é o ADMIN no painel** (tabela de Cargas → coluna
+   Umid.), nunca o motorista na balança — decisão do Evaner em 23/08/2026.
+   A tela de descarregar do motorista não pergunta umidade e não deve
+   passar a perguntar: o teste é de laboratório, não de campo.
 2. **Checklist ao iniciar carga** — o Evaner quer, mas decidiu deixar pra
    depois.
 3. **Kit de emergência** (carga perigosa) — mesma coisa.
