@@ -197,6 +197,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0043`–`0054` — ver `ESTADO.md` (troca de óleo por data, ARLA, compra vinculada à carga, motorista×caminhões, caixa fecha de verdade, venda idempotente, perfil protegido, custo da compra na descarga, fotos do caixa, dívidas, buracos financeiros)
 - `0055_atores_do_log.sql` — RPC `atores_do_log()`: DISTINCT no banco pro filtro da tela de log (o select cru truncava em 1000 sem ordem)
 - `0056_backup_mensal.sql` — bucket privado `backups` + RPC `listar_tabelas_backup()` (lista vem do catálogo: tabela nova entra no backup sozinha)
+- `0057_umidade_nao_analisada.sql` — `descargas.umidade_nao_analisada`: "a análise não foi feita" vira LANÇAMENTO, não campo vazio (+ CHECK de coerência e backfill das 131 descargas históricas)
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
 

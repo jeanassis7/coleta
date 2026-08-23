@@ -11,6 +11,7 @@ interface UmidadeModalDados {
   motorista: string;
   data: string;
   atual: number | null;
+  naoAnalisada: boolean;
 }
 
 type SortKey =
@@ -200,15 +201,20 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                           motorista: c.motorista_nome,
                           data: formatDataHora(c.descarga!.criado_em),
                           atual: c.descarga!.umidade_pct,
+                          naoAnalisada: !!c.descarga!.umidade_nao_analisada,
                         })
                       }
                       className="hover:underline"
-                      title="Clique pra lançar/editar a umidade"
+                      title="Clique pra lançar a umidade — ou marcar que a análise não foi feita"
                     >
                       {c.descarga.umidade_pct !== null &&
                       c.descarga.umidade_pct !== undefined ? (
                         <span className="text-green-700">
                           {c.descarga.umidade_pct}%
+                        </span>
+                      ) : c.descarga.umidade_nao_analisada ? (
+                        <span className="text-cinza-suave font-sans text-xs">
+                          não feita
                         </span>
                       ) : (
                         <span className="text-verde font-sans text-xs font-semibold">
@@ -258,7 +264,15 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
 
 /**
  * Modal DO APP pra lançar/editar umidade — nada de prompt() do navegador.
- * (Futuro: vira uma tela dedicada com mais contexto da descarga.)
+ *
+ * São TRÊS estados (migration 0057), não dois:
+ *   número      → a análise foi feita e deu isso
+ *   não feita   → a análise não aconteceu nessa carga (decisão registrada)
+ *   pendente    → ainda não se sabe; é só esse que o alerta cobra
+ *
+ * Hoje a análise física ainda não faz parte da rotina, então o caminho
+ * normal é o botão "Não foi analisada". Quando o teste passar a existir de
+ * verdade, o campo do número já está aqui esperando.
  */
 function ModalUmidade({
   dados,
@@ -279,13 +293,22 @@ function ModalUmidade({
       setErro("Umidade deve ser um número entre 0 e 100");
       return;
     }
+    await enviar({ umidade_pct: valor });
+  }
+
+  /** Marca (ou desmarca) "a análise não foi feita nessa carga". */
+  async function marcarNaoAnalisada(marcar: boolean) {
+    await enviar({ umidade_nao_analisada: marcar });
+  }
+
+  async function enviar(corpo: Record<string, unknown>) {
     setErro(null);
     setSalvando(true);
     try {
       const res = await fetch(`/api/admin/descargas/${dados.descargaId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ umidade_pct: valor }),
+        body: JSON.stringify(corpo),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -323,6 +346,22 @@ function ModalUmidade({
             {erro}
           </div>
         )}
+
+        {dados.naoAnalisada ? (
+          <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 text-sm text-cinza-texto">
+            Esta carga está marcada como <strong>análise não feita</strong>. Se
+            você lançar um número aqui, a marca sai sozinha.
+          </div>
+        ) : (
+          <button
+            onClick={() => marcarNaoAnalisada(true)}
+            disabled={salvando}
+            className="w-full px-4 py-2 rounded-xl border border-cinza-borda text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+            title="Registra que a análise não aconteceu — para de cobrar essa carga"
+          >
+            Não foi analisada
+          </button>
+        )}
         <div className="flex gap-2 justify-between items-center">
           {dados.atual !== null ? (
             <button
@@ -331,6 +370,15 @@ function ModalUmidade({
               className="text-sm text-alerta hover:underline"
             >
               Apagar umidade
+            </button>
+          ) : dados.naoAnalisada ? (
+            <button
+              onClick={() => marcarNaoAnalisada(false)}
+              disabled={salvando}
+              className="text-sm text-alerta hover:underline"
+              title="Volta a carga pra pendente"
+            >
+              Desmarcar
             </button>
           ) : (
             <span />

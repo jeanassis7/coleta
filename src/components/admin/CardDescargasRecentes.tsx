@@ -38,6 +38,10 @@ export function CardDescargasRecentes({ cargas }: { cargas: CargaDetalhada[] }) 
               <span className="text-sm text-green-700">
                 umidade {c.descarga!.umidade_pct}% ✓
               </span>
+            ) : c.descarga!.umidade_nao_analisada ? (
+              <span className="text-sm text-cinza-suave">
+                análise não feita
+              </span>
             ) : (
               <Link
                 href="/admin/cargas"

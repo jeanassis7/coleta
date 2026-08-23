@@ -180,6 +180,7 @@ export async function buscarAlertas(
       id: string;
       peso_liquido_kg: number;
       umidade_pct: number | null;
+      umidade_nao_analisada: boolean;
       criado_em: string;
       cargas: {
         profiles: { nome: string } | null;
@@ -194,7 +195,7 @@ export async function buscarAlertas(
       supabase
         .from("descargas")
         .select(
-          `id, peso_liquido_kg, umidade_pct, criado_em,
+          `id, peso_liquido_kg, umidade_pct, umidade_nao_analisada, criado_em,
            cargas!inner(
              profiles!cargas_motorista_id_fkey!inner(nome),
              coletas(litros)
@@ -234,7 +235,14 @@ export async function buscarAlertas(
           });
         }
       }
-      if (d.umidade_pct === null && diasAtras(d.criado_em) >= DIAS_UMIDADE_PENDENTE) {
+      // "Não foi analisada" (0057) é uma DECISÃO registrada, não uma
+      // pendência — cobrar de novo seria pedir pro gestor responder duas
+      // vezes a mesma pergunta, e alerta que não tem resposta vira ruído.
+      if (
+        d.umidade_pct === null &&
+        !d.umidade_nao_analisada &&
+        diasAtras(d.criado_em) >= DIAS_UMIDADE_PENDENTE
+      ) {
         alertas.push({
           chave: `umidade_pendente:${d.id}`,
           icone: "💧",
@@ -242,8 +250,9 @@ export async function buscarAlertas(
           titulo: "Umidade não lançada",
           texto:
             `A descarga de ${nome} do dia ${formatData(d.criado_em)} está há ${diasAtras(d.criado_em)} dias ` +
-            `sem lançamento de umidade. Se você testou e esqueceu de registrar, é só clicar na coluna ` +
-            `"Umid." da carga. Se não testou, tudo bem — a umidade fica em branco e nenhum desconto é aplicado.`,
+            `sem lançamento de umidade. Clique na coluna "Umid." da carga: se você testou, lance o ` +
+            `número; se não testou, marque "Não foi analisada" e a carga para de aparecer aqui. ` +
+            `De um jeito ou de outro nenhum desconto é aplicado — a umidade hoje é só registro.`,
           link: { href: "/admin/cargas", label: "Lançar na tabela de cargas" },
           data: d.criado_em,
         });

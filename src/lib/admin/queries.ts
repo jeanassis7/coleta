@@ -254,6 +254,9 @@ export interface CargaDetalhada {
     peso_liquido_kg: number;
     litros_estimados: number | null;
     umidade_pct: number | null;
+    /** true = a análise não foi feita (decisão registrada). Diferente de
+     *  umidade_pct null sozinho, que é "ainda não se sabe". */
+    umidade_nao_analisada: boolean;
     criado_em: string;
   } | null;
 }
@@ -280,7 +283,7 @@ export async function buscarCargas(
          coletas(id, litros, valor_pago),
          despesas(id, valor),
          abastecimentos(id, valor, litros),
-         descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, criado_em)`
+         descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, umidade_nao_analisada, criado_em)`
       )
       .order("iniciada_em", { ascending: false })
       .order("id")
@@ -312,6 +315,7 @@ export async function buscarCargas(
           peso_liquido_kg: number;
           litros_estimados: number | null;
           umidade_pct: number | null;
+          umidade_nao_analisada: boolean;
           criado_em: string;
         }[]
       | null;
@@ -704,6 +708,9 @@ export interface CargaCompleta {
     peso_liquido_kg: number;
     litros_estimados: number | null;
     umidade_pct: number | null;
+    /** true = a análise não foi feita (decisão registrada). Diferente de
+     *  umidade_pct null sozinho, que é "ainda não se sabe". */
+    umidade_nao_analisada: boolean;
     foto_papel_path: string | null;
     latitude: number | null;
     longitude: number | null;
@@ -725,7 +732,7 @@ export async function buscarCargaCompleta(
        coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
        despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),
        abastecimentos(id, posto_nome, litros, valor, km_atual, foto_path, latitude, longitude, criado_em),
-       descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, foto_papel_path, latitude, longitude, criado_em)`
+       descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, umidade_nao_analisada, foto_papel_path, latitude, longitude, criado_em)`
     )
     .eq("id", cargaId)
     .maybeSingle();

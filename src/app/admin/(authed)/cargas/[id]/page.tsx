@@ -170,7 +170,9 @@ export default async function CargaDetalhePage({
             carga.descarga?.umidade_pct !== undefined
               ? `umidade ${carga.descarga.umidade_pct}%`
               : carga.descarga
-                ? "umidade pendente"
+                ? carga.descarga.umidade_nao_analisada
+                  ? "análise de umidade não feita"
+                  : "umidade pendente"
                 : "sem descarga ainda"
           }
         />

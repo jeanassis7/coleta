@@ -171,7 +171,11 @@ function ConteudoEvento({ evento }: { evento: Evento }) {
         {d.litros_estimados
           ? ` · ≈ ${d.litros_estimados.toLocaleString("pt-BR")} L`
           : ""}
-        {d.umidade_pct !== null ? ` · umidade ${d.umidade_pct}%` : " · umidade pendente"}
+        {d.umidade_pct !== null
+          ? ` · umidade ${d.umidade_pct}%`
+          : d.umidade_nao_analisada
+            ? " · análise de umidade não feita"
+            : " · umidade pendente"}
       </p>
     </>
   );

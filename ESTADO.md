@@ -460,7 +460,13 @@ página. Otimização pendente: `prefetch={false}` na sidebar e colapsar os 3
 
 ### Em aberto, sem decisão
 
-1. **Umidade não desconta nada** — espera a máquina de medir.
+1. **Umidade não desconta nada** — espera a máquina de medir. Desde
+   23/08/2026 existem TRÊS estados (0057): número lançado, "análise não
+   feita" e pendente. Hoje a análise física não acontece, então o caminho
+   normal é o admin marcar "não feita" em cada carga; as 131 descargas
+   que existiam foram marcadas de uma vez pela própria migration. Quando a
+   máquina chegar, o campo do número já está lá — e aí entra a conversa de
+   qual é a consequência de "essa carga tem 7%".
 2. **Checklist ao iniciar carga** — o Evaner quer, mas decidiu deixar pra
    depois.
 3. **Kit de emergência** (carga perigosa) — mesma coisa.

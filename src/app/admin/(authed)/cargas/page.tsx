@@ -35,7 +35,15 @@ export default async function CargasPage() {
       peso_bruto_kg: c.descarga?.peso_bruto_kg ?? "",
       tara_kg: c.descarga?.peso_tara_kg ?? c.caminhao_tara_kg,
       peso_liquido_kg: c.descarga?.peso_liquido_kg ?? "",
+      // Vazio e "nao_analisada" são coisas diferentes — no CSV também.
       umidade_pct: c.descarga?.umidade_pct ?? "",
+      umidade_analise: c.descarga
+        ? c.descarga.umidade_pct !== null
+          ? "feita"
+          : c.descarga.umidade_nao_analisada
+            ? "nao feita"
+            : "pendente"
+        : "",
       valor_coletas: c.total_valor_coletas.toFixed(2),
       qtd_despesas: c.total_despesas,
       valor_despesas: c.total_valor_despesas.toFixed(2),
