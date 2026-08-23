@@ -213,9 +213,12 @@ export function AdicionarColetaNaCarga({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Valor pago (R$)
+          <label className="block text-sm font-medium">
+            Quanto o óleo custou (R$)
           </label>
+          <p className="text-xs text-cinza-suave mb-1">
+            O total negociado — não importa quem pagou.
+          </p>
           <input
             type="text"
             inputMode="numeric"
@@ -224,7 +227,12 @@ export function AdicionarColetaNaCarga({
             onChange={(e) => setValor(e.target.value)}
             placeholder="150"
           />
-          <p className="text-xs text-cinza-suave mt-1">Inteiro, sem centavos</p>
+          <p className="text-xs text-cinza-suave mt-1">
+            Inteiro, sem centavos.{" "}
+            {pagamento === "motorista"
+              ? `Sai inteiro do bolso de ${motoristaNome}.`
+              : "Quem pagou o quê é a pergunta de baixo."}
+          </p>
         </div>
       </div>
 

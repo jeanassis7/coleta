@@ -37,7 +37,7 @@ const TABELAS: Record<string, string> = {
 
 const CAMPOS: Record<string, string> = {
   litros: "litros",
-  valor_pago: "valor pago",
+  valor_pago: "custo do óleo",
   valor: "valor",
   valor_total: "valor total",
   preco_kg: "preço por kg",

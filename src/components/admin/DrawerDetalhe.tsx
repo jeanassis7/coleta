@@ -272,7 +272,7 @@ export function DrawerDetalhe({
                 <Linha label="Motorista" valor={coleta.profiles?.nome || "—"} />
                 <Linha label="Local" valor={coleta.local_nome} />
                 <Linha label="Litros" valor={formatLitros(coleta.litros)} />
-                <Linha label="Valor pago" valor={formatBRL(coleta.valor_pago)} />
+                <Linha label="Custo do óleo" valor={formatBRL(coleta.valor_pago)} />
                 <Linha
                   label="Quem pagou"
                   valor={
@@ -346,10 +346,17 @@ export function DrawerDetalhe({
                 />
               </div>
 
+              {/* "Valor pago" era ambíguo desde que a sede pôde pagar uma
+                  parte (0058): pago por quem? Aqui o número é UM só — o que o
+                  óleo custou. De quem saiu o dinheiro é a pergunta seguinte,
+                  e a linha embaixo responde sem ele precisar rolar a tela. */}
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Valor pago (R$)
+                <label className="block text-sm font-medium">
+                  Quanto o óleo custou (R$)
                 </label>
+                <p className="text-xs text-cinza-suave mb-1">
+                  O total negociado com o fornecedor — não importa quem pagou.
+                </p>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -357,6 +364,11 @@ export function DrawerDetalhe({
                   value={valorTexto}
                   onChange={(e) => setValorTexto(e.target.value)}
                 />
+                <p className="text-xs text-cinza-suave mt-1">
+                  {pagoPelaSede
+                    ? "Quem pagou o quê você define ali embaixo, em “Pagamento pela sede”."
+                    : `Saiu inteiro do bolso de ${coleta.profiles?.nome || "o motorista"} — desconta do saldo dele.`}
+                </p>
               </div>
 
               <div>
