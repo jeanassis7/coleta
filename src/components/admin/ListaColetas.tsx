@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { formatBRL, formatDataHora, formatLitros } from "@/lib/format";
 import { DrawerDetalhe } from "@/components/admin/DrawerDetalhe";
 import { ModalInputTexto } from "@/components/admin/Modais";
@@ -34,6 +34,48 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
   const [apagando, setApagando] = useState(false);
   const [modalApagar, setModalApagar] = useState(false);
   const [resultadoApagar, setResultadoApagar] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------
+  // Alerta do dashboard aponta pra UMA coleta (?coleta=<id>)
+  // ---------------------------------------------------------------------
+  // O alerta diz "vale corrigir" e o link mandava pra lista inteira: o
+  // gestor lia o texto, clicava, e tinha que caçar a linha na mão — sendo
+  // que o alerta já sabe exatamente qual é. Com o id na URL a gaveta abre
+  // sozinha, JÁ no formulário de edição.
+  //
+  // O guard `abriuFoco` é o que impede a gaveta de renascer sozinha depois
+  // que ele fecha (o parâmetro continua na URL enquanto ele mexe nos
+  // filtros, porque o Filtros preserva tudo que já estava lá).
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const focoId = params.get("coleta");
+  const [abriuFoco, setAbriuFoco] = useState<string | null>(null);
+  const [abrirEditando, setAbrirEditando] = useState(false);
+  const focoForaDaLista =
+    !!focoId && !coletas.some((c) => c.id === focoId);
+
+  useEffect(() => {
+    if (!focoId || abriuFoco === focoId) return;
+    setAbriuFoco(focoId);
+    const alvo = coletas.find((c) => c.id === focoId);
+    if (!alvo) return;
+    setSelecionada(alvo);
+    setAbrirEditando(true);
+  }, [focoId, coletas, abriuFoco]);
+
+  function fecharDrawer() {
+    setSelecionada(null);
+    setAbrirEditando(false);
+    // Tira o ?coleta= da URL — senão ele viaja junto em cada troca de
+    // filtro e o link fica com cara de "essa coleta está selecionada".
+    if (focoId) {
+      const p = new URLSearchParams(params);
+      p.delete("coleta");
+      router.replace(p.toString() ? `${pathname}?${p}` : pathname, {
+        scroll: false,
+      });
+    }
+  }
 
   if (coletas.length === 0) {
     return (
@@ -115,6 +157,14 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
           </button>
         )}
       </div>
+
+      {focoForaDaLista && (
+        <div className="card mb-3 bg-amber-50 border border-amber-300 text-sm">
+          A coleta do alerta não está nesta lista — provavelmente o filtro de
+          período ou de motorista foi trocado depois. Volte ao dashboard e
+          clique no link do alerta de novo.
+        </div>
+      )}
 
       {resultadoApagar && (
         <div className="card mb-3 bg-slate-50 text-sm text-cinza-texto">
@@ -198,8 +248,12 @@ export function ListaColetas({ coletas }: { coletas: Coleta[] }) {
 
       {selecionada && (
         <DrawerDetalhe
+          // key: força remontar ao trocar de coleta — sem isso o estado
+          // interno (inclusive "já abre editando") ficaria o da anterior.
+          key={selecionada.id}
           coleta={selecionada}
-          onClose={() => setSelecionada(null)}
+          abrirEditando={abrirEditando}
+          onClose={fecharDrawer}
         />
       )}
     </>

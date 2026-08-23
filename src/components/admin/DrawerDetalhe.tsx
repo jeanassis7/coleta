@@ -35,16 +35,20 @@ interface Coleta {
 export function DrawerDetalhe({
   coleta,
   onClose,
+  abrirEditando = false,
 }: {
   coleta: Coleta;
   onClose: () => void;
+  /** Abre já com o formulário aberto — usado quando o alerta do dashboard
+   *  manda o gestor direto pra corrigir esta coleta. */
+  abrirEditando?: boolean;
 }) {
   const router = useRouter();
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [ampliada, setAmpliada] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
   const [confirmTexto, setConfirmTexto] = useState("");
-  const [editando, setEditando] = useState(false);
+  const [editando, setEditando] = useState(abrirEditando);
 
   // Estados de edição
   const [litrosTexto, setLitrosTexto] = useState(String(coleta.litros).replace(".", ","));

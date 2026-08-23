@@ -60,6 +60,30 @@ function diaBr(): string {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+/**
+ * Link de um alerta que fala de UMA coleta específica.
+ *
+ * Mandar pra /admin puro não resolvia: o dashboard abre no MÊS atual com o
+ * filtro padrão, e a coleta do alerta costuma ser de dias antes — o gestor
+ * clicava, caía numa lista enorme (ou vazia) e tinha que caçar na mão.
+ *
+ * Agora o link fixa o período no DIA BR da coleta e manda o id em ?coleta=,
+ * que a ListaColetas usa pra já abrir a gaveta em modo edição.
+ */
+function linkColeta(
+  id: string,
+  criadoEm: string,
+  label = "Abrir a coleta pra corrigir"
+): { href: string; label: string } {
+  const dia = new Date(new Date(criadoEm).getTime() - 3 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  return {
+    href: `/admin?periodo=customizado&inicio=${dia}&fim=${dia}&coleta=${id}`,
+    label,
+  };
+}
+
 export async function buscarAlertas(
   opts: {
     /** Quem já calculou os saldos passa aqui — evita recalcular (o
@@ -441,7 +465,7 @@ export async function buscarAlertas(
                 `"${c.local_nome}". A média dele é R$ ${media.toFixed(2).replace(".", ",")} por litro — ` +
                 `essa saiu mais que o dobro. Pode ser óleo especial, preço combinado com um cliente antigo, ` +
                 `ou erro ao digitar o valor. Vale confirmar.`,
-              link: { href: "/admin", label: "Ver coletas" },
+              link: linkColeta(c.id, c.criado_em),
               data: c.criado_em,
             });
           }
@@ -518,7 +542,7 @@ export async function buscarAlertas(
             `${nome} lançou ${litrosFmt} L em "${c.local_nome}" sem pagar nada. ` +
             `Óleo doado se lança com valor zero mesmo — se foi isso, é só dispensar este aviso. ` +
             `Se na verdade ele pagou e errou o campo, corrija a coleta: o valor desconta do saldo dele.`,
-          link: { href: "/admin?aba=lista", label: "Ver coletas" },
+          link: linkColeta(c.id, c.criado_em, "Abrir a coleta"),
           data: c.criado_em,
         });
         continue;
@@ -553,7 +577,7 @@ export async function buscarAlertas(
               `provavelmente faltou dígito no valor. `
             : "") +
           `Confirme com ele antes de corrigir: o valor pago desconta do saldo dele, e o óleo entra no estoque.`,
-        link: { href: "/admin?aba=lista", label: "Ver coletas" },
+        link: linkColeta(c.id, c.criado_em),
         data: c.criado_em,
       });
     }
