@@ -108,6 +108,12 @@ export default async function CargaDetalhePage({
           Carga de {carga.motorista_nome}
         </h1>
         <StatusBadge status={carga.status} />
+        <Link
+          href={`/admin/cargas/${carga.id}/relatorio`}
+          className="ml-auto bg-verde text-white text-sm font-semibold rounded-xl px-4 py-2 hover:bg-verde-escuro"
+        >
+          📄 Relatório do motorista
+        </Link>
       </div>
 
       {/* Cabeçalho */}

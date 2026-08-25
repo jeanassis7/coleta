@@ -11,6 +11,8 @@ import { manualSync } from "@/lib/sync/trigger";
 import { logEvent } from "@/lib/events/log";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { InputInteiro } from "@/components/InputInteiro";
+import { CardSaldo } from "@/components/motorista/CardSaldo";
+import { AdiantamentoBlocking } from "@/components/motorista/AdiantamentoBlocking";
 
 interface CaminhaoAtivo {
   id: string;
@@ -53,6 +55,13 @@ export default function IniciarCargaPage() {
   // Tela de boas-vindas antes do formulário (pedido do Evaner)
   const [formAberto, setFormAberto] = useState(false);
   const [nomeMotorista, setNomeMotorista] = useState("");
+  // Sem carga aberta, a home do motorista REDIRECIONA pra cá — e o saldo
+  // e o aceite de adiantamento só existiam lá. Resultado: ele ficava sem
+  // ver o próprio dinheiro e sem ter ONDE aceitar um adiantamento até
+  // abrir uma carga (o aceito_em carimbava a data errada). Os dois
+  // componentes são os mesmos da home — nada saiu de lá.
+  const [mostraSaldo, setMostraSaldo] = useState(false);
+  const [temFeatureSaldo, setTemFeatureSaldo] = useState(false);
 
   const preparar = useCallback(
     async (id: string) => {
@@ -79,17 +88,30 @@ export default function IniciarCargaPage() {
       // 3. Lista de caminhões ativos — filtrada pelas placas DELE, se o
       // gestor atribuiu (0046). Sem atribuição, vê todos (como sempre).
       const supabase = getSupabaseBrowser();
-      const [{ data, error }, { data: minhasPlacas }] = await Promise.all([
-        supabase
-          .from("caminhoes")
-          .select("id, placa, marca, modelo, cor, capacidade_l, tara_kg")
-          .eq("ativo", true)
-          .order("placa"),
-        supabase
-          .from("motorista_caminhoes")
-          .select("caminhao_id")
-          .eq("motorista_id", id),
-      ]);
+      const [{ data, error }, { data: minhasPlacas }, { data: perfil }] =
+        await Promise.all([
+          supabase
+            .from("caminhoes")
+            .select("id, placa, marca, modelo, cor, capacidade_l, tara_kg")
+            .eq("ativo", true)
+            .order("placa"),
+          supabase
+            .from("motorista_caminhoes")
+            .select("caminhao_id")
+            .eq("motorista_id", id),
+          supabase
+            .from("profiles")
+            .select("mostra_saldo_app, features")
+            .eq("id", id)
+            .maybeSingle(),
+        ]);
+
+      const pf = perfil as {
+        mostra_saldo_app: boolean | null;
+        features: Record<string, unknown> | null;
+      } | null;
+      setMostraSaldo(!!pf?.mostra_saldo_app);
+      setTemFeatureSaldo(!!pf?.features?.saldo);
       if (error) {
         // Rede caiu no meio — trata como offline, não como "sem caminhões"
         setEstado("offline");
@@ -327,6 +349,10 @@ export default function IniciarCargaPage() {
   if (!formAberto) {
     return (
       <main className="min-h-screen p-4 max-w-md mx-auto flex flex-col justify-center">
+        {temFeatureSaldo && motoristaId && (
+          <AdiantamentoBlocking motoristaId={motoristaId} />
+        )}
+
         <div className="text-center space-y-6">
           <div className="text-6xl">🚚</div>
           <h1 className="text-3xl font-bold">
@@ -340,6 +366,12 @@ export default function IniciarCargaPage() {
             🚀 INICIAR NOVA CARGA
           </button>
         </div>
+
+        {mostraSaldo && motoristaId && (
+          <div className="mt-8">
+            <CardSaldo motoristaId={motoristaId} />
+          </div>
+        )}
       </main>
     );
   }

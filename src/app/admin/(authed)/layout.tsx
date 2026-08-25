@@ -36,7 +36,9 @@ export default async function AdminLayout({
   return (
     <div className="min-h-screen bg-slate-50 md:flex">
       <Sidebar nome={profile.nome} veLog={veLog} />
-      <main className="flex-1 min-w-0 px-4 py-6 md:px-6">{children}</main>
+      <main className="flex-1 min-w-0 px-4 py-6 md:px-6 print:p-0">
+        {children}
+      </main>
     </div>
   );
 }

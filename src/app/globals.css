@@ -21,6 +21,35 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   IMPRESSÃO — o relatório da carga sai como PDF pela caixa do navegador.
+   --------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  body {
+    background: #fff;
+  }
+  /* thead de tabela repete sozinho nas páginas seguintes — é o que faz o
+     cabeçalho HORA/O QUE FOI/QUANTIDADE aparecer na folha 2 sem gambiarra. */
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  /* Título do dia órfão no pé da página é o pior corte possível: o leitor
+     vira a folha sem saber de que dia são as linhas seguintes. */
+  .relatorio-dia td {
+    break-after: avoid;
+  }
+  .relatorio-resumo {
+    break-inside: avoid;
+  }
+}
+
 @layer components {
   .btn-primario {
     @apply min-h-botao w-full bg-verde text-white text-xl font-semibold rounded-2xl px-6 py-4 active:bg-verde-escuro disabled:bg-cinza-borda disabled:text-cinza-suave transition-colors;

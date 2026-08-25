@@ -673,6 +673,9 @@ export interface CargaCompleta {
     local_nome: string;
     litros: number;
     valor_pago: number;
+    /** parte que a SEDE bancou (0058). O bolso do motorista é
+     *  `valor_pago - valor_sede`. */
+    valor_sede: number;
     foto_path: string | null;
     latitude: number | null;
     longitude: number | null;
@@ -683,8 +686,12 @@ export interface CargaCompleta {
   }[];
   despesas: {
     id: string;
+    /** nulo = lançada no painel e paga por conta da empresa (0047) */
+    motorista_id: string | null;
     valor: number;
     descricao: string;
+    /** false = assinou a nota: não saiu da mão dele, virou conta da empresa */
+    pago_na_hora: boolean;
     foto_path: string | null;
     latitude: number | null;
     longitude: number | null;
@@ -692,10 +699,15 @@ export interface CargaCompleta {
   }[];
   abastecimentos: {
     id: string;
+    /** nulo = lançado no painel e pago por conta da empresa (0047) */
+    motorista_id: string | null;
     posto_nome: string;
     litros: number;
     valor: number;
     km_atual: number;
+    /** false = assinou a nota: não saiu da mão dele */
+    pago_na_hora: boolean;
+    tipo: "diesel" | "arla";
     foto_path: string | null;
     latitude: number | null;
     longitude: number | null;
@@ -729,9 +741,9 @@ export async function buscarCargaCompleta(
        foto_painel_path,
        profiles!cargas_motorista_id_fkey(nome),
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
-       coletas(id, local_nome, litros, valor_pago, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
-       despesas(id, valor, descricao, foto_path, latitude, longitude, criado_em),
-       abastecimentos(id, posto_nome, litros, valor, km_atual, foto_path, latitude, longitude, criado_em),
+       coletas(id, local_nome, litros, valor_pago, valor_sede, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
+       despesas(id, motorista_id, valor, descricao, pago_na_hora, foto_path, latitude, longitude, criado_em),
+       abastecimentos(id, motorista_id, posto_nome, litros, valor, km_atual, pago_na_hora, tipo, foto_path, latitude, longitude, criado_em),
        descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, umidade_nao_analisada, foto_papel_path, latitude, longitude, criado_em)`
     )
     .eq("id", cargaId)
@@ -764,6 +776,81 @@ export async function buscarCargaCompleta(
     abastecimentos: ordenar(r.abastecimentos || []),
     descarga: (r.descargas || [])[0] || null,
   };
+}
+
+// ============================================================================
+// RELATÓRIO DA CARGA (o papel que o motorista guarda)
+// ============================================================================
+
+export interface AdiantamentoDoRelatorio {
+  id: string;
+  valor: number;
+  forma_pagamento: "dinheiro" | "pix";
+  aceito_em: string;
+  /** aceito ANTES de a carga abrir — a linha ganha essa marca no papel */
+  antes_de_abrir: boolean;
+}
+
+export interface RelatorioCarga {
+  carga: CargaCompleta;
+  adiantamentos: AdiantamentoDoRelatorio[];
+}
+
+/**
+ * A carga inteira + os adiantamentos que ele aceitou no período.
+ *
+ * JANELA DOS ADIANTAMENTOS — do fim da carga ANTERIOR até o fim desta.
+ * Adiantamento não tem carga_id, só `aceito_em`: se a janela fosse
+ * "abriu → encerrou", o PIX recebido na sexta com a carga aberta na segunda
+ * não apareceria em relatório NENHUM — sumiria da história dele. Como só
+ * existe 1 carga ativa por motorista (índice único da 0007), as janelas se
+ * encaixam sem sobreposição: cada adiantamento aparece em exatamente um
+ * relatório. O `>` no início (e `<=` no fim) é o que garante isso.
+ */
+export async function buscarRelatorioCarga(
+  cargaId: string
+): Promise<RelatorioCarga | null> {
+  const carga = await buscarCargaCompleta(cargaId);
+  if (!carga) return null;
+
+  const supabase = await getSupabaseServer();
+  const { data: anterior } = await supabase
+    .from("cargas")
+    .select("iniciada_em, encerrada_em")
+    .eq("motorista_id", carga.motorista_id)
+    .lt("iniciada_em", carga.iniciada_em)
+    .order("iniciada_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Carga anterior cancelada sem encerrar: cai no iniciada_em dela. Melhor
+  // repetir um adiantamento num relatório do que perdê-lo em todos.
+  const a = anterior as { iniciada_em: string; encerrada_em: string | null } | null;
+  const inicioJanela = a?.encerrada_em || a?.iniciada_em || "1970-01-01T00:00:00Z";
+  const fimJanela = carga.encerrada_em || new Date().toISOString();
+
+  // SEM paginação de propósito: a janela é de uma carga (dias), o teto é a
+  // regra de negócio. Não é consulta que cresce com o tempo.
+  const { data: ads } = await supabase
+    .from("adiantamentos")
+    .select("id, valor, forma_pagamento, aceito_em")
+    .eq("motorista_id", carga.motorista_id)
+    .eq("status", "aceito")
+    .gt("aceito_em", inicioJanela)
+    .lte("aceito_em", fimJanela)
+    .order("aceito_em");
+
+  const adiantamentos: AdiantamentoDoRelatorio[] = (
+    (ads as { id: string; valor: number; forma_pagamento: "dinheiro" | "pix"; aceito_em: string }[]) ?? []
+  ).map((ad) => ({
+    id: ad.id,
+    valor: Number(ad.valor),
+    forma_pagamento: ad.forma_pagamento,
+    aceito_em: ad.aceito_em,
+    antes_de_abrir: ad.aceito_em < carga.iniciada_em,
+  }));
+
+  return { carga, adiantamentos };
 }
 
 // ============================================================================

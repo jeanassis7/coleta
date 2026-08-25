@@ -1,9 +1,51 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 22/08/2026 (varredura do teto de 1.000 linhas + backup mensal).
+> Atualizado em 25/08/2026 (relatório da carga pro motorista).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
 > `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
 > fechado de dinheiro, mapeados em 20/08).
+
+---
+
+## RELATÓRIO DA CARGA PRO MOTORISTA — 25/08/2026 📄
+
+A primeira carga real do Lucimar rodou. Pedido do Evaner: ao encerrar,
+gerar um papel pro motorista guardar. **O objetivo não é informar — é
+fazer o caderno de papel dele virar inútil.** Spec inteiro em
+`docs/superpowers/specs/2026-08-25-relatorio-da-carga-design.md`.
+
+- **`/admin/cargas/[id]/relatorio`** — botão "📄 Relatório do motorista" no
+  detalhe da carga. HTML com CSS de impressão; o Jean usa "Salvar como PDF"
+  do navegador e manda no WhatsApp. Sem pdfkit, sem puppeteer.
+- **É um RETRATO, não um espelho: saldo NÃO entra no papel.** Entre gerar e
+  o motorista abrir, ele pode ter coletado — número desatualizado vira
+  atrito. Saldo é filme e se vê no app.
+- **A coluna "VOCÊ PAGOU" é sempre o bolso DELE**, nunca o valor cheio:
+  coleta com `valor_sede` (0058) mostra o custo no detalhe e a diferença na
+  coluna; nota assinada e lançamento sem `motorista_id` (0047) ficam fora.
+  Assim a coluna soma exatamente o TOTAL — papel cuja coluna não fecha
+  destrói a confiança que o relatório existe pra construir.
+- **Janela dos adiantamentos: do fim da carga ANTERIOR até o fim desta.**
+  Adiantamento não tem `carga_id`. Com janela "abriu → encerrou", o PIX de
+  sexta com carga aberta na segunda sumiria de todos os relatórios. Como só
+  há 1 carga ativa por motorista, as janelas se encaixam sem sobreposição.
+  Eles aparecem na linha do tempo mas **não entram em soma nenhuma** (valor
+  no texto, não na coluna).
+- **Densidade medida, não chutada**: o Luiz fez 19 coletas em 1 dia — a 3
+  linhas por evento, uma carga de 5 dias daria 6 páginas. Virou tabela de
+  uma linha por lançamento, data como título de dia, resumos lado a lado:
+  ~90 lançamentos ≈ 2 páginas.
+- **FORA por decisão do Evaner**: custo por litro, km/L e % do tanque (são
+  a régua com que ele é medido, ficam só no painel), fotos, acerto, saldo,
+  e a linha de "diferença" entre litros declarados e balança (os dois
+  números lado a lado ensinam; uma linha chamada "faltou" acusa).
+- **Achado no caminho**: sem carga ativa, a home do motorista REDIRECIONA
+  pro `/iniciar-carga` — e o `CardSaldo` e o `AdiantamentoBlocking` só
+  existiam na home. Ele ficava sem ver o próprio saldo **e sem ter onde
+  aceitar adiantamento** até abrir uma carga (o `aceito_em` carimbava a
+  data errada). Os dois componentes agora também vivem na tela de
+  boas-vindas. Nada saiu dos lugares antigos — é adição.
+- **E2E do Módulo 1: 62/62 verdes** depois da mexida em `buscarCargaCompleta`.
 
 ---
 

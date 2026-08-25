@@ -158,7 +158,7 @@ export function Sidebar({
   return (
     <>
       {/* Barra do topo — só no celular */}
-      <div className="md:hidden sticky top-0 z-30 bg-white border-b border-cinza-borda px-4 py-3 flex items-center justify-between">
+      <div className="md:hidden print:hidden sticky top-0 z-30 bg-white border-b border-cinza-borda px-4 py-3 flex items-center justify-between">
         <Link href="/admin" className="font-bold flex items-center gap-2">
           <img src="/icons/icon-192.png" alt="" className="w-6 h-6" />
           Coleta
@@ -173,7 +173,7 @@ export function Sidebar({
       </div>
 
       {/* Sidebar fixa — desktop */}
-      <aside className="hidden md:flex w-60 shrink-0 bg-white border-r border-cinza-borda h-screen sticky top-0">
+      <aside className="hidden md:flex print:hidden w-60 shrink-0 bg-white border-r border-cinza-borda h-screen sticky top-0">
         {conteudo}
       </aside>
 
