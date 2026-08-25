@@ -418,14 +418,21 @@ export default async function RelatorioCargaPage({
                 {/* A conversão fecha em LITROS, a unidade que ele declara:
                     assim os dois números do bloco são comparáveis de bater
                     o olho. SEM linha de "diferença" — número ao lado de
-                    número ensina; linha chamada "faltou" acusa. */}
+                    número ensina; linha chamada "faltou" acusa.
+
+                    A conta vem ao lado do resultado: eles já sabem o 0,9, o
+                    que faltava era poder conferir na calculadora. Sem sinal
+                    de igual — o resultado é arredondado ("por volta de"). */}
                 <p className="text-[12px] mt-2">
                   Dão por volta de{" "}
                   <strong>
                     {litrosBR(Math.round(carga.descarga.peso_liquido_kg / 0.9))}{" "}
                     litros
-                  </strong>
-                  .
+                  </strong>{" "}
+                  <span className="text-cinza-suave">
+                    ({carga.descarga.peso_liquido_kg.toLocaleString("pt-BR")} ÷
+                    0,9)
+                  </span>
                 </p>
               </>
             ) : (
