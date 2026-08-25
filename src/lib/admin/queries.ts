@@ -807,6 +807,46 @@ export interface RelatorioCarga {
  * encaixam sem sobreposição: cada adiantamento aparece em exatamente um
  * relatório. O `>` no início (e `<=` no fim) é o que garante isso.
  */
+/**
+ * Só quem é a carga — pro <title> da página do relatório.
+ *
+ * O nome do arquivo que o Chrome sugere no "Salvar como PDF" é o título da
+ * página. Sem isto, todo relatório de toda carga era salvo como "Coleta" e
+ * o Jean renomeava na mão, um por um.
+ */
+export async function buscarIdentidadeDaCarga(
+  cargaId: string
+): Promise<{ motorista_nome: string; data: string; encerrada: boolean } | null> {
+  const supabase = await getSupabaseServer();
+  const { data } = await supabase
+    .from("cargas")
+    .select("iniciada_em, encerrada_em, profiles!cargas_motorista_id_fkey(nome)")
+    .eq("id", cargaId)
+    .maybeSingle();
+  if (!data) return null;
+  const r = data as unknown as {
+    iniciada_em: string;
+    encerrada_em: string | null;
+    profiles: { nome: string } | null;
+  };
+  // A carga é identificada pelo dia em que ACABOU; em andamento, pelo dia
+  // em que começou.
+  const quando = new Date(r.encerrada_em || r.iniciada_em);
+  return {
+    motorista_nome: r.profiles?.nome || "motorista",
+    data: new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "America/Sao_Paulo",
+    })
+      .format(quando)
+      .split("/")
+      .join("-"),
+    encerrada: !!r.encerrada_em,
+  };
+}
+
 export async function buscarRelatorioCarga(
   cargaId: string
 ): Promise<RelatorioCarga | null> {

@@ -1,11 +1,35 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Fragment } from "react";
-import { buscarRelatorioCarga } from "@/lib/admin/queries";
+import type { Metadata } from "next";
+import {
+  buscarIdentidadeDaCarga,
+  buscarRelatorioCarga,
+} from "@/lib/admin/queries";
 import { formatBRLExato, formatHora } from "@/lib/format";
 import { BotaoImprimir } from "@/components/admin/BotaoImprimir";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * O título da página É o nome que o Chrome sugere no "Salvar como PDF".
+ * "Relatório da carga - Lucimar - 24-08-2026" sai pronto pro WhatsApp;
+ * antes todo relatório de toda carga era salvo como "Coleta".
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const info = await buscarIdentidadeDaCarga(id);
+  if (!info) return { title: "Relatório da carga" };
+  return {
+    title: `Relatório da carga - ${info.motorista_nome} - ${info.data}${
+      info.encerrada ? "" : " (em andamento)"
+    }`,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Datas em dia BR. O agrupamento por dia é o que tira a data repetida de 90
