@@ -48,6 +48,14 @@
   .relatorio-resumo {
     break-inside: avoid;
   }
+  /* O Chrome NÃO imprime cor de fundo por padrão — "Gráficos de segundo
+     plano" vem DESMARCADO na caixa de impressão. As faixas do relatório são
+     informação (dinheiro que entrou, gasto, começo/fim da carga), não
+     enfeite, e são claras o bastante pra não custar tinta. */
+  .relatorio-linha {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
 @layer components {

@@ -61,12 +61,36 @@ function litrosBR(n: number): string {
  * exatamente o TOTAL do rodapé: papel cuja coluna não fecha destrói a
  * confiança que o relatório existe pra construir.
  */
+/**
+ * Cor de fundo por natureza do lançamento.
+ *
+ * A COLETA FICA BRANCA de propósito: ela é 90% das linhas (o Luiz fez 19
+ * num dia). Se tudo tem cor, nada tem — pintar a rotina viraria listra de
+ * arco-íris e o olho pararia de ver. Branco é o normal; cor é a exceção,
+ * e é justamente a exceção que ele precisa achar rápido.
+ *
+ * A cor nunca é o ÚNICO sinal: toda linha já diz em palavras o que é
+ * ("Diesel — Posto X", "Despesa — almoço"). Quem imprimir em preto e
+ * branco não perde informação nenhuma.
+ */
+const FUNDO = {
+  /** começo e fim da carga — as capas do relatório */
+  marco: "bg-slate-100",
+  /** dinheiro ENTRANDO na mão dele */
+  entrada: "bg-emerald-50",
+  /** dinheiro saindo que não é coleta (diesel, arla, despesa) */
+  saida: "bg-amber-50",
+  /** a rotina */
+  coleta: "",
+} as const;
+
 interface Linha {
   quando: string;
   titulo: string;
   detalhe: string | null;
   quantidade: string | null;
   pagou: number | null;
+  fundo: string;
 }
 
 export default async function RelatorioCargaPage({
@@ -146,6 +170,7 @@ export default async function RelatorioCargaPage({
       detalhe: ad.antes_de_abrir ? "antes de abrir a carga" : null,
       quantidade: null,
       pagou: null,
+      fundo: FUNDO.entrada,
     });
   }
 
@@ -155,6 +180,7 @@ export default async function RelatorioCargaPage({
     detalhe: null,
     quantidade: `${carga.km_inicial.toLocaleString("pt-BR")} km`,
     pagou: null,
+    fundo: FUNDO.marco,
   });
 
   for (const c of carga.coletas) {
@@ -173,6 +199,7 @@ export default async function RelatorioCargaPage({
       detalhe: marcas.length ? marcas.join(" · ") : null,
       quantidade: `${litrosBR(Number(c.litros))} L`,
       pagou: cheio - sede,
+      fundo: FUNDO.coleta,
     });
   }
 
@@ -188,6 +215,7 @@ export default async function RelatorioCargaPage({
           : `assinou a nota — a empresa paga ${formatBRLExato(Number(a.valor))}`,
       quantidade: `${litrosBR(Number(a.litros))} L`,
       pagou: meu ? Number(a.valor) : null,
+      fundo: FUNDO.saida,
     });
   }
 
@@ -203,6 +231,7 @@ export default async function RelatorioCargaPage({
           : `assinou a nota — a empresa paga ${formatBRLExato(Number(d.valor))}`,
       quantidade: null,
       pagou: meu ? Number(d.valor) : null,
+      fundo: FUNDO.saida,
     });
   }
 
@@ -213,6 +242,7 @@ export default async function RelatorioCargaPage({
       detalhe: null,
       quantidade: `${carga.descarga.peso_liquido_kg.toLocaleString("pt-BR")} kg`,
       pagou: null,
+      fundo: FUNDO.marco,
     });
   }
 
@@ -310,7 +340,10 @@ export default async function RelatorioCargaPage({
                   </td>
                 </tr>
                 {g.linhas.map((l, i) => (
-                  <tr key={g.chave + i} className="border-b border-slate-100">
+                  <tr
+                    key={g.chave + i}
+                    className={`relatorio-linha border-b border-slate-100 ${l.fundo}`}
+                  >
                     <td className="py-1 align-top text-cinza-suave">
                       {formatHora(l.quando)}
                     </td>
