@@ -266,9 +266,9 @@ export default async function RelatorioCargaPage({
             {carga.caminhao_cor}
           </p>
           <p className="text-sm">
-            Saiu {dataHoraCurta(carga.iniciada_em)}
+            Abriu a carga {dataHoraCurta(carga.iniciada_em)}
             {carga.encerrada_em
-              ? ` · Voltou ${dataHoraCurta(carga.encerrada_em)} · ${dias} ${
+              ? ` · Fechou a carga ${dataHoraCurta(carga.encerrada_em)} · ${dias} ${
                   dias === 1 ? "dia" : "dias"
                 }`
               : ""}
@@ -342,29 +342,57 @@ export default async function RelatorioCargaPage({
             <h2 className="text-[11px] font-bold tracking-widest text-cinza-suave mb-2">
               O ÓLEO QUE VOCÊ PEGOU
             </h2>
-            <Par
-              rotulo="Você lançou"
-              valor={`${litrosBR(litrosDeclarados)} litros`}
-            />
+            <p className="text-[13px]">
+              Você lançou{" "}
+              <strong>{litrosBR(litrosDeclarados)} litros</strong>
+            </p>
             {carga.descarga ? (
               <>
-                <Par
-                  rotulo="Peso na balança"
-                  valor={`${carga.descarga.peso_liquido_kg.toLocaleString(
-                    "pt-BR"
-                  )} kg`}
-                  forte
-                />
-                <p className="text-[11px] text-cinza-suave mt-1">
-                  bruto {carga.descarga.peso_bruto_kg.toLocaleString("pt-BR")} kg
-                  − tara {carga.descarga.peso_tara_kg.toLocaleString("pt-BR")} kg
+                <p className="text-[13px] mt-1">
+                  O peso na balança deu{" "}
+                  <strong>
+                    {carga.descarga.peso_bruto_kg.toLocaleString("pt-BR")} kg
+                  </strong>
                 </p>
-                {/* Os dois números lado a lado, com a conversão aberta. SEM
-                    linha de "diferença": número ao lado de número ensina;
-                    linha chamada "faltou" acusa. */}
-                <p className="text-[11px] text-cinza-suave">
-                  {litrosBR(litrosDeclarados)} litros dão por volta de{" "}
-                  {litrosBR(Math.round(litrosDeclarados * 0.9))} kg
+
+                {/* A conta aberta: ele vê de onde saiu o líquido. A tara é o
+                    snapshot do caminhão na hora da descarga — recalibrar o
+                    cadastro depois não muda papel já entregue. */}
+                <div className="mt-2">
+                  <Par
+                    rotulo="Peso lançado"
+                    valor={`${carga.descarga.peso_bruto_kg.toLocaleString(
+                      "pt-BR"
+                    )} kg`}
+                  />
+                  <Par
+                    rotulo="Tara"
+                    valor={`− ${carga.descarga.peso_tara_kg.toLocaleString(
+                      "pt-BR"
+                    )} kg`}
+                  />
+                  <div className="border-t border-black mt-1 pt-1">
+                    <Par
+                      rotulo="LÍQUIDO"
+                      valor={`${carga.descarga.peso_liquido_kg.toLocaleString(
+                        "pt-BR"
+                      )} kg`}
+                      forte
+                    />
+                  </div>
+                </div>
+
+                {/* A conversão fecha em LITROS, a unidade que ele declara:
+                    assim os dois números do bloco são comparáveis de bater
+                    o olho. SEM linha de "diferença" — número ao lado de
+                    número ensina; linha chamada "faltou" acusa. */}
+                <p className="text-[12px] mt-2">
+                  Dão por volta de{" "}
+                  <strong>
+                    {litrosBR(Math.round(carga.descarga.peso_liquido_kg / 0.9))}{" "}
+                    litros
+                  </strong>
+                  .
                 </p>
               </>
             ) : (

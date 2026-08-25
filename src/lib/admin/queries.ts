@@ -871,11 +871,17 @@ export async function buscarRelatorioCarga(
 
   // SEM paginação de propósito: a janela é de uma carga (dias), o teto é a
   // regra de negócio. Não é consulta que cresce com o tempo.
+  //
+  // `regularizacao` fora (0060): o lançamento da virada nasceu de planilha,
+  // com hora sintética, e o motorista nunca viu tela nenhuma. Ele conta no
+  // saldo como qualquer outro — mas neste papel viraria a pergunta errada
+  // ("eu aceitei R$ 5.000 nesse dia?"). O relatório é o que ele VIVEU.
   const { data: ads } = await supabase
     .from("adiantamentos")
     .select("id, valor, forma_pagamento, aceito_em")
     .eq("motorista_id", carga.motorista_id)
     .eq("status", "aceito")
+    .eq("regularizacao", false)
     .gt("aceito_em", inicioJanela)
     .lte("aceito_em", fimJanela)
     .order("aceito_em");
