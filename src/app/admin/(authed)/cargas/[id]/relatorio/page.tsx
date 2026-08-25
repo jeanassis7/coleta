@@ -53,6 +53,25 @@ function litrosBR(n: number): string {
 }
 
 /**
+ * Litros em tambores de 200 L, no meio tambor mais próximo.
+ *
+ * Vem sempre com "≈" na frente, e não é frescura: 24,5 tambores × 200 dá
+ * 4.900 L, mas o líquido da balança foi 4.856 L. São 44 litros que um
+ * motorista com calculadora acha em meio minuto — e papel que não fecha
+ * perde a credibilidade inteira, não só aquela linha. O sinal avisa que
+ * ali é aproximação, de propósito.
+ *
+ * Inteiro sai sem casa decimal ("32 tambores"), meio sai com uma
+ * ("31,5 tambores") — decisão do Evaner.
+ */
+function tambores(litros: number): string {
+  const t = Math.round((litros / 200) * 2) / 2;
+  return `≈ ${t.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${
+    t === 1 ? "tambor" : "tambores"
+  }`;
+}
+
+/**
  * Uma linha do papel.
  *
  * `pagou` é SEMPRE o que saiu do bolso do motorista — nunca o valor cheio.
@@ -312,6 +331,22 @@ export default async function RelatorioCargaPage({
               ? ` · rodou ${kmRodado.toLocaleString("pt-BR")} km`
               : ""}
           </p>
+          {/* A umidade aparece SEMPRE, mesmo sem número — inclusive quando
+              nem descarga existe. É proposital: o motorista vai se
+              acostumando com o campo antes de a análise virar rotina.
+
+              Só o número lançado conta como informação; "não analisada"
+              (0057) e "ninguém lançou ainda" viram o mesmo traço, porque a
+              diferença entre os dois é assunto do painel, não do papel. */}
+          <p className="text-sm">
+            Umidade:{" "}
+            {carga.descarga?.umidade_pct !== null &&
+            carga.descarga?.umidade_pct !== undefined
+              ? `${Number(carga.descarga.umidade_pct).toLocaleString("pt-BR", {
+                  maximumFractionDigits: 2,
+                })}%`
+              : "—"}
+          </p>
         </div>
 
         {/* Linha do tempo */}
@@ -377,7 +412,10 @@ export default async function RelatorioCargaPage({
             </h2>
             <p className="text-[13px]">
               Você lançou{" "}
-              <strong>{litrosBR(litrosDeclarados)} litros</strong>
+              <strong>{litrosBR(litrosDeclarados)} litros</strong>{" "}
+              <span className="text-cinza-suave">
+                · {tambores(litrosDeclarados)}
+              </span>
             </p>
             {carga.descarga ? (
               <>
@@ -430,8 +468,15 @@ export default async function RelatorioCargaPage({
                     litros
                   </strong>{" "}
                   <span className="text-cinza-suave">
-                    ({carga.descarga.peso_liquido_kg.toLocaleString("pt-BR")} ÷
-                    0,9)
+                    {/* Tambor conta em cima do litro IMPRESSO, não do interno
+                        (4.855,56): assim ele refaz a conta com os números
+                        que estão na frente dele. */}
+                    ·{" "}
+                    {tambores(
+                      Math.round(carga.descarga.peso_liquido_kg / 0.9)
+                    )}{" "}
+                    ({carga.descarga.peso_liquido_kg.toLocaleString("pt-BR")} kg
+                    ÷ 0,9)
                   </span>
                 </p>
               </>
