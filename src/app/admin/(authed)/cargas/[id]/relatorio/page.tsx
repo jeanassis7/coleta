@@ -275,7 +275,7 @@ export default async function RelatorioCargaPage({
         </span>
       </div>
 
-      <div className="bg-white p-8 rounded-xl border border-cinza-borda print:p-0 print:border-0 print:rounded-none">
+      <div className="relatorio-folha bg-white p-8 rounded-xl border border-cinza-borda print:border-0 print:rounded-none">
         {/* Cabeçalho */}
         <div className="border-b-2 border-black pb-3 mb-4">
           <div className="flex items-baseline justify-between gap-4">

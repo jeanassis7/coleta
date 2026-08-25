@@ -27,7 +27,22 @@
 @media print {
   @page {
     size: A4;
-    margin: 12mm;
+    /* MARGEM ZERO É DE PROPÓSITO.
+
+       O Chrome desenha a data e a URL do site na MARGEM da folha. Não
+       existe CSS que desligue isso (o "Cabeçalhos e rodapés" é checkbox
+       do navegador) — mas sem margem não sobra onde desenhar, e some.
+       A margem visual volta logo abaixo, como padding do relatório. */
+    margin: 0;
+  }
+  .relatorio-folha {
+    padding: 12mm;
+  }
+  /* O thead repete no topo de cada página; o respiro do topo vem junto
+     com ele, senão a folha 2 começaria colada na borda (o padding de um
+     bloco só vale no começo e no fim dele, não em cada página). */
+  thead th {
+    padding-top: 5mm;
   }
   body {
     background: #fff;
