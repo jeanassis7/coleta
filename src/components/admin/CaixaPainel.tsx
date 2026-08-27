@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InputDinheiro, centavosParaReais, reaisParaCentavos } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "./Modais";
@@ -113,6 +113,16 @@ export function CaixaPainel({
     body: unknown;
     metodo: string;
   } | null>(null);
+
+  // O aviso de erro (e o botão de confirmar do antiburro de 2 etapas) mora
+  // no TOPO do painel, mas os formulários ficam bem abaixo — editar uma
+  // conta e clicar Salvar mostrava a mensagem fora da tela e parecia que
+  // nada tinha acontecido. Aconteceu com o Evaner de verdade (27/08),
+  // mexendo no saldo de partida da conta do banco.
+  const avisoRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (erro) avisoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [erro]);
 
   const totalContas = saldos.reduce((s, c) => s + c.saldo, 0);
   const totalNaMao = naMao.reduce((s, m) => s + m.saldo, 0);
@@ -261,7 +271,10 @@ export function CaixaPainel({
   return (
     <div className="space-y-6">
       {erro && (
-        <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm space-y-2">
+        <div
+          ref={avisoRef}
+          className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm space-y-2"
+        >
           <p>{erro}</p>
           {confirmarEnvio && (
             <button
