@@ -6,6 +6,11 @@ import { buscarCheques } from "@/lib/admin/queries";
 import { formatBRL, formatData, formatLitros } from "@/lib/format";
 import { FechamentoPosto } from "@/components/admin/FechamentoPosto";
 import { CuradoriaPosto } from "@/components/admin/CuradoriaPosto";
+import {
+  NotasDoPosto,
+  TabelaNotasEditavel,
+} from "@/components/admin/NotasDoPosto";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +20,20 @@ export default async function PostoDetalhePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [posto, contas, cheques, todos] = await Promise.all([
-    buscarPostoDetalhe(id),
-    buscarContasFinanceiras(),
-    buscarCheques({ status: ["em_carteira"] }),
-    buscarPostosComSaldo(),
-  ]);
+  const supabase = await getSupabaseServer();
+  const [posto, contas, cheques, todos, { data: veiculos }, { data: pessoas }] =
+    await Promise.all([
+      buscarPostoDetalhe(id),
+      buscarContasFinanceiras(),
+      buscarCheques({ status: ["em_carteira"] }),
+      buscarPostosComSaldo(),
+      supabase
+        .from("caminhoes")
+        .select("id, placa, marca, tipo")
+        .eq("ativo", true)
+        .order("placa"),
+      supabase.from("profiles").select("id, nome").order("nome"),
+    ]);
   if (!posto) notFound();
 
   const abertas = posto.notas.filter((n) => n.status === "a_pagar");
@@ -67,6 +80,17 @@ export default async function PostoDetalhePage({
         </span>
       </div>
 
+      {/* Lançar o extrato do posto: é assim que a nota chega — uma vez por
+          mês, no papel, não em tempo real pelo celular. */}
+      <div className="mb-4">
+        <NotasDoPosto
+          postoId={posto.id}
+          postoNome={posto.nome}
+          veiculos={(veiculos ?? []) as { id: string; placa: string; marca: string; tipo: string }[]}
+          pessoas={(pessoas ?? []) as { id: string; nome: string }[]}
+        />
+      </div>
+
       {abertas.length > 0 && (
         <FechamentoPosto
           postoId={posto.id}
@@ -91,7 +115,17 @@ export default async function PostoDetalhePage({
       <h2 className="text-lg font-semibold mt-8 mb-2">
         Notas em aberto ({abertas.length})
       </h2>
-      <Tabela notas={abertas} vazio="Nada em aberto nesse posto." />
+      <TabelaNotasEditavel
+        notas={abertas.map((n) => ({
+          abastecimento_id: n.abastecimento_id,
+          quando: n.quando,
+          quem: n.quem,
+          veiculo: n.veiculo,
+          litros: n.litros,
+          valor: n.valor,
+          do_socio: n.do_socio,
+        }))}
+      />
 
       <h2 className="text-lg font-semibold mt-8 mb-2">Histórico</h2>
       <Tabela notas={resto} vazio="Sem histórico ainda." />

@@ -62,9 +62,19 @@ export async function POST(req: NextRequest) {
   }
 
   const client = getSupabaseAdmin(admin.id);
+  // QUEM ASSINOU. Nota assinada NÃO desconta do saldo do motorista (a
+  // fórmula exige `pago_na_hora`), então guardar o nome dele aqui é só
+  // registro — e é o que faz a ficha do posto dizer quem foi. Marcar
+  // "pagou na hora" com motorista junto é recusado pelo banco (0047), então
+  // não existe o caminho em que isso vira desconto por engano.
+  const motoristaAssinou =
+    typeof body.motorista_id === "string" && body.motorista_id
+      ? body.motorista_id
+      : null;
+
   const comum = {
     carga_id: null,
-    motorista_id: null,
+    motorista_id: motoristaAssinou,
     caminhao_id,
     venda_id: body.venda_id || null,
     lancado_por: admin.id,
@@ -118,7 +128,12 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(litros) || litros <= 0) {
     return NextResponse.json({ error: "litros inválidos" }, { status: 400 });
   }
-  if (!Number.isFinite(km_atual) || km_atual <= 0) {
+  // Km OPCIONAL aqui (0062): a nota transcrita do extrato do posto, trinta
+  // dias depois, não tem odômetro — e km inventado envenena o km/L e o
+  // alerta de salto. Informado, continua valendo a regra: tem que ser
+  // número positivo.
+  const temKm = body.km_atual !== undefined && body.km_atual !== null && body.km_atual !== "";
+  if (temKm && (!Number.isFinite(km_atual) || km_atual <= 0)) {
     return NextResponse.json({ error: "km inválido" }, { status: 400 });
   }
 
@@ -143,7 +158,7 @@ export async function POST(req: NextRequest) {
       // ARLA fica fora do km/L do veículo (0044) — o gasto conta igual.
       tipo: body.tipo_abastecimento === "arla" ? "arla" : "diesel",
       litros: n2(litros),
-      km_atual: Math.round(km_atual),
+      km_atual: temKm ? Math.round(km_atual) : null,
     })
     .select("id")
     .maybeSingle();
