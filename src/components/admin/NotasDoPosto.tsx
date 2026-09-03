@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatBRL } from "@/lib/format";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
+import {
+  combustiveisDoVeiculo,
+  rotuloCombustivel,
+  type TipoCombustivel,
+} from "@/lib/combustivel";
 
 /**
  * Lançar e corrigir as notas assinadas de UM posto.
@@ -41,7 +46,15 @@ export function NotasDoPosto({
   const [veiculoId, setVeiculoId] = useState(veiculos[0]?.id ?? "");
   const [quemId, setQuemId] = useState("");
   const [particular, setParticular] = useState(false);
-  const [tipoAbast, setTipoAbast] = useState<"diesel" | "arla">("diesel");
+  const [tipoAbast, setTipoAbast] = useState<TipoCombustivel>("diesel");
+  // A lista segue o VEÍCULO: oferecer arla pra uma EcoSport é convidar o
+  // clique errado, e arla sairia do km/L dela sem ninguém entender por quê.
+  const opcoes = combustiveisDoVeiculo(
+    veiculos.find((v) => v.id === veiculoId)?.tipo
+  );
+  // Trocou de caminhão pra carro com "arla" escolhido: corrige sozinho em
+  // vez de mandar pro servidor um par que não existe.
+  const tipoValido = opcoes.includes(tipoAbast) ? tipoAbast : opcoes[0];
   const [litros, setLitros] = useState("");
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [km, setKm] = useState("");
@@ -76,7 +89,7 @@ export function NotasDoPosto({
           // assinou fica registrado e o custo é de combustível.
           socio_id: particular ? quemId : null,
           motorista_id: particular ? null : quemId,
-          tipo_abastecimento: tipoAbast,
+          tipo_abastecimento: tipoValido,
           litros: litrosNum,
           km_atual: km ? Number(km) : null,
         }),
@@ -190,12 +203,15 @@ export function NotasDoPosto({
         <div>
           <label className="block text-sm font-medium mb-1">O que abasteceu</label>
           <select
-            value={tipoAbast}
-            onChange={(e) => setTipoAbast(e.target.value as "diesel" | "arla")}
+            value={tipoValido}
+            onChange={(e) => setTipoAbast(e.target.value as TipoCombustivel)}
             className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
           >
-            <option value="diesel">Diesel</option>
-            <option value="arla">Arla</option>
+            {opcoes.map((t) => (
+              <option key={t} value={t}>
+                {rotuloCombustivel(t)}
+              </option>
+            ))}
           </select>
         </div>
         <div>

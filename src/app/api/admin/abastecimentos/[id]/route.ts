@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { rotuloCombustivel } from "@/lib/combustivel";
 
 /**
  * PATCH: admin corrige um abastecimento lançado errado (mesmo com o
@@ -74,6 +75,10 @@ export async function PATCH(
       .eq("origem_tipo", "abastecimento")
       .eq("origem_id", id)
       .eq("status", "paga")
+      // .limit(1) e não .maybeSingle(): uma nota paga metade em cheque e
+      // metade em dinheiro vira DUAS contas na mesma origem (fechamento do
+      // posto), e maybeSingle derrubaria a tela com erro do postgrest.
+      .limit(1)
       .maybeSingle();
     if (contaPaga) {
       return NextResponse.json(
@@ -106,7 +111,7 @@ export async function PATCH(
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   const avisos: string[] = [];
-  const rotuloTipo = atual.tipo === "arla" ? "ARLA" : "Diesel";
+  const rotuloTipo = rotuloCombustivel(atual.tipo);
   const postoFinal = (updates.posto_nome as string) ?? atual.posto_nome;
   const valorFinal = (updates.valor as number) ?? Number(atual.valor);
 
@@ -120,6 +125,7 @@ export async function PATCH(
       .eq("origem_tipo", "abastecimento")
       .eq("origem_id", id)
       .in("status", ["prevista", "a_pagar", "paga"])
+      .limit(1)
       .maybeSingle();
     if (!jaExiste) {
       const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000);
@@ -222,6 +228,7 @@ export async function DELETE(
     .eq("origem_tipo", "abastecimento")
     .eq("origem_id", id)
     .eq("status", "paga")
+    .limit(1)
     .maybeSingle();
   const { error: eConta } = await client
     .from("contas_a_pagar")

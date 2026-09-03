@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { normalizarCombustivel } from "@/lib/combustivel";
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
 /**
@@ -156,7 +157,7 @@ export async function POST(req: NextRequest) {
       local_id,
       posto_nome,
       // ARLA fica fora do km/L do veículo (0044) — o gasto conta igual.
-      tipo: body.tipo_abastecimento === "arla" ? "arla" : "diesel",
+      tipo: normalizarCombustivel(body.tipo_abastecimento),
       litros: n2(litros),
       km_atual: temKm ? Math.round(km_atual) : null,
     })

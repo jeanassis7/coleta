@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { formatBRL } from "@/lib/format";
 import { InputDinheiro, centavosParaReais } from "@/components/InputDinheiro";
+import {
+  combustiveisDoVeiculo,
+  rotuloCombustivel,
+  type TipoCombustivel,
+} from "@/lib/combustivel";
 
 function hojeBr(): string {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -61,7 +66,14 @@ export function LancamentoAvulso({
   const [socioId, setSocioId] = useState("");
   const [pessoas, setPessoas] = useState<{ id: string; nome: string }[]>([]);
   const [litros, setLitros] = useState("");
-  const [tipoAbast, setTipoAbast] = useState<"diesel" | "arla">("diesel");
+  const [tipoAbast, setTipoAbast] = useState<TipoCombustivel>("diesel");
+  // Carro não abastece diesel/arla — a lista segue o veículo escolhido.
+  const opcoesComb = combustiveisDoVeiculo(
+    veiculos.find((v) => v.id === caminhaoId)?.tipo
+  );
+  const combValido = opcoesComb.includes(tipoAbast)
+    ? tipoAbast
+    : opcoesComb[0];
   const [km, setKm] = useState("");
   const [pagoNaHora, setPagoNaHora] = useState(true);
   const [vencimento, setVencimento] = useState("");
@@ -137,7 +149,7 @@ export function LancamentoAvulso({
                   posto.trim(),
                 local_id: localId || null,
                 socio_id: socioId || null,
-                tipo_abastecimento: tipoAbast,
+                tipo_abastecimento: combValido,
                 litros: Number(litros.replace(",", ".")),
                 km_atual: Number(km),
               }),
@@ -262,16 +274,16 @@ export function LancamentoAvulso({
             <div>
               <label className="block text-sm font-medium mb-1">O que abasteceu</label>
               <div className="flex rounded-xl overflow-hidden border border-cinza-borda">
-                {(["diesel", "arla"] as const).map((t) => (
+                {opcoesComb.map((t) => (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setTipoAbast(t)}
                     className={`flex-1 px-3 py-2 text-sm ${
-                      tipoAbast === t ? "bg-verde text-white" : "bg-white"
+                      combValido === t ? "bg-verde text-white" : "bg-white"
                     }`}
                   >
-                    {t === "diesel" ? "Diesel" : "ARLA"}
+                    {rotuloCombustivel(t)}
                   </button>
                 ))}
               </div>

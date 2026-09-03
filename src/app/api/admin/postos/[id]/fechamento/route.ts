@@ -15,11 +15,19 @@ import { exigirAdmin } from "@/lib/auth/exigir-admin";
  * o excedente não tinha onde entrar. Aqui ele fica fechado POR CONSTRUÇÃO —
  * pagar a mais sem informar o troco é RECUSADO, não avisado.
  *
- * SOBRE A ALOCAÇÃO: o dinheiro quita notas INTEIRAS, e o cheque quita o
- * resto. Se a divisão cair no meio de uma nota, a rota recusa e diz quanto
- * falta pra cair na fronteira. Dividir a nota em duas contas seria mais
- * "esperto" e quebraria o editor de abastecimento, que lê a conta da origem
- * com `.maybeSingle()` — duas linhas ali derrubam a tela com erro cru.
+ * SOBRE A ALOCAÇÃO: o dinheiro quita as notas mais antigas primeiro e o
+ * cheque quita o resto. Quando a fronteira cai NO MEIO de uma nota, ela é
+ * dividida em duas contas — uma paga em dinheiro, outra no cheque. É o que
+ * aconteceu de verdade: o caixa precisa saber de qual conta saiu cada real,
+ * e a soma das duas continua sendo o valor da nota.
+ *
+ * A primeira versão RECUSAVA esse caso, e travou o Evaner no primeiro
+ * acerto real (03/09/2026, sobravam R$ 181,24). Pedir pra ele "ajustar o
+ * valor em dinheiro" era pedir pra mudar um pagamento que já aconteceu —
+ * o software mandando na realidade, em vez do contrário.
+ *
+ * Duas contas na mesma origem obrigaram a blindar três `.maybeSingle()` do
+ * editor de abastecimento (viraram `.limit(1)`).
  *
  * IDEMPOTÊNCIA: não precisa de client_id. Toda conta é quitada com
  * `.eq("status","a_pagar")`; no reenvio nada está mais em aberto e a rota
@@ -55,7 +63,9 @@ export async function POST(
   // ------------------------------------------------------------------
   const { data: contas, error: eContas } = await client
     .from("contas_a_pagar")
-    .select("id, valor, origem_id, vencimento, status")
+    .select(
+      "id, valor, origem_id, vencimento, status, categoria, pessoa_id, fornecedor, descricao"
+    )
     .in("id", contaIds)
     .eq("origem_tipo", "abastecimento")
     .eq("status", "a_pagar")
@@ -183,20 +193,29 @@ export async function POST(
       break;
     }
   }
-  if (restaDinheiro > 0) {
-    const sobra = restaDinheiro / 100;
+  const setDinheiro = new Set(porDinheiro);
+
+  // Sobrou dinheiro sem fechar a próxima nota: ela é paga PELOS DOIS. Vira
+  // duas contas, e a soma delas continua sendo o valor original da nota.
+  const aDividir =
+    restaDinheiro > 0
+      ? ordenadas.find((c) => !setDinheiro.has(c.id)) ?? null
+      : null;
+  if (restaDinheiro > 0 && !aDividir) {
+    // Só chega aqui se o dinheiro sozinho passou do total — e aí o excedente
+    // é troco, que o bloco acima já exigiu.
     return NextResponse.json(
       {
         error:
-          `sobram R$ ${sobra.toFixed(2)} em dinheiro que não fecham uma nota inteira. ` +
-          `Ajuste o valor em dinheiro pra fechar em cima de uma nota, ou passe tudo ` +
-          `pro cheque e registre a diferença como troco.`,
+          "o dinheiro informado passa do total das notas — registre a diferença como troco",
       },
       { status: 400 }
     );
   }
-  const setDinheiro = new Set(porDinheiro);
-  const porCheque = ordenadas.filter((c) => !setDinheiro.has(c.id));
+
+  const porCheque = ordenadas.filter(
+    (c) => !setDinheiro.has(c.id) && c.id !== aDividir?.id
+  );
 
   // ------------------------------------------------------------------
   // Aplica. Os cheques saem da carteira ANTES de quitar qualquer conta:
@@ -243,6 +262,56 @@ export async function POST(
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
+  // A NOTA PARTIDA: a original passa a valer a parte paga em dinheiro, e o
+  // resto nasce como conta nova já quitada pelo cheque. Mesmo desenho do
+  // pagamento parcial que já existe em contas a pagar.
+  if (aDividir) {
+    const parteDinheiro = n2(restaDinheiro / 100);
+    const resto = n2(Number(aDividir.valor) - parteDinheiro);
+
+    const { error: eOrig } = await client
+      .from("contas_a_pagar")
+      .update({
+        valor: parteDinheiro,
+        status: "paga",
+        forma_pagamento: dinheiroForma,
+        pago_em: data,
+        conta_id: dinheiroContaId,
+        cheque_id: null,
+      })
+      .eq("id", aDividir.id)
+      .eq("status", "a_pagar");
+    if (eOrig) {
+      return NextResponse.json({ error: eOrig.message }, { status: 400 });
+    }
+
+    const { error: eResto } = await client.from("contas_a_pagar").insert({
+      descricao: `${aDividir.descricao} (parte em cheque)`,
+      fornecedor: aDividir.fornecedor,
+      categoria: aDividir.categoria,
+      pessoa_id: aDividir.pessoa_id,
+      valor: resto,
+      vencimento: aDividir.vencimento,
+      status: "paga",
+      forma_pagamento: "cheque",
+      pago_em: data,
+      cheque_id: chequePrincipal,
+      conta_id: null,
+      origem_tipo: "abastecimento",
+      origem_id: aDividir.origem_id,
+      registrado_por: admin.id,
+    });
+    if (eResto) {
+      return NextResponse.json({
+        ok: true,
+        aviso:
+          `a parte em dinheiro foi quitada, mas o resto da nota ` +
+          `(R$ ${resto.toFixed(2)}) NÃO foi: ${eResto.message}. ` +
+          `Confira em Contas a pagar antes de seguir.`,
+      });
+    }
+  }
+
   if (porCheque.length > 0) {
     // Pagar com cheque NÃO tira dinheiro de conta nenhuma: quitou com o papel.
     const { error } = await client
@@ -284,6 +353,7 @@ export async function POST(
     total: n2(totalDevido),
     em_dinheiro: porDinheiro.length,
     em_cheque: porCheque.length,
+    nota_dividida: aDividir ? 1 : 0,
     troco: excedente > 0 ? n2(trocoValor) : 0,
   });
 }

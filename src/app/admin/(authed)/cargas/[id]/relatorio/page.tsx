@@ -7,6 +7,7 @@ import {
   buscarRelatorioCarga,
 } from "@/lib/admin/queries";
 import { formatBRLExato, formatHora } from "@/lib/format";
+import { rotuloCombustivel } from "@/lib/combustivel";
 import { BotaoImprimir } from "@/components/admin/BotaoImprimir";
 
 export const dynamic = "force-dynamic";
@@ -226,7 +227,7 @@ export default async function RelatorioCargaPage({
     const meu = doBolso(a.motorista_id, a.pago_na_hora);
     linhas.push({
       quando: a.criado_em,
-      titulo: `${a.tipo === "arla" ? "Arla" : "Diesel"} — ${a.posto_nome}`,
+      titulo: `${rotuloCombustivel(a.tipo)} — ${a.posto_nome}`,
       detalhe: meu
         ? null
         : a.pago_na_hora

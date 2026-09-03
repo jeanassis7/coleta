@@ -1,6 +1,10 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { selectTudo } from "@/lib/supabase/select-tudo";
+import {
+  normalizarCombustivel,
+  type TipoCombustivel,
+} from "@/lib/combustivel";
 
 export interface FiltrosDashboard {
   periodo: "hoje" | "semana" | "mes" | "customizado";
@@ -397,8 +401,8 @@ export interface AbastecimentoAdmin {
   criado_em: string;
   /** false = "assinei a nota": o posto cobra da empresa (virou conta a pagar). */
   pago_na_hora: boolean;
-  /** 'arla' fica fora do km/L (não é combustível). */
-  tipo: "diesel" | "arla";
+  /** 'arla' fica fora do km/L (não é combustível). Ver lib/combustivel. */
+  tipo: TipoCombustivel;
 }
 
 /**
@@ -451,7 +455,7 @@ export async function buscarAbastecimentos(
     foto_path: string | null;
     criado_em: string;
     pago_na_hora: boolean;
-    tipo: "diesel" | "arla" | null;
+    tipo: TipoCombustivel | null;
     profiles: { nome: string } | null;
     cargas: { caminhao_id: string | null; caminhoes: { placa: string } | null } | null;
     caminhao_direto: { placa: string } | null;
@@ -480,7 +484,7 @@ export async function buscarAbastecimentos(
       foto_path: r.foto_path,
       criado_em: r.criado_em,
       pago_na_hora: r.pago_na_hora !== false,
-      tipo: r.tipo === "arla" ? "arla" : "diesel",
+      tipo: normalizarCombustivel(r.tipo),
     }));
 }
 
@@ -715,7 +719,7 @@ export interface CargaCompleta {
     km_atual: number;
     /** false = assinou a nota: não saiu da mão dele */
     pago_na_hora: boolean;
-    tipo: "diesel" | "arla";
+    tipo: TipoCombustivel;
     foto_path: string | null;
     latitude: number | null;
     longitude: number | null;
