@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { buscarPostosComSaldo } from "@/lib/admin/postos";
 import { formatBRL } from "@/lib/format";
+import { NovoPosto } from "@/components/admin/NovoPosto";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,10 @@ export default async function PostosPage() {
         caixa e não é dívida.
       </p>
 
+      <div className="mb-4">
+        <NovoPosto />
+      </div>
+
       <div className="card border-2 border-verde mb-6 flex items-baseline justify-between">
         <span className="text-sm text-cinza-suave">
           Total em aberto nos postos
@@ -26,8 +31,8 @@ export default async function PostosPage() {
 
       {postos.length === 0 ? (
         <p className="text-cinza-suave py-8 text-center">
-          Nenhum posto cadastrado ainda. O primeiro nasce sozinho quando um
-          abastecimento for lançado.
+          Nenhum posto cadastrado ainda. Cadastre pelo nome aqui em cima —
+          ele descobre onde fica no primeiro abastecimento.
         </p>
       ) : (
         <div className="space-y-2">
