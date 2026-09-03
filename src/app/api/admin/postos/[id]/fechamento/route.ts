@@ -64,10 +64,12 @@ export async function POST(
   const { data: contas, error: eContas } = await client
     .from("contas_a_pagar")
     .select(
-      "id, valor, origem_id, vencimento, status, categoria, pessoa_id, fornecedor, descricao"
+      "id, valor, origem_id, origem_tipo, vencimento, status, categoria, pessoa_id, fornecedor, descricao"
     )
     .in("id", contaIds)
-    .eq("origem_tipo", "abastecimento")
+    // No posto se assina nota de combustível E de despesa (palheta, óleo
+    // de motor) — 0065. As duas entram no mesmo acerto.
+    .in("origem_tipo", ["abastecimento", "despesa"])
     .eq("status", "a_pagar")
     .order("vencimento");
   if (eContas) return NextResponse.json({ error: eContas.message }, { status: 400 });
@@ -79,13 +81,25 @@ export async function POST(
   }
 
   // E confere que as notas são MESMO desse posto: id de conta vindo da tela
-  // não é prova de nada.
-  const { data: abast } = await client
-    .from("abastecimentos")
-    .select("id")
-    .eq("local_id", postoId)
-    .in("id", contas.map((c) => c.origem_id));
-  const doPosto = new Set((abast ?? []).map((a) => a.id));
+  // não é prova de nada. Confere nas DUAS origens.
+  const origensAb = contas
+    .filter((c) => c.origem_tipo === "abastecimento")
+    .map((c) => c.origem_id);
+  const origensDe = contas
+    .filter((c) => c.origem_tipo === "despesa")
+    .map((c) => c.origem_id);
+  const [{ data: abast }, { data: desps }] = await Promise.all([
+    origensAb.length
+      ? client.from("abastecimentos").select("id").eq("local_id", postoId).in("id", origensAb)
+      : Promise.resolve({ data: [] as { id: string }[] }),
+    origensDe.length
+      ? client.from("despesas").select("id").eq("local_id", postoId).in("id", origensDe)
+      : Promise.resolve({ data: [] as { id: string }[] }),
+  ]);
+  const doPosto = new Set([
+    ...(abast ?? []).map((a) => a.id),
+    ...(desps ?? []).map((d) => d.id),
+  ]);
   const foraDoPosto = contas.filter((c) => !doPosto.has(c.origem_id));
   if (foraDoPosto.length > 0) {
     return NextResponse.json(
@@ -297,7 +311,7 @@ export async function POST(
       pago_em: data,
       cheque_id: chequePrincipal,
       conta_id: null,
-      origem_tipo: "abastecimento",
+      origem_tipo: aDividir.origem_tipo,
       origem_id: aDividir.origem_id,
       registrado_por: admin.id,
     });

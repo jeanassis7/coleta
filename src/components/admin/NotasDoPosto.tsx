@@ -61,13 +61,25 @@ export function NotasDoPosto({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [lancadas, setLancadas] = useState(0);
+  // No posto se assina nota de combustível E de despesa (palheta, óleo de
+  // motor). As duas entram no mesmo acerto do fim do mês — 0065.
+  const [tipoNota, setTipoNota] = useState<"abastecimento" | "despesa">(
+    "abastecimento"
+  );
+  const [descricao, setDescricao] = useState("");
 
   async function salvar() {
     setErro(null);
     if (!veiculoId) return setErro("Escolha o veículo");
     if (!quemId) return setErro("Diga quem assinou a nota");
+    const ehDespesa = tipoNota === "despesa";
     const litrosNum = Number(litros.replace(",", "."));
-    if (!litrosNum || litrosNum <= 0) return setErro("Informe os litros");
+    if (!ehDespesa && (!litrosNum || litrosNum <= 0)) {
+      return setErro("Informe os litros");
+    }
+    if (ehDespesa && descricao.trim().length < 2) {
+      return setErro("Diga o que foi (palheta, óleo de motor...)");
+    }
     if (!valorCentavos || valorCentavos <= 0) return setErro("Informe o valor");
 
     setSalvando(true);
@@ -76,7 +88,7 @@ export function NotasDoPosto({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tipo: "abastecimento",
+          tipo: tipoNota,
           caminhao_id: veiculoId,
           criado_em: data,
           valor: centavosParaReais(valorCentavos),
@@ -89,9 +101,13 @@ export function NotasDoPosto({
           // assinou fica registrado e o custo é de combustível.
           socio_id: particular ? quemId : null,
           motorista_id: particular ? null : quemId,
-          tipo_abastecimento: tipoValido,
-          litros: litrosNum,
-          km_atual: km ? Number(km) : null,
+          ...(ehDespesa
+            ? { descricao: descricao.trim() }
+            : {
+                tipo_abastecimento: tipoValido,
+                litros: litrosNum,
+                km_atual: km ? Number(km) : null,
+              }),
         }),
       });
       const r = await res.json();
@@ -104,6 +120,7 @@ export function NotasDoPosto({
       setLitros("");
       setValorCentavos(null);
       setKm("");
+      setDescricao("");
       setLancadas((n) => n + 1);
       router.refresh();
     } finally {
@@ -141,6 +158,31 @@ export function NotasDoPosto({
         veículo e quem assinou — pro resto do extrato você digita só litros e
         valor.
       </p>
+
+      <div className="flex gap-2">
+        {(
+          [
+            ["abastecimento", "⛽ Combustível"],
+            ["despesa", "🔧 Despesa"],
+          ] as const
+        ).map(([v, r]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => {
+              setTipoNota(v);
+              setErro(null);
+            }}
+            className={`px-4 py-2 rounded-xl border-2 text-sm font-medium ${
+              tipoNota === v
+                ? "bg-verde text-white border-verde"
+                : "bg-white border-cinza-borda"
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
@@ -199,6 +241,23 @@ export function NotasDoPosto({
         </span>
       </label>
 
+      {tipoNota === "despesa" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">O que foi</label>
+            <input
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="Palheta, óleo de motor, borracha..."
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Valor</label>
+            <InputDinheiro centavos={valorCentavos} onChange={setValorCentavos} />
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
           <label className="block text-sm font-medium mb-1">O que abasteceu</label>
@@ -243,6 +302,7 @@ export function NotasDoPosto({
           />
         </div>
       </div>
+      )}
 
       {erro && (
         <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-3 text-sm">
@@ -277,17 +337,23 @@ export function NotasDoPosto({
  */
 export function CorrigirNota({
   id,
+  origem,
   litros,
+  descricao,
   valor,
   onFim,
 }: {
   id: string;
+  origem: "abastecimento" | "despesa";
   litros: number;
+  descricao: string | null;
   valor: number;
   onFim: () => void;
 }) {
   const router = useRouter();
+  const ehDespesa = origem === "despesa";
   const [l, setL] = useState(String(litros).replace(".", ","));
+  const [d, setD] = useState(descricao ?? "");
   const [v, setV] = useState<number | null>(Math.round(valor * 100));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -295,17 +361,22 @@ export function CorrigirNota({
   async function salvar() {
     setErro(null);
     const litrosNum = Number(l.replace(",", "."));
-    if (!litrosNum || litrosNum <= 0) return setErro("litros inválidos");
+    if (!ehDespesa && (!litrosNum || litrosNum <= 0)) {
+      return setErro("litros inválidos");
+    }
+    if (ehDespesa && d.trim().length < 2) return setErro("diga o que foi");
     if (!v || v <= 0) return setErro("valor inválido");
     setSalvando(true);
     try {
-      const res = await fetch(`/api/admin/abastecimentos/${id}`, {
+      const rota = ehDespesa ? "despesas" : "abastecimentos";
+      const res = await fetch(`/api/admin/${rota}/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          litros: litrosNum,
-          valor: centavosParaReais(v),
-        }),
+        body: JSON.stringify(
+          ehDespesa
+            ? { descricao: d.trim(), valor: centavosParaReais(v) }
+            : { litros: litrosNum, valor: centavosParaReais(v) }
+        ),
       });
       const r = await res.json();
       if (!res.ok) {
@@ -321,15 +392,26 @@ export function CorrigirNota({
 
   return (
     <div className="flex flex-wrap items-end gap-2 bg-slate-50 border border-cinza-borda rounded-xl p-3">
-      <div>
-        <label className="block text-xs text-cinza-suave mb-1">Litros</label>
-        <input
-          inputMode="decimal"
-          value={l}
-          onChange={(e) => setL(e.target.value)}
-          className="w-24 px-2 py-1 border border-cinza-borda rounded-lg text-sm"
-        />
-      </div>
+      {ehDespesa ? (
+        <div>
+          <label className="block text-xs text-cinza-suave mb-1">O que foi</label>
+          <input
+            value={d}
+            onChange={(e) => setD(e.target.value)}
+            className="w-56 px-2 py-1 border border-cinza-borda rounded-lg text-sm"
+          />
+        </div>
+      ) : (
+        <div>
+          <label className="block text-xs text-cinza-suave mb-1">Litros</label>
+          <input
+            inputMode="decimal"
+            value={l}
+            onChange={(e) => setL(e.target.value)}
+            className="w-24 px-2 py-1 border border-cinza-borda rounded-lg text-sm"
+          />
+        </div>
+      )}
       <div>
         <label className="block text-xs text-cinza-suave mb-1">Valor</label>
         <InputDinheiro centavos={v} onChange={setV} />
@@ -367,6 +449,8 @@ export function TabelaNotasEditavel({
 }: {
   notas: {
     abastecimento_id: string;
+    origem: "abastecimento" | "despesa";
+    descricao: string | null;
     quando: string;
     quem: string;
     veiculo: string;
@@ -405,8 +489,10 @@ export function TabelaNotasEditavel({
               )}
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-cinza-suave font-mono">
-                {n.litros.toLocaleString("pt-BR")} L
+              <span className="text-sm text-cinza-suave">
+                {n.origem === "despesa"
+                  ? n.descricao
+                  : `${n.litros.toLocaleString("pt-BR")} L`}
               </span>
               <span className="font-mono font-semibold">
                 {formatBRL(n.valor)}
@@ -425,7 +511,9 @@ export function TabelaNotasEditavel({
             <div className="mt-3">
               <CorrigirNota
                 id={n.abastecimento_id}
+                origem={n.origem}
                 litros={n.litros}
+                descricao={n.descricao}
                 valor={n.valor}
                 onFim={() => setEditando(null)}
               />

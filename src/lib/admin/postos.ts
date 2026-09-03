@@ -34,7 +34,11 @@ export async function buscarPostosComSaldo(): Promise<PostoComSaldo[]> {
 
 export interface NotaDoPosto {
   conta_id: string | null;
+  /** id do abastecimento OU da despesa — o `origem` diz qual. */
   abastecimento_id: string;
+  origem: "abastecimento" | "despesa";
+  /** o que foi (só na despesa; no combustível é o tipo) */
+  descricao: string | null;
   quando: string;
   quem: string;
   veiculo: string;
@@ -119,6 +123,8 @@ export async function buscarPostoDetalhe(
     return {
       conta_id: c?.id ?? null,
       abastecimento_id: a.id,
+      origem: "abastecimento" as const,
+      descricao: null,
       quando: a.criado_em,
       quem: a.socio?.nome
         ? `${a.socio.nome} (particular)`
@@ -131,6 +137,74 @@ export async function buscarPostoDetalhe(
       do_socio: a.socio_id !== null,
     };
   });
+
+  // DESPESA assinada no posto (palheta, óleo de motor) — mesma nota, mesmo
+  // acerto. Sem isto o saldo mostraria só o combustível e o Jean pagaria
+  // olhando um número menor do que deve.
+  const desp = await selectTudo<{
+    id: string;
+    criado_em: string;
+    valor: number;
+    descricao: string;
+    socio_id: string | null;
+    profiles: { nome: string } | null;
+    socio: { nome: string } | null;
+    caminhoes: { placa: string } | null;
+  }>((de, ate) =>
+    supabase
+      .from("despesas")
+      .select(
+        `id, criado_em, valor, descricao, socio_id,
+         profiles!despesas_motorista_id_fkey(nome),
+         socio:profiles!despesas_socio_id_fkey(nome),
+         caminhoes!despesas_caminhao_id_fkey(placa)`
+      )
+      .eq("local_id", id)
+      .order("criado_em", { ascending: false })
+      .order("id")
+      .range(de, ate)
+  );
+
+  const idsDesp = desp.map((d) => d.id);
+  const contasDesp = idsDesp.length
+    ? await selectTudo<{
+        id: string;
+        origem_id: string;
+        status: string;
+        pago_em: string | null;
+      }>((de, ate) =>
+        supabase
+          .from("contas_a_pagar")
+          .select("id, origem_id, status, pago_em")
+          .eq("origem_tipo", "despesa")
+          .in("origem_id", idsDesp)
+          .order("id")
+          .range(de, ate)
+      )
+    : [];
+  const porOrigemDesp = new Map(contasDesp.map((c) => [c.origem_id, c]));
+
+  for (const d of desp) {
+    const c = porOrigemDesp.get(d.id);
+    notas.push({
+      conta_id: c?.id ?? null,
+      abastecimento_id: d.id,
+      origem: "despesa" as const,
+      descricao: d.descricao,
+      quando: d.criado_em,
+      quem: d.socio?.nome
+        ? `${d.socio.nome} (particular)`
+        : (d.profiles?.nome ?? "painel"),
+      veiculo: d.caminhoes?.placa ?? "—",
+      litros: 0,
+      valor: Number(d.valor),
+      status: c?.status ?? null,
+      pago_em: c?.pago_em ?? null,
+      do_socio: d.socio_id !== null,
+    });
+  }
+
+  notas.sort((a, b) => b.quando.localeCompare(a.quando));
 
   const l = local as unknown as {
     id: string;

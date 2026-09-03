@@ -118,6 +118,8 @@ export default async function PostoDetalhePage({
       <TabelaNotasEditavel
         notas={abertas.map((n) => ({
           abastecimento_id: n.abastecimento_id,
+          origem: n.origem,
+          descricao: n.descricao,
           quando: n.quando,
           quem: n.quem,
           veiculo: n.veiculo,
@@ -167,10 +169,17 @@ function Tabela({
               }`}
             >
               <td className="py-2 whitespace-nowrap">{formatData(n.quando)}</td>
-              <td className="py-2">{n.quem}</td>
+              <td className="py-2">
+                {n.quem}
+                {n.origem === "despesa" && n.descricao && (
+                  <span className="block text-xs text-cinza-suave">
+                    {n.descricao}
+                  </span>
+                )}
+              </td>
               <td className="py-2">{n.veiculo}</td>
               <td className="py-2 text-right font-mono">
-                {formatLitros(n.litros)}
+                {n.origem === "despesa" ? "—" : formatLitros(n.litros)}
               </td>
               <td className="py-2 text-right font-mono">{formatBRL(n.valor)}</td>
               <td className="py-2 whitespace-nowrap">

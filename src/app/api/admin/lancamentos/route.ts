@@ -73,9 +73,18 @@ export async function POST(req: NextRequest) {
       ? body.motorista_id
       : null;
 
+  // Particular de sócio e posto valem pros DOIS tipos: no posto se assina
+  // nota de combustível e de despesa, e as duas entram no mesmo acerto.
+  const socio_id =
+    typeof body.socio_id === "string" && body.socio_id ? body.socio_id : null;
+  const local_id =
+    typeof body.local_id === "string" && body.local_id ? body.local_id : null;
+
   const comum = {
     carga_id: null,
     motorista_id: motoristaAssinou,
+    socio_id,
+    local_id,
     caminhao_id,
     venda_id: body.venda_id || null,
     lancado_por: admin.id,
@@ -138,23 +147,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "km inválido" }, { status: 400 });
   }
 
-  // Abastecimento PARTICULAR de sócio na nota da empresa (0061): não é
-  // custo da operação. O gatilho do banco lê este campo e manda a conta
-  // pra transferência a sócio em vez de combustível — sem isso o DRE
-  // conta como gasto operacional uma retirada, e o número mente calado.
-  const socio_id =
-    typeof body.socio_id === "string" && body.socio_id ? body.socio_id : null;
-  // O posto escolhido da lista (0061). Nulo = posto novo, digitado — a
-  // curadoria junta depois se for grafia de um que já existe.
-  const local_id =
-    typeof body.local_id === "string" && body.local_id ? body.local_id : null;
 
   const { data: abast, error } = await client
     .from("abastecimentos")
     .insert({
       ...comum,
-      socio_id,
-      local_id,
       posto_nome,
       // ARLA fica fora do km/L do veículo (0044) — o gasto conta igual.
       tipo: normalizarCombustivel(body.tipo_abastecimento),
