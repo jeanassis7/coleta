@@ -747,7 +747,16 @@ try {
   // O que os checks abaixo guardam é a integridade desse elo: conta órfã
   // (aponta pra fato que não existe) e fato com duas contas quebram a regra
   // dos dois lados — um faz sumir, o outro faz dobrar.
-  const COM_FATO = ["abastecimento", "manutencao", "compra_direta", "coleta"];
+  // "despesa" entrou em 03/09/2026: desde a 0065 ela aponta pro posto e
+  // entra no acerto igual ao combustível — inclusive podendo ser dividida
+  // entre cheque e dinheiro. Estava de fora das duas travas.
+  const COM_FATO = [
+    "abastecimento",
+    "manutencao",
+    "compra_direta",
+    "coleta",
+    "despesa",
+  ];
 
   // 1) Toda conta com origem aponta pra um lançamento que EXISTE. Órfã é
   //    conta que ninguém consegue rastrear até o fato que a gerou.
@@ -762,6 +771,8 @@ try {
           select 1 from public.compras_diretas c where cp.origem_tipo='compra_direta' and c.id = cp.origem_id
           union all
           select 1 from public.coletas co where cp.origem_tipo='coleta' and co.id = cp.origem_id
+          union all
+          select 1 from public.despesas d where cp.origem_tipo='despesa' and d.id = cp.origem_id
         )`,
     [COM_FATO]
   );
