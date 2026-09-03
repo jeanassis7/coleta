@@ -62,6 +62,7 @@ export function Sidebar({
         { href: "/admin/abastecimentos", label: "Abastecimentos" },
         { href: "/admin/despesas", label: "Despesas" },
         { href: "/admin/compras", label: "Compra direta" },
+        { href: "/admin/postos", label: "Postos" },
       ],
     },
     {

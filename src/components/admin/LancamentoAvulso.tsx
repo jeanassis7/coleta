@@ -51,6 +51,15 @@ export function LancamentoAvulso({
   const [valorCentavos, setValorCentavos] = useState<number | null>(null);
   const [descricao, setDescricao] = useState("");
   const [posto, setPosto] = useState("");
+  // Posto ESCOLHIDO da lista (0061). Em 3 lançamentos reais já apareceram
+  // "Texas" e "Posto texas" — a curadoria que não acontece é a que não
+  // precisa acontecer.
+  const [localId, setLocalId] = useState("");
+  const [postos, setPostos] = useState<{ id: string; nome_canonico: string }[]>([]);
+  // Abastecimento particular de sócio na nota da empresa: vira
+  // transferência a sócio no DRE, não custo de combustível.
+  const [socioId, setSocioId] = useState("");
+  const [pessoas, setPessoas] = useState<{ id: string; nome: string }[]>([]);
   const [litros, setLitros] = useState("");
   const [tipoAbast, setTipoAbast] = useState<"diesel" | "arla">("diesel");
   const [km, setKm] = useState("");
@@ -68,12 +77,23 @@ export function LancamentoAvulso({
   useEffect(() => {
     (async () => {
       const supabase = getSupabaseBrowser();
-      const { data: lista } = await supabase
-        .from("contas_financeiras")
-        .select("id, nome, tipo")
-        .eq("ativa", true)
-        .order("nome");
+      const [{ data: lista }, { data: lp }, { data: pf }] = await Promise.all([
+        supabase
+          .from("contas_financeiras")
+          .select("id, nome, tipo")
+          .eq("ativa", true)
+          .order("nome"),
+        supabase
+          .from("locais")
+          .select("id, nome_canonico")
+          .eq("tipo", "posto")
+          .eq("ativo", true)
+          .order("nome_canonico"),
+        supabase.from("profiles").select("id, nome").order("nome"),
+      ]);
       setContas((lista as { id: string; nome: string; tipo: string }[]) ?? []);
+      setPostos((lp as { id: string; nome_canonico: string }[]) ?? []);
+      setPessoas((pf as { id: string; nome: string }[]) ?? []);
     })();
   }, []);
 
@@ -84,7 +104,9 @@ export function LancamentoAvulso({
       return setErro("Descreva a despesa");
     }
     if (tipo === "abastecimento") {
-      if (posto.trim().length < 2) return setErro("Diga o nome do posto");
+      if (!localId && posto.trim().length < 2) {
+        return setErro("Escolha o posto na lista ou digite o nome de um novo");
+      }
       if (!Number(litros.replace(",", "."))) return setErro("Informe os litros");
       if (!Number(km)) return setErro("Informe o km do veículo");
     }
@@ -110,7 +132,11 @@ export function LancamentoAvulso({
           ...(tipo === "despesa"
             ? { descricao: descricao.trim() }
             : {
-                posto_nome: posto.trim(),
+                posto_nome:
+                  postos.find((p) => p.id === localId)?.nome_canonico ??
+                  posto.trim(),
+                local_id: localId || null,
+                socio_id: socioId || null,
                 tipo_abastecimento: tipoAbast,
                 litros: Number(litros.replace(",", ".")),
                 km_atual: Number(km),
@@ -211,12 +237,27 @@ export function LancamentoAvulso({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Posto</label>
-              <input
-                type="text"
+              <select
                 className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-                value={posto}
-                onChange={(e) => setPosto(e.target.value)}
-              />
+                value={localId}
+                onChange={(e) => setLocalId(e.target.value)}
+              >
+                <option value="">— posto novo (digitar) —</option>
+                {postos.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome_canonico}
+                  </option>
+                ))}
+              </select>
+              {!localId && (
+                <input
+                  type="text"
+                  placeholder="nome do posto novo"
+                  className="w-full mt-2 px-3 py-2 border border-cinza-borda rounded-xl"
+                  value={posto}
+                  onChange={(e) => setPosto(e.target.value)}
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">O que abasteceu</label>
@@ -268,6 +309,34 @@ export function LancamentoAvulso({
             grande={false}
           />
         </div>
+
+        {/* De quem é o gasto — só no abastecimento, que é onde a nota
+            assinada da empresa paga carro particular de sócio (0061). */}
+        {tipo === "abastecimento" && (
+          <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3">
+            <label className="block text-sm font-medium mb-1">
+              De quem é esse abastecimento?
+            </label>
+            <select
+              value={socioId}
+              onChange={(e) => setSocioId(e.target.value)}
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            >
+              <option value="">Da operação (custo de combustível)</option>
+              {pessoas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  Particular de {p.nome} (transferência a sócio)
+                </option>
+              ))}
+            </select>
+            {socioId && (
+              <p className="text-xs text-cinza-suave mt-1">
+                Esse gasto NÃO entra como custo da operação: vai pro DRE como
+                transferência a sócio, no nome de quem abasteceu.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="bg-slate-50 border border-cinza-borda rounded-xl p-3 space-y-2">
           <p className="text-sm font-medium">Como pagou?</p>
