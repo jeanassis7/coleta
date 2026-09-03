@@ -102,6 +102,9 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
     /features                   → liga feature por motorista (rollout gradual)
     /log                        → quem fez o quê (só quem tem ve_log)
     /estoque · /vendas · /cheques · /contas · /compradores   (Módulo 2)
+    /postos                     → saldo por posto (nota assinada em aberto)
+    /postos/[id]                → extrato + FECHAMENTO (cheque/dinheiro/troco)
+                                  + curadoria (renomear, juntar grafias)
     ── Módulo financeiro ──
     /caixa                      → saldo por conta + dinheiro na mão dos
                                   motoristas + transferências (saque/depósito)
@@ -114,7 +117,8 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
   /caminhoes[/id], /descargas/[id], /abastecimentos/[id], /adiantamentos[/id],
   /acertos, /alertas/visto, /manutencoes[/id], /documentos[/id],
   /contas-financeiras[/id], /transferencias[/id], /vigencias[/id],
-  /caixa/lancamentos, /cheques/ocr, /cheques/lote
+  /caixa/lancamentos, /cheques/ocr, /cheques/lote,
+  /postos/[id] (curadoria), /postos/[id]/fechamento
 /api/cron/backup                → backup mensal em CSV (cron da Vercel, dia 1º;
                                   admin logado também pode disparar na mão)
 /api/locais/proximos            → busca por proximidade (client motorista)
@@ -202,6 +206,8 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0059_trava_de_apagar_nao_e_toggle.sql` — `profiles.protegido` sai do painel e da API; trigger `trg_impedir_delete_protegido` recusa o DELETE no banco (as 6 pessoas de verdade ficam inapagáveis pelo app)
 - `0058_coleta_pagamento_parcial_da_sede.sql` — `coletas.valor_sede`: a sede pode bancar SÓ UMA PARTE da coleta (+ CHECK amarrando o par e `saldos_motoristas()` descontando a diferença)
 - `0057_umidade_nao_analisada.sql` — `descargas.umidade_nao_analisada`: "a análise não foi feita" vira LANÇAMENTO, não campo vazio (+ CHECK de coerência e backfill das 131 descargas históricas)
+- `0060_adiantamento_de_regularizacao.sql` — `adiantamentos.regularizacao`: o lançamento da virada não é fato vivido pelo motorista e fica fora do relatório dele (conta no saldo normalmente)
+- `0061_postos_e_socio.sql` — `abastecimentos.socio_id` + o gatilho da nota assinada passa a ROTEAR a categoria (`combustivel` × `transferencia_socio`); backfill dos postos por GPS em `locais.tipo='posto'`; `saldo_postos()`
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
 

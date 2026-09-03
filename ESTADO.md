@@ -1,9 +1,59 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 25/08/2026 (relatório da carga pro motorista).
+> Atualizado em 03/09/2026 (postos de combustível).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
 > `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
 > fechado de dinheiro, mapeados em 20/08).
+
+---
+
+## POSTOS DE COMBUSTÍVEL — 03/09/2026 ⛽
+
+Nasceu de um acerto com o posto que já tinha acontecido e não tinha onde
+ser lançado. Spec inteiro em
+`docs/superpowers/specs/2026-09-03-postos-de-combustivel-design.md`.
+
+**O medido antes de desenhar:** 3 abastecimentos, todos de nota assinada,
+R$ 1.681,52 — e zero pagos na hora. Nenhum com posto identificado. E a
+bagunça já tinha nascido: "Texas" e "Posto texas" (a 20 m, mesmo posto) e
+um terceiro "Texas" a 4,3 km. **Agrupar por texto juntaria dívidas de
+lugares diferentes; agrupar por GPS acerta os dois casos.** (Depois o
+Evaner confirmou que só existe um Texas — o terceiro foi lançado longe da
+bomba — e os dois foram juntados.)
+
+- **0061**: `abastecimentos.socio_id` + o gatilho da nota assinada passa a
+  **rotear a categoria**. Sem sócio → `combustivel`; com sócio →
+  `transferencia_socio` + `pessoa_id`. ⚠️ **Revoga a premissa da 0018** de
+  que carro de sócio era "custo operacional legítimo": decisão do Evaner,
+  o Valdecir é SÓCIO pro software. Sem isso, o dia em que o sócio
+  abastecesse o carro na nota da empresa o custo operacional inflaria e a
+  retirada sumiria — calado, por meses.
+- **Posto é `locais` com `tipo='posto'`**, não tabela nova: a busca por
+  GPS e a curadoria já existiam. O app do motorista JÁ tinha o picker
+  (`tipo="posto"`) — ele nunca funcionou porque não havia posto no banco.
+  O backfill acendeu a feature.
+- **`/admin/postos`**: saldo por posto, extrato (quem assinou, veículo,
+  quanto), e o **fechamento**: escolhe as notas, os cheques que saem da
+  carteira e o dinheiro que sai da conta.
+- **O troco fecha o buraco da varredura 21/08** (*cheque repassado maior que
+  a despesa inflando o resultado*): pagar a mais **sem informar o troco é
+  RECUSADO**, não avisado. O troco vira `entrada_avulsa` — caixa sim,
+  DRE não.
+- **O dinheiro quita notas INTEIRAS.** Se a divisão cair no meio de uma
+  nota, a rota recusa e diz quanto falta. Dividir a nota em duas contas
+  quebraria o editor de abastecimento, que lê a conta da origem com
+  `.maybeSingle()` — duas linhas ali derrubam a tela com erro cru.
+- **Curadoria**: o merge sempre absorve o outro posto NO que você está
+  olhando. ⚠️ `coletas.local_id` e `abastecimentos.local_id` apagam com
+  **SET NULL** — apagar o perdedor antes de mover desligaria as notas em
+  silêncio. Move primeiro, apaga depois.
+- **E2E**: Módulo 1 62/62, guards do dinheiro todos de pé.
+
+**Aberto:** o acerto real ainda não foi lançado pela tela (o Evaner lança),
+e os **saldos dos compradores** continuam desalinhados — faltam os números
+de FILTROVILLE, PROLUMINAS e "CHEQUES 2025 — VIRADA" e a migration de
+saldo de partida por comprador (mesmo mecanismo do saldo de partida das
+contas bancárias).
 
 ---
 
