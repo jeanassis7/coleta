@@ -1481,7 +1481,13 @@ export interface Venda {
   kg_fino: number;
   kg_grosso: number;
   preco_kg: number;
+  /** SEMPRE o valor FINAL — já com o desconto de umidade aplicado (0067). */
   valor_total: number;
+  /** o valor antes do desconto; nulo enquanto não houve desconto */
+  valor_combinado: number | null;
+  desconto_umidade: number;
+  desconto_umidade_em: string | null;
+  desconto_umidade_obs: string | null;
   caminhao_id: string | null;
   caminhao_placa: string | null;
   nota_numero: string | null;
@@ -1491,7 +1497,8 @@ export interface Venda {
 }
 
 const SELECT_VENDA = `id, comprador_id, data, peso_total_kg, kg_fino, kg_grosso,
-  preco_kg, valor_total, caminhao_id, nota_numero, foto_ticket_path, observacao,
+  preco_kg, valor_total, valor_combinado, desconto_umidade, desconto_umidade_em,
+  desconto_umidade_obs, caminhao_id, nota_numero, foto_ticket_path, observacao,
   criado_em, compradores(nome), caminhoes(placa)`;
 
 function mapVenda(r: Record<string, unknown>): Venda {
@@ -1507,6 +1514,13 @@ function mapVenda(r: Record<string, unknown>): Venda {
     kg_grosso: Number(r.kg_grosso),
     preco_kg: Number(r.preco_kg),
     valor_total: Number(r.valor_total),
+    valor_combinado:
+      r.valor_combinado === null || r.valor_combinado === undefined
+        ? null
+        : Number(r.valor_combinado),
+    desconto_umidade: Number(r.desconto_umidade ?? 0),
+    desconto_umidade_em: (r.desconto_umidade_em as string) ?? null,
+    desconto_umidade_obs: (r.desconto_umidade_obs as string) ?? null,
     caminhao_id: (r.caminhao_id as string) ?? null,
     caminhao_placa: cam?.placa ?? null,
     nota_numero: (r.nota_numero as string) ?? null,

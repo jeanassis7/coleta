@@ -27,13 +27,71 @@ export async function PATCH(
 
   const { data: venda, error: eVenda } = await client
     .from("vendas")
-    .select("id, comprador_id, peso_total_kg, preco_kg, valor_total")
+    .select(
+      "id, comprador_id, peso_total_kg, preco_kg, valor_total, valor_combinado, desconto_umidade"
+    )
     .eq("id", id)
     .maybeSingle();
   if (eVenda) return NextResponse.json({ error: eVenda.message }, { status: 400 });
   if (!venda) return NextResponse.json({ error: "venda não encontrada" }, { status: 404 });
 
   const updates: Record<string, unknown> = {};
+
+  // ------------------------------------------------------------------
+  // DESCONTO DE UMIDADE (0067) — lançado DEPOIS, quando a análise do
+  // comprador chega. Ação própria, não campo solto: ela guarda o valor
+  // combinado antes de mexer, e é isso que deixa o "por quê" visível
+  // daqui a seis meses.
+  // ------------------------------------------------------------------
+  if (body.acao === "desconto_umidade") {
+    const desconto = Number(body.desconto);
+    if (!Number.isFinite(desconto) || desconto < 0) {
+      return NextResponse.json({ error: "desconto inválido" }, { status: 400 });
+    }
+    const quando = String(body.quando || "");
+    if (!/^d{4}-d{2}-d{2}$/.test(quando)) {
+      return NextResponse.json(
+        { error: "diga a data em que a análise chegou" },
+        { status: 400 }
+      );
+    }
+    // A base é SEMPRE o combinado: lançar o desconto duas vezes (análise
+    // corrigida) recalcula em cima do valor original, não em cascata.
+    const combinado = n2(
+      Number(venda.valor_combinado ?? venda.valor_total)
+    );
+    if (desconto >= combinado) {
+      return NextResponse.json(
+        {
+          error: `o desconto (R$ ${desconto.toFixed(2)}) não pode ser maior que a venda (R$ ${combinado.toFixed(2)}). Se eles devolveram a carga, apague a venda em vez de zerar o valor.`,
+        },
+        { status: 400 }
+      );
+    }
+    const final = n2(combinado - desconto);
+    const peso = Number(venda.peso_total_kg);
+    const { error } = await client
+      .from("vendas")
+      .update({
+        valor_combinado: combinado,
+        desconto_umidade: n2(desconto),
+        desconto_umidade_em: quando,
+        desconto_umidade_obs: body.observacao
+          ? String(body.observacao).trim()
+          : null,
+        // valor_total continua sendo o VALOR FINAL: saldo do comprador e
+        // receita do DRE seguem lendo só ele e continuam certos.
+        valor_total: final,
+        ...(peso > 0
+          ? { preco_kg: Math.round((final / peso) * 10000) / 10000 }
+          : {}),
+      })
+      .eq("id", id);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true, valor_final: final });
+  }
 
   if (body.data !== undefined) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.data))) {

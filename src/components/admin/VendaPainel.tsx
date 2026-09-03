@@ -692,6 +692,41 @@ function TabelaVendas({
   const [edNota, setEdNota] = useState("");
   const [edObs, setEdObs] = useState("");
   const [erroEdicao, setErroEdicao] = useState<string | null>(null);
+  // DESCONTO DE UMIDADE (0067): a análise do comprador chega DEPOIS da
+  // venda, e é ela que derruba o valor. Fica em ação separada da edição
+  // normal porque guarda o valor combinado antes de mexer — é o que deixa
+  // o "por quê" legível daqui a seis meses.
+  const [edDescCentavos, setEdDescCentavos] = useState<number | null>(null);
+  const [edDescData, setEdDescData] = useState("");
+  const [edDescObs, setEdDescObs] = useState("");
+  const [salvandoDesc, setSalvandoDesc] = useState(false);
+
+  async function lancarDescontoUmidade() {
+    if (!editando) return;
+    setErroEdicao(null);
+    setSalvandoDesc(true);
+    try {
+      const res = await fetch(`/api/admin/vendas/${editando.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acao: "desconto_umidade",
+          desconto: edDescCentavos ? centavosParaReais(edDescCentavos) : 0,
+          quando: edDescData,
+          observacao: edDescObs.trim() || null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErroEdicao(json.error || "não deu pra lançar o desconto");
+        return;
+      }
+      setEditando(null);
+      router.refresh();
+    } finally {
+      setSalvandoDesc(false);
+    }
+  }
 
   async function apagar(v: Venda) {
     setLoading(true);
@@ -941,6 +976,88 @@ function TabelaVendas({
                 onChange={(e) => setEdObs(e.target.value)}
                 className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
               />
+            </div>
+
+            {/* O desconto de umidade não é edição de preço: é um fato novo
+                que chegou depois, e o papel dele é ficar registrado. */}
+            <div className="border-t border-cinza-borda pt-4 space-y-3">
+              <div>
+                <p className="text-sm font-semibold">Desconto de umidade</p>
+                <p className="text-xs text-cinza-suave">
+                  {editando.desconto_umidade > 0 ? (
+                    <>
+                      Já lançado:{" "}
+                      <strong>{formatBRL(editando.desconto_umidade)}</strong> em{" "}
+                      {editando.desconto_umidade_em
+                        ? formatData(editando.desconto_umidade_em)
+                        : "—"}
+                      . Combinado era{" "}
+                      {formatBRL(editando.valor_combinado ?? 0)}.
+                      {editando.desconto_umidade_obs
+                        ? ` (${editando.desconto_umidade_obs})`
+                        : ""}{" "}
+                      Lançar de novo recalcula em cima do combinado, não em
+                      cima do valor já descontado.
+                    </>
+                  ) : (
+                    <>
+                      Quando a análise deles chegar, lance aqui. O valor da
+                      venda cai, o saldo do comprador e a receita acompanham
+                      sozinhos, e o estoque não muda — o óleo saiu do mesmo
+                      jeito, o que mudou foi quanto pagam por ele.
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Quanto descontaram
+                  </label>
+                  <InputDinheiro
+                    centavos={edDescCentavos}
+                    onChange={setEdDescCentavos}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Data da análise
+                  </label>
+                  <input
+                    type="date"
+                    value={edDescData}
+                    onChange={(e) => setEdDescData(e.target.value)}
+                    className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+                  />
+                </div>
+              </div>
+              <input
+                value={edDescObs}
+                onChange={(e) => setEdDescObs(e.target.value)}
+                placeholder="ex.: umidade 8,4% na análise deles"
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              />
+              {!!edDescCentavos && !!edDescData && (
+                <p className="text-sm">
+                  A venda vai de{" "}
+                  {formatBRL(editando.valor_combinado ?? editando.valor_total)}{" "}
+                  para{" "}
+                  <strong>
+                    {formatBRL(
+                      (editando.valor_combinado ?? editando.valor_total) -
+                        centavosParaReais(edDescCentavos)
+                    )}
+                  </strong>
+                  .
+                </p>
+              )}
+              <button
+                onClick={lancarDescontoUmidade}
+                disabled={salvandoDesc || !edDescCentavos || !edDescData}
+                className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold disabled:bg-cinza-borda disabled:text-cinza-suave"
+              >
+                {salvandoDesc ? "Lançando..." : "Lançar desconto de umidade"}
+              </button>
             </div>
 
             {erroEdicao && (
