@@ -5,8 +5,16 @@ import { useRouter } from "next/navigation";
 import type { Caminhao } from "@/lib/admin/queries";
 
 /**
- * Form de criar/editar caminhão. Se receber prop `editando`, entra em modo edição.
+ * Form de criar/editar VEÍCULO. Se receber prop `editando`, entra em modo edição.
  * Layout desktop-first (3 colunas). Motorista nunca vê essa tela.
+ *
+ * Caminhão × carro: a 0018 criou o tipo e deixou tanque e tara nulos pro
+ * carro, mas o formulário e a rota nunca souberam disso — todo veículo
+ * nascia caminhão e travava pedindo a capacidade do tanque de óleo. Uma
+ * EcoSport não tem tanque de óleo (achado do Evaner, 03/09/2026).
+ *
+ * Carro nunca aparece pro motorista escolher ao iniciar carga — a RLS da
+ * 0018 barra isso no banco, não só na query.
  */
 export function FormCaminhao({
   editando,
@@ -24,9 +32,16 @@ export function FormCaminhao({
   const [modelo, setModelo] = useState(editando?.modelo || "");
   const [cor, setCor] = useState(editando?.cor || "");
   const [capacidadeL, setCapacidadeL] = useState(
-    editando ? String(editando.capacidade_l) : ""
+    editando?.capacidade_l != null ? String(editando.capacidade_l) : ""
   );
-  const [taraKg, setTaraKg] = useState(editando ? String(editando.tara_kg) : "");
+  const [taraKg, setTaraKg] = useState(
+    editando?.tara_kg != null ? String(editando.tara_kg) : ""
+  );
+  const [tipo, setTipo] = useState<"caminhao" | "carro">(
+    (editando?.tipo as "caminhao" | "carro") || "caminhao"
+  );
+  const [deQuem, setDeQuem] = useState(editando?.de_quem || "");
+  const ehCarro = tipo === "carro";
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
@@ -38,8 +53,10 @@ export function FormCaminhao({
         marca: marca.trim(),
         modelo: modelo.trim() || null,
         cor: cor.trim(),
-        capacidade_l: Number(capacidadeL),
-        tara_kg: Number(taraKg),
+        tipo,
+        de_quem: deQuem.trim() || null,
+        capacidade_l: ehCarro ? null : Number(capacidadeL),
+        tara_kg: ehCarro ? null : Number(taraKg),
       };
       const url = editando
         ? `/api/admin/caminhoes/${editando.id}`
@@ -76,8 +93,36 @@ export function FormCaminhao({
       className="card space-y-4"
     >
       <h2 className="text-lg font-semibold">
-        {editando ? `Editar caminhão ${editando.placa}` : "Novo caminhão"}
+        {editando ? `Editar ${editando.placa}` : "Novo veículo"}
       </h2>
+
+      <div className="flex gap-2">
+        {(
+          [
+            ["caminhao", "🚛 Caminhão"],
+            ["carro", "🚗 Carro"],
+          ] as const
+        ).map(([v, r]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setTipo(v)}
+            className={`px-4 py-2 rounded-xl border-2 text-sm font-medium ${
+              tipo === v
+                ? "bg-verde text-white border-verde"
+                : "bg-white border-cinza-borda"
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      {ehCarro && (
+        <p className="text-sm text-cinza-suave">
+          Carro serve pra lançar gasto (abastecimento, manutenção) e não
+          aparece pro motorista escolher ao iniciar carga.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
@@ -130,9 +175,25 @@ export function FormCaminhao({
             required
           />
         </div>
+        {ehCarro ? (
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">
+              De quem é{" "}
+              <span className="text-cinza-suave font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              placeholder="Jean, Valdecir..."
+              value={deQuem}
+              onChange={(e) => setDeQuem(e.target.value)}
+            />
+          </div>
+        ) : (
+          <>
         <div>
           <label className="block text-sm font-medium mb-1">
-            Capacidade do tanque (L)
+            Capacidade do tanque de óleo (L)
           </label>
           <input
             type="number"
@@ -161,6 +222,8 @@ export function FormCaminhao({
             Média de pesos do caminhão vazio
           </p>
         </div>
+          </>
+        )}
       </div>
 
       {erro && (
@@ -188,7 +251,9 @@ export function FormCaminhao({
             ? "Salvando..."
             : editando
               ? "Salvar alterações"
-              : "Cadastrar caminhão"}
+              : ehCarro
+                ? "Cadastrar carro"
+                : "Cadastrar caminhão"}
         </button>
       </div>
     </form>

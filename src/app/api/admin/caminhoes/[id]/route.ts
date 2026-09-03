@@ -23,19 +23,38 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (typeof body.marca === "string" && body.marca.trim()) updates.marca = body.marca.trim();
   if (body.modelo !== undefined) updates.modelo = body.modelo?.trim() || null;
   if (typeof body.cor === "string" && body.cor.trim()) updates.cor = body.cor.trim();
-  if (body.capacidade_l !== undefined) {
-    const n = Number(body.capacidade_l);
-    if (!Number.isFinite(n) || n <= 0) {
-      return NextResponse.json({ error: "capacidade inválida" }, { status: 400 });
-    }
-    updates.capacidade_l = Math.round(n);
+  if (body.tipo === "carro" || body.tipo === "caminhao") updates.tipo = body.tipo;
+  if (body.de_quem !== undefined) {
+    updates.de_quem = body.de_quem ? String(body.de_quem).trim() : null;
   }
-  if (body.tara_kg !== undefined) {
-    const n = Number(body.tara_kg);
-    if (!Number.isFinite(n) || n <= 0) {
-      return NextResponse.json({ error: "tara inválida" }, { status: 400 });
+  // Carro zera tanque e tara; caminhão exige os dois. Sem isto, virar um
+  // caminhão em carro (ou o contrário) estouraria o CHECK da 0018 com erro
+  // cru do Postgres na cara do gestor.
+  const viraCarro = updates.tipo === "carro";
+  if (viraCarro) {
+    updates.capacidade_l = null;
+    updates.tara_kg = null;
+  } else {
+    if (body.capacidade_l !== undefined) {
+      const n = Number(body.capacidade_l);
+      if (!Number.isFinite(n) || n <= 0) {
+        return NextResponse.json({ error: "capacidade inválida" }, { status: 400 });
+      }
+      updates.capacidade_l = Math.round(n);
     }
-    updates.tara_kg = Math.round(n);
+    if (body.tara_kg !== undefined) {
+      const n = Number(body.tara_kg);
+      if (!Number.isFinite(n) || n <= 0) {
+        return NextResponse.json({ error: "tara inválida" }, { status: 400 });
+      }
+      updates.tara_kg = Math.round(n);
+    }
+    if (updates.tipo === "caminhao" && (!updates.capacidade_l || !updates.tara_kg)) {
+      return NextResponse.json(
+        { error: "caminhão precisa de capacidade do tanque de óleo e tara — informe os dois" },
+        { status: 400 }
+      );
+    }
   }
   if (typeof body.ativo === "boolean") {
     updates.ativo = body.ativo;

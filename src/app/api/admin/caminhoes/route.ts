@@ -11,6 +11,14 @@ export async function POST(req: NextRequest) {
   const marca = String(body.marca || "").trim();
   const modelo = body.modelo ? String(body.modelo).trim() : null;
   const cor = String(body.cor || "").trim();
+  // CARRO não tem tanque de óleo nem tara — a 0018 já deixou as duas
+  // colunas nulas pra ele (CHECK caminhao_precisa_tara_e_capacidade), mas
+  // esta rota nunca mandou o `tipo` e exigia os dois de todo mundo: na
+  // prática não existia como cadastrar um carro pelo painel. Apareceu na
+  // hora de lançar a nota do posto no carro do sócio (03/09/2026).
+  const tipo = body.tipo === "carro" ? "carro" : "caminhao";
+  const de_quem = body.de_quem ? String(body.de_quem).trim() : null;
+  const ehCaminhao = tipo === "caminhao";
   const capacidade_l = Number(body.capacidade_l);
   const tara_kg = Number(body.tara_kg);
 
@@ -21,10 +29,10 @@ export async function POST(req: NextRequest) {
   if (!/^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/.test(placa)) {
     return NextResponse.json({ error: "placa em formato inválido" }, { status: 400 });
   }
-  if (!Number.isFinite(capacidade_l) || capacidade_l <= 0) {
+  if (ehCaminhao && (!Number.isFinite(capacidade_l) || capacidade_l <= 0)) {
     return NextResponse.json({ error: "capacidade inválida" }, { status: 400 });
   }
-  if (!Number.isFinite(tara_kg) || tara_kg <= 0) {
+  if (ehCaminhao && (!Number.isFinite(tara_kg) || tara_kg <= 0)) {
     return NextResponse.json({ error: "tara inválida" }, { status: 400 });
   }
 
@@ -32,9 +40,9 @@ export async function POST(req: NextRequest) {
   const { data, error } = await client
     .from("caminhoes")
     .insert({
-      placa, marca, modelo, cor,
-      capacidade_l: Math.round(capacidade_l),
-      tara_kg: Math.round(tara_kg),
+      placa, marca, modelo, cor, tipo, de_quem,
+      capacidade_l: ehCaminhao ? Math.round(capacidade_l) : null,
+      tara_kg: ehCaminhao ? Math.round(tara_kg) : null,
     })
     .select()
     .maybeSingle();
