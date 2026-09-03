@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { buscarPostoDetalhe } from "@/lib/admin/postos";
+import { buscarPostoDetalhe, buscarPostosComSaldo } from "@/lib/admin/postos";
 import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { buscarCheques } from "@/lib/admin/queries";
 import { formatBRL, formatData, formatLitros } from "@/lib/format";
 import { FechamentoPosto } from "@/components/admin/FechamentoPosto";
+import { CuradoriaPosto } from "@/components/admin/CuradoriaPosto";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,11 @@ export default async function PostoDetalhePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [posto, contas, cheques] = await Promise.all([
+  const [posto, contas, cheques, todos] = await Promise.all([
     buscarPostoDetalhe(id),
     buscarContasFinanceiras(),
     buscarCheques({ status: ["em_carteira"] }),
+    buscarPostosComSaldo(),
   ]);
   if (!posto) notFound();
 
@@ -39,6 +41,16 @@ export default async function PostoDetalhePage({
         >
           ver no mapa
         </a>
+      </div>
+
+      <div className="mb-3">
+        <CuradoriaPosto
+          postoId={posto.id}
+          nomeAtual={posto.nome}
+          outros={todos
+            .filter((p) => p.id !== posto.id)
+            .map((p) => ({ id: p.id, nome: p.nome, notas: p.notas_abertas }))}
+        />
       </div>
 
       {posto.apelidos.length > 0 && (
