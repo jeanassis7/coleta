@@ -670,6 +670,14 @@ export interface CargaCompleta {
   foto_painel_path: string | null;
   coletas: {
     id: string;
+    client_id: string;
+    motorista_id: string;
+    certificado_tipo: string;
+    litros_certificado: number | null;
+    gps_accuracy: number | null;
+    gps_capturado: boolean;
+    sincronizado_em: string | null;
+    pago_pela_sede: boolean;
     local_nome: string;
     litros: number;
     valor_pago: number;
@@ -741,7 +749,7 @@ export async function buscarCargaCompleta(
        foto_painel_path,
        profiles!cargas_motorista_id_fkey(nome),
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
-       coletas(id, local_nome, litros, valor_pago, valor_sede, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
+       coletas(id, client_id, motorista_id, certificado_tipo, litros_certificado, gps_accuracy, gps_capturado, sincronizado_em, pago_pela_sede, local_nome, litros, valor_pago, valor_sede, foto_path, latitude, longitude, observacao, lancado_por_admin, criado_em),
        despesas(id, motorista_id, valor, descricao, pago_na_hora, foto_path, latitude, longitude, criado_em),
        abastecimentos(id, motorista_id, posto_nome, litros, valor, km_atual, pago_na_hora, tipo, foto_path, latitude, longitude, criado_em),
        descargas(id, peso_bruto_kg, peso_tara_kg, peso_liquido_kg, litros_estimados, umidade_pct, umidade_nao_analisada, foto_papel_path, latitude, longitude, criado_em)`

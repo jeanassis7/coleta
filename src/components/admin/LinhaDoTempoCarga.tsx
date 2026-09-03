@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { formatBRL, formatDataHora, formatLitros } from "@/lib/format";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
+import { DrawerDetalhe } from "@/components/admin/DrawerDetalhe";
 import type { CargaCompleta } from "@/lib/admin/queries";
 
 type Evento =
@@ -31,6 +33,14 @@ const ESTILO: Record<Evento["tipo"], { icone: string; cor: string; rotulo: strin
  * abastecimento, balança) finalmente podem ser auditadas.
  */
 export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
+  // Clicar na coleta abre o MESMO drawer da aba Lista — editar e apagar
+  // com a corrente inteira (conta a pagar amarrada, foto, log, saldo do
+  // motorista de volta). Reimplementar isso aqui criaria uma segunda dona
+  // da mesma regra de dinheiro; a duplicata que o Evaner achou em campo
+  // (01/09) precisava ser apagada DESTA tela e não tinha por onde.
+  const [coletaAberta, setColetaAberta] = useState<
+    CargaCompleta["coletas"][number] | null
+  >(null);
   const eventos: Evento[] = [
     ...carga.coletas.map((c) => ({
       tipo: "coleta" as const,
@@ -75,7 +85,16 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
         return (
           <div
             key={`${e.tipo}-${e.dados.id}`}
-            className={`card border-l-4 ${est.cor} flex items-start gap-3`}
+            onClick={
+              e.tipo === "coleta"
+                ? () => setColetaAberta(e.dados)
+                : undefined
+            }
+            className={`card border-l-4 ${est.cor} flex items-start gap-3${
+              e.tipo === "coleta"
+                ? " cursor-pointer hover:border-verde hover:bg-slate-50 transition-colors"
+                : ""
+            }`}
           >
             <div className="text-xl shrink-0" title={est.rotulo}>
               {est.icone}
@@ -91,7 +110,8 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
               </div>
               <ConteudoEvento evento={e} />
             </div>
-            <div className="shrink-0 pt-1">
+            {/* A lupa da foto não abre o drawer junto. */}
+            <div className="shrink-0 pt-1" onClick={(ev) => ev.stopPropagation()}>
               <VisualizadorFoto
                 path={
                   e.tipo === "descarga"
@@ -104,6 +124,19 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
           </div>
         );
       })}
+
+      {coletaAberta && (
+        <DrawerDetalhe
+          key={coletaAberta.id}
+          coleta={{
+            ...coletaAberta,
+            // O drawer mostra de quem é a coleta; aqui é sempre o motorista
+            // da carga, então não vale uma consulta a mais.
+            profiles: { nome: carga.motorista_nome },
+          }}
+          onClose={() => setColetaAberta(null)}
+        />
+      )}
     </div>
   );
 }

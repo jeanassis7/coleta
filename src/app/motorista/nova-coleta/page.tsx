@@ -16,6 +16,42 @@ import { SugestaoLocal } from "@/components/motorista/SugestaoLocal";
 import { getCargaAtivaCached } from "@/lib/motorista/carga";
 import type { CertificadoTipo, ColetaLocal } from "@/lib/types";
 
+/**
+ * Nome do local sem acento, sem caixa e sem espaço sobrando.
+ *
+ * "Mateus", "mateus " e "MATEÚS" são o mesmo cliente na cabeça dele — e
+ * comparar cru deixaria a duplicata passar por causa de um espaço.
+ */
+function normalizarLocal(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/s+/g, " ");
+}
+
+/** "hoje às 15:41", "ontem às 15:41" ou "31/08 às 15:41". */
+function quandoFoi(ts: number): string {
+  const d = new Date(ts);
+  const hora = d.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+  const dia = (x: Date) =>
+    x.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const hoje = new Date();
+  const ontem = new Date(hoje.getTime() - 24 * 60 * 60 * 1000);
+  if (dia(d) === dia(hoje)) return `hoje às ${hora}`;
+  if (dia(d) === dia(ontem)) return `ontem às ${hora}`;
+  return `${d.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  })} às ${hora}`;
+}
+
 export default function NovaColetaPage() {
   const router = useRouter();
   const [motoristaId, setMotoristaId] = useState<string | null>(null);
@@ -91,7 +127,13 @@ export default function NovaColetaPage() {
   //  - cada confirmação vale só pro aviso que está na tela: a cadeia roda
   //    de novo e o próximo aviso ainda aparece (senão um engole o outro).
   const [avisosConfirmados, setAvisosConfirmados] = useState<string[]>([]);
-  const [aviso, setAviso] = useState<{ tipo: string; texto: string } | null>(null);
+  const [aviso, setAviso] = useState<{
+    tipo: string;
+    texto: string;
+    /** Sem isto todo aviso vira "Confere o lançamento" — e o de duplicata
+     *  precisa dizer na cara o que ele é. */
+    titulo?: string;
+  } | null>(null);
   // "Falta a foto" é diferente de "confere o lançamento": falta não se
   // confirma, se preenche. Por isso é um estado separado — senão o botão
   // ofereceria "SALVAR ASSIM MESMO" com campo obrigatório vazio.
@@ -157,6 +199,52 @@ export default function NovaColetaPage() {
       setAviso(null);
     }
     const L = (n: number) => n.toLocaleString("pt-BR");
+
+    // -----------------------------------------------------------------
+    // DUPLICATA — o primeiro aviso da cadeia, porque é o mais caro
+    // -----------------------------------------------------------------
+    // Caso real (01/09/2026): o Lucimar lançou "Mateus, 800 L, R$ 1.280"
+    // às 15:41 e de novo às 17:38, de outra cidade, 8,5 km depois. Não foi
+    // toque duplo — foram 1h58 de intervalo, e no meio disso o app dele
+    // recarregou 12 vezes: ele conferiu, não viu a coleta na lista e
+    // lançou de novo. Por isso a regra NÃO tem janela de tempo: é o trio
+    // exato (local + litros + valor) dentro da MESMA carga. Repetir os
+    // três por acaso numa carga é raro; quando acontece de verdade, o
+    // segundo toque passa.
+    //
+    // Lê a fila local — funciona offline. O histórico da carga é
+    // reabastecido do servidor na home (reabastecerHistoricoLocal), então
+    // pega também os dias anteriores da mesma carga. Se não achar, não
+    // avisa: errar pra menos aqui é só perder um aviso, nunca travar.
+    if (!confirmados.includes("duplicada")) {
+      try {
+        const cargaAgora = getCargaAtivaCached(motoristaId);
+        const alvo = normalizarLocal(localNome);
+        const iguais = await getLocalDB()
+          .coletas_locais.filter(
+            (c) =>
+              c.motorista_id === motoristaId &&
+              (cargaAgora ? c.carga_id === cargaAgora.id : true) &&
+              Number(c.litros) === litros &&
+              Number(c.valor_pago) === valor &&
+              normalizarLocal(c.local_nome) === alvo
+          )
+          .toArray();
+        if (iguais.length > 0) {
+          const ant = iguais.sort((a, b) => b.criado_em - a.criado_em)[0];
+          setAviso({
+            tipo: "duplicada",
+            titulo: "⚠️ Você já lançou isso nessa carga",
+            texto:
+              `${ant.local_nome} · ${L(ant.litros)} L · ${formatBRL(ant.valor_pago)}, ` +
+              `${quandoFoi(ant.criado_em)}. Se for uma coleta nova mesmo, aperta de novo.`,
+          });
+          return;
+        }
+      } catch {
+        // Banco local indisponível: segue sem o aviso.
+      }
+    }
 
     if (!confirmados.includes("litros_baixo") && litros < LITROS_MINIMO) {
       setAviso({ tipo: "litros_baixo", texto: `Você digitou ${L(litros)} L de óleo.` });
@@ -452,7 +540,9 @@ export default function NovaColetaPage() {
 
         {aviso && !falta && (
           <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4">
-            <p className="text-xl font-bold mb-1">⚠️ Confere o lançamento</p>
+            <p className="text-xl font-bold mb-1">
+              {aviso.titulo ?? "⚠️ Confere o lançamento"}
+            </p>
             <p className="text-lg">{aviso.texto}</p>
           </div>
         )}
