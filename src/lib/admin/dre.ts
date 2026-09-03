@@ -76,6 +76,9 @@ export interface Dre {
   resultadoOperacional: number;
   financeiro: number;
   impostos: number;
+  /** Conta velha paga agora — fora do resultado operacional, dentro do
+   *  resultado final. Tende a zero conforme a virada é digerida. */
+  transicao: number;
   resultado: number;
 }
 
@@ -471,6 +474,7 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   const fixa = doGrupo("fixa");
   const financeiro = doGrupo("financeiro");
   const impostos = doGrupo("impostos");
+  const transicao = doGrupo("transicao");
 
   const margemBruta = receita - custoOleo;
   const resultadoOperacional = margemBruta - operacional - fixa;
@@ -487,6 +491,10 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     resultadoOperacional,
     financeiro,
     impostos,
-    resultado: resultadoOperacional - financeiro - impostos,
+    transicao,
+    // A transição fica FORA do resultado operacional de propósito: ela não
+    // diz nada sobre como a operação foi neste mês. Mas entra no resultado
+    // final, porque o dinheiro saiu de verdade.
+    resultado: resultadoOperacional - financeiro - impostos - transicao,
   };
 }

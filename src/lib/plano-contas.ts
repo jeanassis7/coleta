@@ -29,7 +29,8 @@ export type GrupoDre =
   | "operacional"
   | "fixa"
   | "financeiro"
-  | "impostos";
+  | "impostos"
+  | "transicao";
 
 export interface LinhaPlano {
   chave: string;
@@ -181,6 +182,22 @@ export const PLANO_CONTAS: LinhaPlano[] = [
 
   // --------------------------------------------------------------- impostos
   { chave: "impostos", label: "Impostos", grupo: "impostos", fonte: "lancamento" },
+
+  // -------------------------------------------------------------- transição
+  // Conta velha, paga agora. O óleo foi coletado há seis meses: o dinheiro
+  // sai HOJE (e tem que sair do caixa), mas não é custo da operação de hoje
+  // e não entra no estoque, porque o óleo já foi vendido faz tempo.
+  //
+  // Jogar isso em "custo do óleo" faria a margem do mês parecer péssima por
+  // um óleo que nem está mais aqui. A linha existe pra isso ter um lugar
+  // honesto — e ela TENDE A ZERO: quando o passado acabar de ser pago, o
+  // grupo some da tela sozinho (só aparece grupo com lançamento).
+  {
+    chave: "transicao_software",
+    label: "Dívida do sistema antigo",
+    grupo: "transicao",
+    fonte: "lancamento",
+  },
 ];
 
 export const GRUPOS: { chave: GrupoDre; label: string }[] = [
@@ -190,6 +207,7 @@ export const GRUPOS: { chave: GrupoDre; label: string }[] = [
   { chave: "fixa", label: "Despesas fixas" },
   { chave: "financeiro", label: "Financeiro" },
   { chave: "impostos", label: "Impostos" },
+  { chave: "transicao", label: "Transição do sistema antigo" },
 ];
 
 /** As que aparecem no dropdown do lançamento (o Jean digita). */

@@ -88,6 +88,7 @@ export function DreAnualGrade({ anual }: { anual: DreAnual }) {
     fixa: (d) => d.fixa,
     financeiro: (d) => d.financeiro,
     impostos: (d) => d.impostos,
+    transicao: (d) => d.transicao,
   };
 
   return (

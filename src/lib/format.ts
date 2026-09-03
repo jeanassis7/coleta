@@ -57,7 +57,25 @@ export function formatHora(d: Date | string | number): string {
   }).format(date);
 }
 
+/**
+ * Data pra tela.
+ *
+ * ⚠️ COLUNA `date` NÃO TEM FUSO — e converter uma dessas jogava tudo um
+ * dia pra trás (bug de campo, 03/09/2026: salário lançado dia 02 aparecia
+ * dia 01). "2026-09-02" vira meia-noite UTC no `new Date`, e meia-noite
+ * UTC em São Paulo são 21h do dia ANTERIOR. Valia pra vencimento, data de
+ * pagamento, data de venda, data do acerto — o sistema inteiro.
+ *
+ * Dia puro se formata como texto, sem fuso nenhum. Timestamp (que tem
+ * hora e é um instante de verdade) continua convertido pra Brasília.
+ */
+const SO_DIA = /^(d{4})-(d{2})-(d{2})$/;
+
 export function formatData(d: Date | string | number): string {
+  if (typeof d === "string") {
+    const m = d.match(SO_DIA);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
   const date = typeof d === "string" || typeof d === "number" ? new Date(d) : d;
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
