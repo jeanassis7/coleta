@@ -545,3 +545,114 @@ export async function buscarValesPendentes(
     observacao: a.observacao,
   }));
 }
+
+// ============================================================================
+// O EXTRATO — todo movimento de dinheiro, venha de onde vier
+// ============================================================================
+
+/**
+ * Uma linha do extrato (view `movimentos_caixa`, 0068/0070).
+ *
+ * O `valor` vem COM SINAL: positivo entrou, negativo saiu. Quem soma não
+ * precisa saber de que braço veio — e é essa mesma view que o
+ * `saldo_contas()` soma. Total da tela e saldo do Caixa são a mesma conta.
+ */
+export interface MovimentoCaixa {
+  /** único na tela: o mesmo id de origem pode existir em dois tipos
+   *  (transferência produz uma linha em cada conta) */
+  id: string;
+  origem_id: string;
+  tipo: string;
+  conta_id: string | null;
+  data: string;
+  valor: number;
+  descricao: string;
+  categoria: string | null;
+  pessoa_id: string | null;
+  criado_em: string;
+  /** só conta a pagar se edita/apaga por esta tela; o resto tem tela própria */
+  editavel: boolean;
+}
+
+export interface FiltrosMovimento {
+  inicio?: string;
+  fim?: string;
+  categoria?: string;
+  conta_id?: string;
+  pessoa_id?: string;
+  tipo?: string;
+  /** "entrou" | "saiu" | vazio pra tudo */
+  direcao?: string;
+}
+
+export async function buscarMovimentosCaixa(
+  f: FiltrosMovimento = {}
+): Promise<MovimentoCaixa[]> {
+  const supabase = await getSupabaseServer();
+  // PAGINADO: o extrato cresce sem teto — 1.323 linhas com um mês de uso.
+  // Truncar aqui apresentaria um total PARCIAL como se fosse o total, que é
+  // a régua do dinheiro #6.
+  const rows = await selectTudo<{
+    origem_id: string;
+    tipo: string;
+    conta_id: string | null;
+    data: string;
+    valor: number;
+    descricao: string;
+    categoria: string | null;
+    pessoa_id: string | null;
+    criado_em: string;
+  }>((de, ate) => {
+    let q = supabase
+      .from("movimentos_caixa")
+      .select(
+        "origem_id, tipo, conta_id, data, valor, descricao, categoria, pessoa_id, criado_em"
+      )
+      .order("data", { ascending: false })
+      .order("criado_em", { ascending: false })
+      .order("origem_id")
+      .range(de, ate);
+    if (f.inicio) q = q.gte("data", f.inicio);
+    if (f.fim) q = q.lte("data", f.fim);
+    if (f.categoria) q = q.eq("categoria", f.categoria);
+    if (f.conta_id) q = q.eq("conta_id", f.conta_id);
+    if (f.pessoa_id) q = q.eq("pessoa_id", f.pessoa_id);
+    if (f.tipo) q = q.eq("tipo", f.tipo);
+    if (f.direcao === "entrou") q = q.gt("valor", 0);
+    if (f.direcao === "saiu") q = q.lt("valor", 0);
+    return q;
+  });
+
+  return rows.map((m) => ({
+    id: `${m.tipo}:${m.origem_id}`,
+    origem_id: m.origem_id,
+    tipo: m.tipo,
+    conta_id: m.conta_id,
+    data: m.data,
+    valor: Number(m.valor),
+    descricao: m.descricao,
+    categoria: m.categoria,
+    pessoa_id: m.pessoa_id,
+    criado_em: m.criado_em,
+    editavel: m.tipo === "conta_paga",
+  }));
+}
+
+/**
+ * Os tipos que EXISTEM no extrato, pro filtro se montar sozinho (0069).
+ *
+ * Nunca uma lista escrita no código: fonte nova de dinheiro entraria na view
+ * e ficaria invisível no filtro até alguém lembrar de acrescentar — que é o
+ * bug que a 0068 acabou de consertar.
+ */
+export async function buscarTiposDeMovimento(): Promise<
+  { tipo: string; linhas: number }[]
+> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase.rpc("tipos_de_movimento");
+  if (error || !data) return [];
+  return (data as { tipo: string; linhas: number }[]).map((t) => ({
+    tipo: t.tipo,
+    linhas: Number(t.linhas),
+  }));
+}

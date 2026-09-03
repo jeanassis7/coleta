@@ -1,5 +1,7 @@
 import {
   buscarLancamentos,
+  buscarMovimentosCaixa,
+  buscarTiposDeMovimento,
   buscarContasFinanceiras,
   buscarValesPendentes,
   buscarSaldoDividas,
@@ -33,15 +35,35 @@ export default async function LancamentosPage({
     fim: params.fim || padrao.fim,
     categoria: params.categoria || "",
     conta_id: params.conta_id || "",
+    tipo: params.tipo || "",
+    direcao: params.direcao || "",
   };
 
-  const [lancamentos, contas, perfis, chequesCarteira, vales, dividas] =
-    await Promise.all([
-      buscarLancamentos({
+  const [
+    movimentos,
+    tipos,
+    contasPagas,
+    contas,
+    perfis,
+    chequesCarteira,
+    vales,
+    dividas,
+  ] = await Promise.all([
+      // O EXTRATO: todo movimento de dinheiro, venha de onde vier (0068).
+      buscarMovimentosCaixa({
         inicio: filtros.inicio,
         fim: filtros.fim,
         categoria: filtros.categoria || undefined,
         conta_id: filtros.conta_id || undefined,
+        tipo: filtros.tipo || undefined,
+        direcao: filtros.direcao || undefined,
+      }),
+      buscarTiposDeMovimento(),
+      // As contas pagas cruas: a linha do extrato é pra ler, a conta é
+      // pra editar.
+      buscarLancamentos({
+        inicio: filtros.inicio,
+        fim: filtros.fim,
       }),
       buscarContasFinanceiras(),
       buscarMotoristas(),
@@ -66,7 +88,9 @@ export default async function LancamentosPage({
       </p>
 
       <LancamentosPainel
-        lancamentos={lancamentos}
+        lancamentos={movimentos}
+        tipos={tipos}
+        contasPagas={contasPagas}
         contas={contas.map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo }))}
         // Inclui inativos: quem saiu da empresa continua tendo histórico, e
         // o Valdecir é cadastro contábil que nunca fica ativo.

@@ -14,7 +14,12 @@ import {
   pessoaOpcional,
   contaVeioDeLancamento,
 } from "@/lib/plano-contas";
-import type { Lancamento, ValePendente } from "@/lib/admin/caixa";
+import { rotuloTipoMovimento } from "@/lib/tipos-movimento";
+import type {
+  Lancamento,
+  MovimentoCaixa,
+  ValePendente,
+} from "@/lib/admin/caixa";
 
 /**
  * Lançar o que já saiu, no ritmo do extrato bancário.
@@ -45,6 +50,8 @@ export interface DividaOpcao {
 
 export function LancamentosPainel({
   lancamentos,
+  tipos,
+  contasPagas,
   contas,
   pessoas,
   cheques,
@@ -52,7 +59,14 @@ export function LancamentosPainel({
   dividas,
   filtros,
 }: {
-  lancamentos: Lancamento[];
+  /** O extrato inteiro (view movimentos_caixa) — não só contas pagas. */
+  lancamentos: MovimentoCaixa[];
+  /** Os tipos que EXISTEM no extrato; o filtro se monta a partir daqui. */
+  tipos: { tipo: string; linhas: number }[];
+  /** As contas pagas do período, cruas. A linha do extrato é pra LER; pra
+   *  editar é preciso a conta inteira (vencimento, forma, observação), e
+   *  inchar a view com campos que só uma origem usa seria pior. */
+  contasPagas: Lancamento[];
   contas: ContaOpcao[];
   pessoas: PessoaOpcao[];
   /** Cheques na carteira — pagar com um deles é o que o repassa. */
@@ -61,7 +75,14 @@ export function LancamentosPainel({
   vales: ValePendente[];
   /** Dívidas em aberto — o pagamento diz qual delas abate. */
   dividas: DividaOpcao[];
-  filtros: { inicio: string; fim: string; categoria: string; conta_id: string };
+  filtros: {
+    inicio: string;
+    fim: string;
+    categoria: string;
+    conta_id: string;
+    tipo: string;
+    direcao: string;
+  };
 }) {
   const router = useRouter();
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000)
@@ -98,7 +119,17 @@ export function LancamentosPainel({
   const [edPessoaId, setEdPessoaId] = useState("");
   const [edDescricao, setEdDescricao] = useState("");
 
-  function abrirEdicao(l: Lancamento) {
+  /** Acha a conta crua por trás da linha do extrato. */
+  function contaDaLinha(m: MovimentoCaixa): Lancamento | null {
+    return contasPagas.find((c) => c.id === m.origem_id) ?? null;
+  }
+
+  function abrirEdicao(m: MovimentoCaixa) {
+    const l = contaDaLinha(m);
+    if (!l) {
+      setErro("essa linha não é uma conta paga — corrija na tela de origem");
+      return;
+    }
     setErro(null);
     setOk(null);
     setEditando(l);
@@ -147,7 +178,10 @@ export function LancamentosPainel({
 
   const nomePessoa = new Map(pessoas.map((p) => [p.id, p.nome]));
   const nomeConta = new Map(contas.map((c) => [c.id, c.nome]));
-  const total = lancamentos.reduce((s, l) => s + l.valor, 0);
+  // Três números, não um: num extrato "total" sozinho não quer dizer nada.
+  const entrou = lancamentos.reduce((s, l) => (l.valor > 0 ? s + l.valor : s), 0);
+  const saiu = lancamentos.reduce((s, l) => (l.valor < 0 ? s - l.valor : s), 0);
+  const total = entrou - saiu;
 
   async function salvar(e: React.FormEvent, confirmado = false) {
     e.preventDefault();
@@ -211,7 +245,9 @@ export function LancamentosPainel({
   async function apagar(l: Lancamento) {
     setSalvando(true);
     try {
-      const res = await fetch(`/api/admin/contas/${l.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/contas/${l.id}`, {
+        method: "DELETE",
+      });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setErro(json.error || "Falha ao apagar.");
@@ -531,6 +567,35 @@ export function LancamentosPainel({
             ))}
           </select>
         </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Entrou/Saiu</label>
+          <select
+            name="direcao"
+            defaultValue={filtros.direcao}
+            className="w-full border border-cinza-borda rounded-lg px-3 py-2"
+          >
+            <option value="">Tudo</option>
+            <option value="entrou">Só o que entrou</option>
+            <option value="saiu">Só o que saiu</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Tipo</label>
+          {/* Montado a partir do que EXISTE no extrato: fonte nova de
+              dinheiro aparece aqui sozinha, sem ninguém editar código. */}
+          <select
+            name="tipo"
+            defaultValue={filtros.tipo}
+            className="w-full border border-cinza-borda rounded-lg px-3 py-2"
+          >
+            <option value="">Todos</option>
+            {tipos.map((t) => (
+              <option key={t.tipo} value={t.tipo}>
+                {rotuloTipoMovimento(t.tipo)} ({t.linhas})
+              </option>
+            ))}
+          </select>
+        </div>
         <button type="submit" className="btn-primario">
           Filtrar
         </button>
@@ -542,7 +607,17 @@ export function LancamentosPainel({
           <h2 className="text-lg font-semibold">
             {lancamentos.length} lançamento{lancamentos.length === 1 ? "" : "s"}
           </h2>
-          <span className="text-xl font-bold">{formatBRL(total)}</span>
+          <div className="flex items-baseline gap-4 text-sm">
+            <span className="text-verde">
+              entrou <strong>{formatBRL(entrou)}</strong>
+            </span>
+            <span>
+              saiu <strong>{formatBRL(saiu)}</strong>
+            </span>
+            <span className="text-xl font-bold">
+              {total >= 0 ? "+" : "−"} {formatBRL(Math.abs(total))}
+            </span>
+          </div>
         </div>
 
         {lancamentos.length === 0 ? (
@@ -565,54 +640,60 @@ export function LancamentosPainel({
               </thead>
               <tbody>
                 {lancamentos.map((l) => {
-                  const daOrigem = contaVeioDeLancamento(l.origem_tipo);
+                  const entrou = l.valor > 0;
                   return (
                     <tr key={l.id} className="border-b border-cinza-borda">
                       <td className="py-2 pr-3 whitespace-nowrap">
-                        {formatData(l.pago_em)}
+                        {formatData(l.data)}
                       </td>
                       <td className="py-2 pr-3 whitespace-nowrap">
                         {l.conta_id ? nomeConta.get(l.conta_id) ?? "—" : "—"}
                       </td>
                       <td className="py-2 pr-3">
-                        {labelCategoria(l.categoria)}
-                        {daOrigem && (
-                          <span
-                            className="ml-1 text-xs text-cinza-suave"
-                            title="Veio de um lançamento operacional (abastecimento, manutenção, coleta, documento). Conta normalmente — mas se apagar, apague na tela de origem."
-                          >
-                            ↩︎
-                          </span>
-                        )}
+                        {l.categoria
+                          ? labelCategoria(l.categoria)
+                          : rotuloTipoMovimento(l.tipo)}
+                        <span className="block text-xs text-cinza-suave">
+                          {rotuloTipoMovimento(l.tipo)}
+                        </span>
                       </td>
                       <td className="py-2 pr-3">
                         {l.pessoa_id ? nomePessoa.get(l.pessoa_id) ?? "—" : "—"}
                       </td>
                       <td className="py-2 pr-3 text-cinza-suave">
-                        {l.descricao !== labelCategoria(l.categoria)
-                          ? l.descricao
-                          : l.observacao || "—"}
+                        {l.descricao}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">
-                        {formatBRL(l.valor)}
+                      <td
+                        className={`py-2 pr-3 text-right font-mono whitespace-nowrap ${
+                          entrou ? "text-verde" : ""
+                        }`}
+                      >
+                        {entrou ? "+" : "−"} {formatBRL(Math.abs(l.valor))}
                       </td>
                       <td className="py-2 pr-3">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => abrirEdicao(l)}
-                            className="text-verde hover:underline"
-                          >
-                            Editar
-                          </button>
-                          {!daOrigem && (
+                        {/* Só conta a pagar se mexe por aqui. O resto tem
+                            tela própria — editar um adiantamento daqui
+                            bateria no endpoint errado. */}
+                        {l.editavel ? (
+                          <div className="flex gap-2">
                             <button
-                              onClick={() => setApagando(l)}
+                              onClick={() => abrirEdicao(l)}
+                              className="text-verde hover:underline"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => setApagando(contaDaLinha(l))}
                               className="text-alerta hover:underline"
                             >
                               Apagar
                             </button>
-                          )}
-                        </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-cinza-suave">
+                            —
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );
