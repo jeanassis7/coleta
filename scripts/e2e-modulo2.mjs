@@ -767,17 +767,37 @@ try {
   );
   afirmar("nenhuma conta aponta pra um fato que não existe", orfas.n === 0);
 
-  // 2) Um fato não pode ter DUAS contas: as duas seriam pagas e o mesmo
-  //    gasto sairia do caixa (e do DRE) duas vezes.
+  // 2) A SOMA das contas de um fato não pode passar do valor dele — senão o
+  //    mesmo gasto sai do caixa (e do DRE) duas vezes.
+  //
+  //    Antes esta trava proibia DUAS contas na mesma origem. Era um atalho
+  //    pra mesma ideia, e ficou apertado demais: desde o fechamento do posto
+  //    (03/09/2026), uma nota paga metade em dinheiro e metade em cheque vira
+  //    duas contas de propósito — o caixa precisa saber de qual conta saiu
+  //    cada real. O que não pode é a SOMA passar do valor da nota.
   const { rows: [dupes] } = await client.query(
     `select count(*)::int n from (
-       select origem_tipo, origem_id from public.contas_a_pagar
-       where origem_tipo = any($1) and origem_id is not null
-       group by 1,2 having count(*) > 1
+       select cp.origem_tipo, cp.origem_id,
+              sum(cp.valor) soma,
+              coalesce(max(a.valor), max(m.valor), max(c.valor), max(co.valor_pago), max(d.valor)) fato
+         from public.contas_a_pagar cp
+         left join public.abastecimentos  a  on cp.origem_tipo='abastecimento'  and a.id  = cp.origem_id
+         left join public.manutencoes     m  on cp.origem_tipo='manutencao'     and m.id  = cp.origem_id
+         left join public.compras_diretas c  on cp.origem_tipo='compra_direta'  and c.id  = cp.origem_id
+         left join public.coletas         co on cp.origem_tipo='coleta'         and co.id = cp.origem_id
+         left join public.despesas        d  on cp.origem_tipo='despesa'        and d.id  = cp.origem_id
+        where cp.origem_tipo = any($1) and cp.origem_id is not null
+        group by 1,2
+       having round(sum(cp.valor), 2) > round(
+                coalesce(max(a.valor), max(m.valor), max(c.valor), max(co.valor_pago), max(d.valor)),
+              2)
      ) x`,
     [COM_FATO]
   );
-  afirmar("nenhum lançamento operacional tem 2 contas", dupes.n === 0);
+  afirmar(
+    "nenhum fato tem contas somando MAIS que o valor dele",
+    dupes.n === 0
+  );
 
   // 3) Conta gerada por DOCUMENTO tem que ser contável como qualquer outra.
   //    Se alguém a tratar como caso especial, IPVA e seguro somem do DRE
