@@ -49,7 +49,7 @@ export async function PATCH(
       return NextResponse.json({ error: "desconto inválido" }, { status: 400 });
     }
     const quando = String(body.quando || "");
-    if (!/^d{4}-d{2}-d{2}$/.test(quando)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(quando)) {
       return NextResponse.json(
         { error: "diga a data em que a análise chegou" },
         { status: 400 }

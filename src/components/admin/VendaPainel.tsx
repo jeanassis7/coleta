@@ -936,36 +936,48 @@ function TabelaVendas({
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Preço por kg
-                </label>
-                <InputDinheiro
-                  centavos={edPrecoCentavos}
-                  onChange={setEdPrecoCentavos}
-                  grande={false}
-                />
+            </div>
+
+            {/* PREÇO EM LINHA INTEIRA (bug de campo, 09/09/2026).
+                Na grade de 2 colunas o rótulo "Preço por kg" quebrava em duas
+                linhas, empurrando o campo pra baixo do "Nº da nota" — e o que
+                o gestor digitava sumia no canto direito de um campo estreito,
+                porque o dinheiro é alinhado à direita. Campo de dinheiro em
+                modal estreito não divide linha com ninguém. */}
+            <div>
+              <div className="flex items-baseline justify-between gap-3 mb-1">
+                <label className="text-sm font-medium">Preço por kg</label>
                 {edPrecoCentavos ? (
-                  <p className="text-xs text-cinza-suave mt-1">
+                  <span className="text-sm text-cinza-suave">
                     Total:{" "}
-                    {formatBRL(
-                      Math.round(
-                        editando.peso_total_kg * centavosParaReais(edPrecoCentavos) * 100
-                      ) / 100
-                    )}
-                  </p>
+                    <strong className="text-cinza-texto">
+                      {formatBRL(
+                        Math.round(
+                          editando.peso_total_kg *
+                            centavosParaReais(edPrecoCentavos) *
+                            100
+                        ) / 100
+                      )}
+                    </strong>
+                  </span>
                 ) : null}
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Nº da nota <span className="text-cinza-suave">(opcional)</span>
-                </label>
-                <input
-                  value={edNota}
-                  onChange={(e) => setEdNota(e.target.value)}
-                  className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-                />
-              </div>
+              <InputDinheiro
+                centavos={edPrecoCentavos}
+                onChange={setEdPrecoCentavos}
+                grande={false}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Nº da nota <span className="text-cinza-suave">(opcional)</span>
+              </label>
+              <input
+                value={edNota}
+                onChange={(e) => setEdNota(e.target.value)}
+                className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
