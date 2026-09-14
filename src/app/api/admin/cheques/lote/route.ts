@@ -30,6 +30,14 @@ export async function POST(req: NextRequest) {
   const data = String(body.data || "").trim();
   const linhas = Array.isArray(body.cheques) ? body.cheques : [];
 
+  // Conferência opcional: o relatório que vem com o maço traz a soma. Em
+  // centavos inteiros — comparar dinheiro em float erra por arredondamento.
+  const totalConferenciaCentavos =
+    body.total_conferencia === undefined || body.total_conferencia === null
+      ? null
+      : Math.round(Number(body.total_conferencia) * 100);
+  const confirmado = body.confirmado === true;
+
   if (!comprador_id) {
     return NextResponse.json(
       { error: "diga de qual comprador é o maço" },
@@ -103,6 +111,39 @@ export async function POST(req: NextRequest) {
   }
 
   const total = prontos.reduce((s, c) => s + c.valor, 0);
+
+  // ── Conferência pela soma do relatório ──────────────────────────────────
+  // O maço chega com um papel (PDF, Excel ou manuscrito) que traz o total.
+  // Se a soma do que foi ticado não bate, ou um valor foi lido errado, ou um
+  // cheque ficou de fora. Um dígito trocado morre aqui.
+  //
+  // NÃO é bloqueio definitivo: o maço pode ter sido dividido de propósito.
+  // Segundo clique (`confirmado`) passa — o padrão de antiburro da casa.
+  if (
+    totalConferenciaCentavos !== null &&
+    Number.isFinite(totalConferenciaCentavos) &&
+    !confirmado
+  ) {
+    const somaCentavos = prontos.reduce(
+      (s, c) => s + Math.round(c.valor * 100),
+      0
+    );
+    if (somaCentavos !== totalConferenciaCentavos) {
+      const difCentavos = totalConferenciaCentavos - somaCentavos;
+      return NextResponse.json(
+        {
+          erro_conferencia: true,
+          soma: somaCentavos / 100,
+          total_informado: totalConferenciaCentavos / 100,
+          // Com SINAL: positivo = falta cheque, negativo = sobra. Math.abs
+          // aqui esconderia de que lado está o problema (régua #6).
+          diferenca: difCentavos / 100,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const rotulo = `Maço de ${prontos.length} cheque${prontos.length === 1 ? "" : "s"}`;
 
   // UM cliente por handler: os N recebimentos e os N cheques saem agrupados
