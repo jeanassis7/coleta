@@ -108,7 +108,9 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
     ── Módulo financeiro ──
     /caixa                      → saldo por conta + dinheiro na mão dos
                                   motoristas + transferências (saque/depósito)
-    /lancamentos                → o que JÁ SAIU, no ritmo do extrato bancário
+    /lancamentos                → O EXTRATO: todo movimento de dinheiro, venha
+                                  de onde vier (view `movimentos_caixa`). Seis
+                                  filtros; o saldo do Caixa é a SOMA desta lista
     /dre                        → painel por REGIME DE CAIXA, abre por pessoa
     /remuneracao                → vigências + cálculo da comissão do período
 
@@ -208,6 +210,15 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0057_umidade_nao_analisada.sql` — `descargas.umidade_nao_analisada`: "a análise não foi feita" vira LANÇAMENTO, não campo vazio (+ CHECK de coerência e backfill das 131 descargas históricas)
 - `0060_adiantamento_de_regularizacao.sql` — `adiantamentos.regularizacao`: o lançamento da virada não é fato vivido pelo motorista e fica fora do relatório dele (conta no saldo normalmente)
 - `0061_postos_e_socio.sql` — `abastecimentos.socio_id` + o gatilho da nota assinada passa a ROTEAR a categoria (`combustivel` × `transferencia_socio`); backfill dos postos por GPS em `locais.tipo='posto'`; `saldo_postos()`
+- `0062_nota_do_posto_sem_km.sql` — `abastecimentos.km_atual` vira NULO: a nota transcrita do extrato do posto não tem odômetro, e km inventado envenena o km/L. CHECK: sem km só passa lançamento do painel
+- `0063_posto_nasce_sem_gps.sql` — `locais.latitude/longitude` viram nulas (CHECK garante que local de COLETA continua exigindo GPS) + trigger `trg_posto_aprende_gps`: o primeiro abastecimento com GPS ensina o posto onde ele fica, e só quando está vazio
+- `0064_gasolina_e_etanol.sql` — `abastecimentos.tipo` ganha gasolina e etanol (carro de sócio). ARLA segue sendo o único fora do km/L. Dono único do tipo: `src/lib/combustivel.ts`
+- `0065_despesa_no_posto.sql` — `despesas.local_id` e `despesas.socio_id`: no posto se assina nota de despesa (palheta, óleo de motor) junto com a de combustível. O gatilho da despesa passa a nomear o fornecedor e a rotear a categoria; `saldo_postos()` soma as DUAS origens
+- `0066_saldo_de_partida_do_comprador.sql` — `compradores.saldo_inicial` + `saldo_inicial_em`, mesmo mecanismo do saldo de partida das contas (0027). `saldo_compradores()` passa a contar só a partir do corte. **NÃO apaga venda nem recebimento** — eles sustentam o caixa e a receita
+- `0067_desconto_de_umidade_na_venda.sql` — `vendas.valor_combinado` / `desconto_umidade` / `_em` / `_obs`. A análise do comprador chega DEPOIS da venda. `valor_total` continua sendo o VALOR FINAL: quem já lê vendas continua certo sem saber que os campos existem
+- `0068_movimentos_caixa.sql` — ⚠️ **A VIEW `movimentos_caixa` É A FONTE DO DINHEIRO.** Toda linha que mexe numa conta financeira, com sinal (+ entra, − sai). O `saldo_contas()` deixou de somar 14 braços por conta própria e virou a SOMA dela. Mesmo desenho do estoque (`movimentos_estoque` + `estoque_atual()`). **Mexer na view muda o caixa** — e a troca só subiu porque os saldos das 3 contas ficaram idênticos ao centavo
+- `0069_tipos_de_movimento.sql` — RPC `tipos_de_movimento()`: o filtro de tipo da tela de Lançamentos se monta a partir do DADO, não de lista no código. Fonte nova aparece sozinha
+- `0070_conta_paga_com_cheque_no_extrato.sql` — conta quitada com cheque entra no extrato com `conta_id` nulo (o saldo continua ignorando). Recebimento em cheque NÃO entra: o cheque vira dinheiro quando compensa, e a compensação já é uma linha
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
 
@@ -378,6 +389,7 @@ Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fa
 - **Coluna `date` NÃO tem fuso — converter joga um dia pra trás.** `new Date("2026-09-02")` é meia-noite UTC, e meia-noite UTC em São Paulo são 21h do dia ANTERIOR. O `formatData` convertia tudo, então vencimento, pagamento, data de venda e data de acerto apareciam **um dia antes** no sistema inteiro (achado pelo Evaner em 03/09: salário lançado dia 02 aparecia dia 01). Hoje o `formatData` detecta `aaaa-mm-dd` e formata como TEXTO; timestamp (que é instante de verdade) continua convertido pra Brasília. **Data pura nunca passa por fuso.**
 - **Supabase JS quebra no Node 20** ("Node.js 20 detected without native WebSocket") — scripts precisam de `import ws` + `globalThis.WebSocket = ws`.
 - **`pg` + session pooler** — parsear a connection string na mão (`new URL`) e passar host/user/password separados, com `ssl: { rejectUnauthorized: false }`.
+- **Regex com barra invertida NÃO se edita por script que monta string.** Em 03/09 um script de refactor gravou `/^d{4}-d{2}-d{2}$/` no lugar de `/^d{4}-d{2}-d{2}$/` — as barras foram comidas no caminho. O código compila, o typecheck passa, e o desconto de umidade ficou IMPOSSÍVEL de lançar por 6 dias: recusava toda data dizendo "diga a data em que a análise chegou", com a data preenchida na tela. É erro que não dá erro. Usar a ferramenta de edição (match literal) pra qualquer coisa com ``.
 - **Status de cheque é `em_carteira`, não `carteira`** — errar isso numa query com `.in("status", [...])` não dá erro nenhum: só faz o filtro nunca casar. Alerta que nunca acende parece alerta que não tem o que alertar. Conferir o CHECK da 0017 antes de escrever filtro de status.
 - **iOS Safari NÃO tem `beforeinstallprompt`** — motorista iPhone precisa instalar manual via Compartilhar > Adicionar à Tela de Início. Fluxo pós-instalação é idêntico.
 

@@ -1,9 +1,105 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 03/09/2026 (postos de combustível).
+> Atualizado em 14/09/2026 (postos, extrato do caixa, desconto de umidade).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
 > `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
 > fechado de dinheiro, mapeados em 20/08).
+
+---
+
+## O EXTRATO DO CAIXA E O QUE VEIO JUNTO — 03 a 09/09/2026 💸
+
+### Lançamentos virou o extrato de verdade (0068/0069/0070)
+
+Existiam **duas leituras do que é dinheiro**: o `saldo_contas()` somava 14
+braços por conta própria, e a tela de Lançamentos montava a própria lista —
+menor. Medido: a tela mostrava 1.073 linhas e **escondia 242**, incluindo
+**R$ 1,9 milhão de ENTRADAS** (cheque compensado, recebimento). A tela que
+se chama "no ritmo do extrato bancário" não tinha como bater com o extrato.
+
+Hoje a view **`movimentos_caixa` é a lista** e o **`saldo_contas()` é a
+soma dela**. É impossível o total e a lista discordarem: são a mesma coisa.
+Mesmo desenho que fez o estoque parar de divergir.
+
+⚠️ **A troca só subiu porque foi PROVADA**: guardei o saldo das 3 contas
+antes, apliquei, e comparei — saldo inicial, entradas, saídas e total
+idênticos ao centavo. Qualquer mexida futura na view deve repetir isso.
+
+A tela ganhou 6 filtros (período, conta, categoria, pessoa, tipo,
+entrou/saiu), valor com sinal e três totais. O filtro de **tipo se monta a
+partir do dado** (0069) — fonte nova de dinheiro aparece sozinha; lista no
+código traria de volta o bug que a 0068 consertou.
+
+### Postos — o módulo inteiro
+
+Cadastro pelo nome (o posto aprende o GPS no primeiro abastecimento),
+extrato por posto, **fechamento** com cheque/dinheiro/troco, curadoria
+(renomear e juntar grafias), e nota de **despesa** junto com a de
+combustível. O lançador do extrato não fecha entre uma nota e outra — o
+Jean desce 20 linhas digitando dois campos.
+
+⚠️ **Uma nota pode virar DUAS contas a pagar**: quando o dinheiro não fecha
+uma nota inteira, ela é dividida (parte dinheiro, parte cheque). Isso
+obrigou a blindar três `.maybeSingle()` do editor de abastecimento
+(viraram `.limit(1)`) e a **trava do e2e mudou de forma**: antes proibia
+duas contas na mesma origem, agora mede o que importa — a SOMA das contas
+não pode passar do valor do fato.
+
+### Saldos alinhados na virada (0066)
+
+Quatro compradores estavam NEGATIVOS em centenas de milhares (o backfill
+trouxe recebimento sem venda). Zerados por corte em 04/09, menos:
+
+- **PERFILAZ**: R$ 105.007,34 declarado
+- **PROLUMINAS**: corte em **31/08** (não 04/09) — ali é a linha que separa
+  o real do backfill. O saldo de R$ 30.400 é **calculado** (86.400 − 56.000),
+  não digitado, pra acompanhar sozinho quando a venda mudar.
+
+### Desconto de umidade (0067) — e o bug que ele escondeu por 6 dias
+
+A PROLUMINAS paga adiantamento por um valor combinado e só depois manda a
+análise de umidade DELES, que derruba o valor. Virou ação própria na edição
+da venda, guardando combinado/desconto/data/motivo.
+
+⚠️ Nasceu **quebrado** e ninguém viu: o regex da data perdeu as barras
+invertidas no script que gravou o arquivo, e **recusava toda data**.
+Corrigido em 09/09. A lição está no CLAUDE.md.
+
+### Outros
+
+- **Data pura aparecia UM DIA ANTES no sistema inteiro** — `formatData`
+  convertia fuso numa coluna `date`, que não tem fuso. Vencimento,
+  pagamento, data de venda, tudo. O salvamento sempre esteve certo.
+- **Grupo novo no DRE: "Transição do sistema antigo"** — conta velha paga
+  agora (óleo coletado há 6 meses). Fica FORA do resultado operacional e
+  DENTRO do resultado final. Tende a zero sozinha.
+- **Gasolina e etanol** (0064) + **o carro que dava pra cadastrar no banco
+  mas não pelo painel** (a rota nunca mandava o `tipo`).
+- **Antiburro de coleta duplicada** — mesmo local + litros + valor na mesma
+  carga, SEM janela de tempo (o caso real teve 1h58 e 8,5 km de distância).
+- **Apagar/editar coleta pela tela da carga** — reusa o drawer da aba Lista.
+
+## PENDÊNCIAS ABERTAS
+
+1. **Painel admin está feio** — ele veste a roupa do motorista. Diagnóstico
+   pronto: a regra global `input,select,textarea,button { font-size:
+   max(20px,1rem) }` vale pro app inteiro; `btn-primario` está em 13
+   arquivos do admin; `formatBRL` (que omite centavos em valor redondo)
+   está em 42 arquivos contra 2 do `formatBRLExato` — daí "R$ 3" ao lado de
+   "R$ 4.704,52". **O Evaner RECUSOU** mexer nisso (14/09): o risco de
+   estragar o app do motorista em campo não compensa. A parte de risco ZERO
+   (trocar pra `formatBRLExato` nas tabelas/KPIs do admin) segue disponível
+   se ele pedir — não tocar sem ele pedir.
+2. **O extrato mostra movimento anterior ao corte da conta** — essas linhas
+   aparecem mas não somam no saldo (já estão no valor de partida). Ofereci
+   marcar visualmente; sem resposta.
+3. **Fio solto sem explicação**: o evento `coleta_saved_local` da coleta
+   duplicada do Lucimar (01/09) veio carimbado 4h36 DEPOIS do lançamento, e
+   duplicado. `client_id` e `criado_em` nascem na mesma linha da função de
+   salvar — não têm como divergir. O antiburro protege o sintoma; a causa
+   continua de pé.
+4. **Dinheiro em mãos** e o **Bradesco** (R$ 100) — o Evaner ia conferir a
+   gaveta e confirmar se o Bradesco é real. Nunca voltou nisso.
 
 ---
 
