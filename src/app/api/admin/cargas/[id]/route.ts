@@ -115,3 +115,103 @@ export async function DELETE(
         : null,
   });
 }
+
+/**
+ * PATCH — corrigir os dados da própria carga.
+ *
+ * km_inicial digitado errado envenena o km/L da frota inteira e, até
+ * 14/09/2026, não tinha conserto: só existia o DELETE da carga toda.
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const admin = await exigirAdmin();
+  if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const { id } = await params;
+  const body = await req.json();
+  const confirmado = body.confirmado === true;
+  const client = getSupabaseAdmin(admin.id);
+
+  const { data: carga } = await client
+    .from("cargas")
+    .select("id, caminhao_id, km_inicial, km_final, iniciada_em")
+    .eq("id", id)
+    .maybeSingle();
+  if (!carga) {
+    return NextResponse.json({ error: "carga não encontrada" }, { status: 404 });
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (body.caminhao_id !== undefined) updates.caminhao_id = String(body.caminhao_id);
+  if (body.iniciada_em !== undefined) updates.iniciada_em = String(body.iniciada_em);
+
+  const kmInicial =
+    body.km_inicial === undefined ? Number(carga.km_inicial) : Number(body.km_inicial);
+  const kmFinal =
+    body.km_final === undefined
+      ? carga.km_final === null
+        ? null
+        : Number(carga.km_final)
+      : body.km_final === null
+        ? null
+        : Number(body.km_final);
+
+  if (body.km_inicial !== undefined) {
+    if (!Number.isFinite(kmInicial) || kmInicial < 0) {
+      return NextResponse.json({ error: "km inicial inválido" }, { status: 400 });
+    }
+    updates.km_inicial = kmInicial;
+  }
+  if (body.km_final !== undefined) {
+    if (kmFinal !== null && (!Number.isFinite(kmFinal) || kmFinal < 0)) {
+      return NextResponse.json({ error: "km final inválido" }, { status: 400 });
+    }
+    updates.km_final = kmFinal;
+  }
+
+  // Erro impossível: o caminhão não anda pra trás.
+  if (kmFinal !== null && kmFinal <= kmInicial) {
+    return NextResponse.json(
+      {
+        error: `o km final não fecha: saiu com ${kmInicial.toLocaleString("pt-BR")} km e voltou com ${kmFinal.toLocaleString("pt-BR")} km`,
+      },
+      { status: 400 }
+    );
+  }
+
+  // Erro SUSPEITO (não impossível): salto grande contra o histórico do
+  // caminhão. Mesmo número que o motorista já vê no celular — 1.500 km.
+  if (body.km_inicial !== undefined && !confirmado) {
+    const { data: vizinhas } = await client
+      .from("cargas")
+      .select("km_inicial, km_final")
+      .eq("caminhao_id", carga.caminhao_id)
+      .neq("id", id)
+      .order("iniciada_em", { ascending: false })
+      .limit(5);
+    const kms = (vizinhas ?? [])
+      .flatMap((c) => [c.km_inicial, c.km_final])
+      .filter((k): k is number => typeof k === "number");
+    const maisProximo = kms.length
+      ? kms.reduce((a, b) => (Math.abs(b - kmInicial) < Math.abs(a - kmInicial) ? b : a))
+      : null;
+    if (maisProximo !== null && Math.abs(maisProximo - kmInicial) > 1500) {
+      return NextResponse.json(
+        {
+          precisa_confirmar: true,
+          error: `${kmInicial.toLocaleString("pt-BR")} km está a mais de 1.500 km do registro mais próximo desse caminhão (${maisProximo.toLocaleString("pt-BR")} km). Confira se não faltou ou sobrou um dígito.`,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "nada a atualizar" }, { status: 400 });
+  }
+
+  const { error } = await client.from("cargas").update(updates).eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json({ ok: true });
+}
