@@ -99,6 +99,7 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
             {th("Data", "data")}
             {th("Caminhão", "caminhao")}
             {th("Motorista", "motorista")}
+            {th("Status", "status")}
             <th className="py-2 pr-3 text-left">Fim</th>
             <th className="py-2 pr-3 text-right">Km rodado</th>
             <th className="py-2 pr-3 text-right" title="Km rodado ÷ litros de combustível">
@@ -117,7 +118,6 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
             <th className="py-2 pr-3 text-right">N abast.</th>
             <th className="py-2 pr-3 text-right">$ abast.</th>
             {th("$ total", "custo_total", true)}
-            {th("Status", "status")}
           </tr>
         </thead>
         <tbody>
@@ -133,7 +133,9 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
             return (
               <tr
                 key={c.id}
-                className="border-b border-cinza-borda hover:bg-slate-50"
+                className={`border-b border-cinza-borda hover:bg-slate-50${
+                  c.status === "cancelada" ? " opacity-50" : ""
+                }`}
               >
                 <td className="py-2 pr-3 whitespace-nowrap">
                   <Link
@@ -151,8 +153,21 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                 <td className="py-2 pr-3 whitespace-nowrap">
                   {c.motorista_nome}
                 </td>
+                <td className="py-2 pr-3">
+                  <StatusBadge status={c.status} />
+                </td>
+                {/* Vazio e cancelada são coisas diferentes: carga cancelada
+                    nunca recebe encerrada_em, e "—" fazia ela parecer
+                    aberta na leitura de cima pra baixo (o Jean leu 3
+                    cargas abertas em 12/09/2026, e só havia 1). */}
                 <td className="py-2 pr-3 whitespace-nowrap">
-                  {c.encerrada_em ? formatDataHora(c.encerrada_em) : "—"}
+                  {c.encerrada_em ? (
+                    formatDataHora(c.encerrada_em)
+                  ) : c.status === "cancelada" ? (
+                    <span className="text-cinza-suave italic">cancelada</span>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono">
                   {kmRodado !== null ? `${kmRodado} km` : "—"}
@@ -243,9 +258,6 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                 </td>
                 <td className="py-2 pr-3 text-right font-mono font-semibold">
                   R$ {custoTotal.toLocaleString("pt-BR")}
-                </td>
-                <td className="py-2 pr-3">
-                  <StatusBadge status={c.status} />
                 </td>
               </tr>
             );
