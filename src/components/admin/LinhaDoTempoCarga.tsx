@@ -9,6 +9,7 @@ import { ModalEditarAbastecimento } from "@/components/admin/ModalEditarAbasteci
 import { ModalApagarDespesa } from "@/components/admin/ModalApagarDespesa";
 import { ModalApagarAbastecimento } from "@/components/admin/ModalApagarAbastecimento";
 import { ModalApagarDescarga } from "@/components/admin/ModalApagarDescarga";
+import { ModalEditarDescarga } from "@/components/admin/ModalEditarDescarga";
 import type { CargaCompleta } from "@/lib/admin/queries";
 
 type Evento =
@@ -68,7 +69,13 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
   const [descargaApagando, setDescargaApagando] = useState<
     NonNullable<CargaCompleta["descarga"]> | null
   >(null);
+  const [descargaEditando, setDescargaEditando] = useState<
+    NonNullable<CargaCompleta["descarga"]> | null
+  >(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  // Base do antiburro de ±30% da correção de peso — mesma soma que a página
+  // da carga já faz (litrosDeclarados).
+  const litrosDeclarados = carga.coletas.reduce((s, c) => s + Number(c.litros), 0);
   const eventos: Evento[] = [
     ...carga.coletas.map((c) => ({
       tipo: "coleta" as const,
@@ -175,7 +182,16 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
               </div>
             )}
             {e.tipo === "descarga" && (
-              <div className="shrink-0 pt-1" onClick={(ev) => ev.stopPropagation()}>
+              <div
+                className="shrink-0 pt-1 flex flex-col items-end gap-1"
+                onClick={(ev) => ev.stopPropagation()}
+              >
+                <button
+                  onClick={() => setDescargaEditando(e.dados)}
+                  className="text-verde hover:underline text-xs"
+                >
+                  Corrigir peso
+                </button>
                 <button
                   onClick={() => setDescargaApagando(e.dados)}
                   className="text-alerta hover:underline text-xs"
@@ -299,6 +315,23 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
             peso_liquido_kg: descargaApagando.peso_liquido_kg,
           }}
           onFechar={() => setDescargaApagando(null)}
+          onAviso={setAviso}
+        />
+      )}
+
+      {descargaEditando && (
+        <ModalEditarDescarga
+          key={descargaEditando.id}
+          descarga={{
+            id: descargaEditando.id,
+            peso_bruto_kg: descargaEditando.peso_bruto_kg,
+            peso_tara_kg: descargaEditando.peso_tara_kg,
+            criado_em: descargaEditando.criado_em,
+          }}
+          motoristaNome={carga.motorista_nome}
+          caminhaoPlaca={carga.caminhao_placa}
+          litrosDeclarados={litrosDeclarados}
+          onFechar={() => setDescargaEditando(null)}
           onAviso={setAviso}
         />
       )}
