@@ -3,6 +3,7 @@
 import { getLocalDB } from "@/lib/db/dexie";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { logEvent } from "@/lib/events/log";
+import { ehErroDeRede } from "@/lib/sync/erro-de-rede";
 import type { ColetaLocal, EventoLocal } from "@/lib/types";
 
 export type SyncErrorKind = "auth" | "network" | "data" | "storage" | "unknown";
@@ -425,6 +426,34 @@ async function sincronizarDescargas(
   });
 }
 
+/**
+ * O insert falhou por rede — mas será que entrou mesmo assim?
+ *
+ * Pergunta ao servidor pelo `client_id`. Achou = entrou (o servidor gravou e
+ * a resposta morreu no caminho), e o registro local pode ser marcado como
+ * subido, mesmo desfecho do 23505.
+ *
+ * Se a própria consulta falhar (offline de verdade), devolve `false` e o item
+ * continua pendente — que é o comportamento correto.
+ */
+async function jaEstaNoServidor(
+  tabela: "coletas" | "despesas" | "abastecimentos" | "descargas",
+  clientId: string
+): Promise<boolean> {
+  try {
+    const supabase = getSupabaseBrowser();
+    const { data, error } = await supabase
+      .from(tabela)
+      .select("id")
+      .eq("client_id", clientId)
+      .maybeSingle();
+    if (error) return false;
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
 async function sincronizarUmaColeta(
   coleta: ColetaLocal
 ): Promise<{ ok: boolean; erro?: string }> {
@@ -514,6 +543,22 @@ async function sincronizarUmaColeta(
         // 23505 = unique_violation (já enviado antes) → tratar como sucesso
         if (insertErr.code === "23505") {
           await db.coletas_locais.update(coleta.client_id, { registro_subido: true });
+          return { ok: true };
+        }
+        // Erro de REDE: a resposta morreu, mas o servidor pode ter gravado.
+        // Medido em 14/09/2026: 37 de 37 tinham gravado. Pergunta antes de
+        // dar como pendente — senão o motorista relança na mão e duplica.
+        if (
+          ehErroDeRede(insertErr) &&
+          (await jaEstaNoServidor("coletas", coleta.client_id))
+        ) {
+          await db.coletas_locais.update(coleta.client_id, { registro_subido: true });
+          await logEvent(coleta.motorista_id, "sync_completed", {
+            reconciliado: true,
+            tipo: "coleta",
+            client_id: coleta.client_id,
+            motivo: insertErr.message,
+          });
           return { ok: true };
         }
         const motivo = `insert: ${insertErr.message}${insertErr.code ? ` (${insertErr.code})` : ""}`;
