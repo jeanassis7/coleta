@@ -657,47 +657,61 @@ async function sincronizarEventos(): Promise<void> {
  */
 export async function countPendentes(): Promise<number> {
   const db = getLocalDB();
-  // TRAVADO não conta como pendente: ele não vai subir por mais que se
-  // tente, e mantê-lo aqui deixava o badge eterno e o logout bloqueado.
-  const [coletas, despesas, abastecimentos, descargas] = await Promise.all([
-    db.coletas_locais
-      .filter(
-        (c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente && !estaTravado(c)
-      )
-      .count(),
-    db.despesas_locais
-      .filter(
-        (d) => (!d.registro_subido || !d.foto_subida) && !d.gps_pendente && !estaTravado(d)
-      )
-      .count(),
-    db.abastecimentos_locais
-      .filter(
-        (a) => (!a.registro_subido || !a.foto_subida) && !a.gps_pendente && !estaTravado(a)
-      )
-      .count(),
-    db.descargas_locais
-      .filter(
-        (d) =>
-          (!d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor) &&
-          !d.gps_pendente &&
-          !estaTravado(d)
-      )
-      .count(),
-  ]);
-  return coletas + despesas + abastecimentos + descargas;
+  try {
+    // TRAVADO não conta como pendente: ele não vai subir por mais que se
+    // tente, e mantê-lo aqui deixava o badge eterno e o logout bloqueado.
+    const [coletas, despesas, abastecimentos, descargas] = await Promise.all([
+      db.coletas_locais
+        .filter(
+          (c) => (!c.registro_subido || !c.foto_subida) && !c.gps_pendente && !estaTravado(c)
+        )
+        .count(),
+      db.despesas_locais
+        .filter(
+          (d) => (!d.registro_subido || !d.foto_subida) && !d.gps_pendente && !estaTravado(d)
+        )
+        .count(),
+      db.abastecimentos_locais
+        .filter(
+          (a) => (!a.registro_subido || !a.foto_subida) && !a.gps_pendente && !estaTravado(a)
+        )
+        .count(),
+      db.descargas_locais
+        .filter(
+          (d) =>
+            (!d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor) &&
+            !d.gps_pendente &&
+            !estaTravado(d)
+        )
+        .count(),
+    ]);
+    return coletas + despesas + abastecimentos + descargas;
+  } catch {
+    // iOS congela o app no meio da varredura e a transação do Dexie morre:
+    // "UnknownError: Attempt to iterate a cursor that doesn't exist".
+    // Medido: 2 ocorrências, só no iPhone. É ruído de log, não perda de
+    // dado — o laço de sync já lê com toArray() antes de iterar. Devolver 0
+    // só apaga o badge até a próxima passada.
+    return 0;
+  }
 }
 
 /** Lançamentos que desistiram de subir — precisam do Jean, não de sinal. */
 export async function countTravados(motoristaId: string): Promise<number> {
   const db = getLocalDB();
   const meu = (i: { motorista_id: string }) => i.motorista_id === motoristaId;
-  const [a, b, c, d] = await Promise.all([
-    db.coletas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
-    db.despesas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
-    db.abastecimentos_locais.filter((x) => meu(x) && estaTravado(x)).count(),
-    db.descargas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
-  ]);
-  return a + b + c + d;
+  try {
+    const [a, b, c, d] = await Promise.all([
+      db.coletas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+      db.despesas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+      db.abastecimentos_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+      db.descargas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
+    ]);
+    return a + b + c + d;
+  } catch {
+    // Mesmo cursor morto do Dexie no iOS — ver countPendentes acima.
+    return 0;
+  }
 }
 
 /**
