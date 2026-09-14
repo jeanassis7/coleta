@@ -40,7 +40,11 @@ export async function DELETE(
       client.from("coletas").select("id, foto_path").eq("carga_id", id),
       client.from("despesas").select("id, foto_path").eq("carga_id", id),
       client.from("abastecimentos").select("id, foto_path").eq("carga_id", id),
-      client.from("descargas").select("id, foto_path").eq("carga_id", id),
+      // ⚠️ A coluna da foto da descarga é foto_papel_path, não foto_path.
+      // Com o nome errado a consulta errava, o `?? []` engolia, a foto do
+      // papel da balança nunca era apagada e `apagado.descargas` reportava
+      // sempre 0 — o endpoint mentia sobre o que tinha feito.
+      client.from("descargas").select("id, foto_papel_path").eq("carga_id", id),
     ]);
   const coletaIds = (coletas ?? []).map((c) => c.id);
   const abastIds = (abast ?? []).map((a) => a.id);
@@ -90,7 +94,7 @@ export async function DELETE(
     ...(coletas ?? []).map((c) => c.foto_path),
     ...(despesas ?? []).map((d) => d.foto_path),
     ...(abast ?? []).map((a) => a.foto_path),
-    ...(descargas ?? []).map((d) => d.foto_path),
+    ...(descargas ?? []).map((d) => d.foto_papel_path),
     carga.foto_painel_path,
   ].filter((p): p is string => !!p);
   if (paths.length > 0) {
