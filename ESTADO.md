@@ -1,9 +1,189 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 14/09/2026 (postos, extrato do caixa, desconto de umidade).
+> Atualizado em 14/09/2026 (o app para de mentir, cheques conferem pela soma,
+> admin edita tudo na carga — e o saldo do Lucimar).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
 > `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
 > fechado de dinheiro, mapeados em 20/08).
+
+---
+
+## O APP PARA DE MENTIR — 14/09/2026 📵
+
+Spec e plano em `docs/superpowers/specs/2026-09-14-sync-honesto-*` e
+`docs/superpowers/plans/2026-09-14-sync-honesto-*`. Cinco frentes, **nenhuma
+migration**, todas no ar.
+
+### O bug do iPhone: 37 de 37
+
+```
+sync_failure (120 dias):  Lucimar 50  ·  Luiz 3  ·  Lucinei 2
+mensagem, sempre:         insert: TypeError: Load failed
+```
+
+"Load failed" é como o **WebKit** escreve fetch abortado. E o número que
+decidiu tudo: **dos 37 `client_id` que deram esse erro, 37 estavam no banco.**
+O insert nunca falhou — morreu a RESPOSTA. O app marcava pendente, o motorista
+via "não foi" e relançava na mão, com `client_id` novo que a idempotência não
+pega.
+
+O `23505` já era tratado como sucesso porque o Postgres FALA. Erro de rede não
+tem `code` e escapava. Agora `src/lib/sync/erro-de-rede.ts` é o dono único da
+pergunta, e os 3 caminhos (coleta, genérico, iniciar-carga) consultam o
+servidor pelo `client_id` antes de dar como pendente. Timeout de 8s na
+consulta: **o caso que dói não é offline** (esse já é cortado antes), é sinal
+ruim com `navigator.onLine === true`.
+
+⚠️ **Medir daqui a alguns dias** se pegou:
+```sql
+select count(*) filter (where event_type='sync_failure') falhas,
+       count(*) filter (where (payload->>'reconciliado')::boolean) reconciliadas
+from app_events where criado_em > '2026-09-14';
+```
+`reconciliadas` em zero com `falhas` igual = a frase do erro não casou; é
+trocar string, não repensar desenho.
+
+### A tela de cargas mentia (e o Jean acreditou, com razão)
+
+Ele relatou "o Lucimar tem 3 cargas em aberto". Medido: **falso** — o índice
+único funciona, zero cargas sobrepostas em 145. O que ele viu: 3 linhas com
+"Fim" vazio — 1 ativa + 2 **canceladas**. Cancelada nunca recebe
+`encerrada_em`, e o badge de Status estava na **coluna 20 de 20**.
+
+Status foi pra 4ª coluna, linha cancelada fica apagada, e a coluna Fim diz
+"cancelada" com todas as letras.
+
+⚠️ O esmaecimento é por **cor herdada, não `opacity`** — opacity compõe na
+subárvore e apagaria justamente o badge e a palavra que a correção existe pra
+mostrar. Não "padronizar" de volta comparando com `TabelaCaminhoes.tsx`.
+
+### A pendência sumia justamente offline
+
+`BotaoSyncManual.tsx` fazia `if (pendentes === 0 || !online) return null` —
+escondia o botão (que não dá pra apertar sem sinal) **e levava a informação
+junto**. Medido: 7,2% das coletas demoram +2min pra chegar, pior caso 15h.
+
+Agora offline mostra "3 lançamentos guardados no celular / vão sozinhos quando
+pegar sinal", sem alarme, porque é o normal.
+
+⚠️ O card usa `bg-slate-100`, **não `bg-cinza-fundo`** — o `body` já é
+`cinza-fundo`, e o card ficaria da cor exata da tela.
+
+### Cheques conferem pela soma
+
+O OCR já existia (19/08). Faltava o controle forte: campo **"Total do
+relatório"** (opcional). Não bateu → duas etapas com as 3 hipóteses. Guard
+também no servidor (409). Comparação em **centavos inteiros**. O total **não é
+gravado** — é conferência, não fato.
+
+⚠️ O estado guarda **a soma confirmada**, não um "sim" solto. Com booleano, o
+gestor confirmava divergência de R$ 500, desticava um cheque (virava R$ 1.000)
+e o aviso não voltava. Derivar da soma invalida sozinho.
+
+### Admin edita tudo na carga
+
+Despesa e abastecimento viraram clicáveis na linha do tempo (corrigir e
+apagar), reusando os mesmos modais de `/admin/despesas` — extraídos pra
+arquivo próprio pra não duplicar a frase que explica o efeito no saldo.
+
+Novo: **corrigir o peso da balança**, **apagar a descarga reabrindo a carga**,
+e **corrigir km/caminhão/data de início**.
+
+**As 7 nuances de apagar descarga** (varridas antes de escrever, detalhe no
+spec). A que quase passou:
+
+⚠️ **N1 — o app travaria o motorista.** `carga.ts` tinha DUAS funções que
+perguntavam a mesma coisa e respondiam diferente: `temDescargaPendenteSync`
+filtrava por pendente de verdade, mas dentro de `fetchCargaAtiva` contava
+TODAS as descargas locais. Como o cleanup guarda a sincronizada por 24h,
+reabrir uma carga faria o app dizer "você não tem carga ativa" enquanto o
+servidor recusava abrir outra pelo índice único. **Sem saída pela tela.**
+
+⚠️ **N2** — reabrir zera `status`, `encerrada_em` **e `km_final`**: o
+`posInsert` do `queue.ts` grava os três.
+
+⚠️ **N4** — celular com descarga pendente pode re-inserir a que o admin
+apagou. Quem fecha essa corrida é a reconciliação — por isso ela subiu antes.
+
+### Bug de brinde: consulta a coluna que não existe
+
+O `DELETE` da carga consultava `descargas.foto_path` — a coluna é
+**`foto_papel_path`**. A consulta errava, o `?? []` engolia calado, a foto do
+papel nunca era apagada e `apagado.descargas` **reportava sempre 0**.
+
+> **Lição nova pro CLAUDE.md:** consulta a coluna inexistente **não explode** —
+> volta `data: null`, e o `?? []` transforma em silêncio. Mesma família do
+> `em_carteira` × `carteira`.
+
+### O que NÃO existe (decisões registradas)
+
+- **`npm run lint` não roda neste repo** — não há config de ESLint, e
+  `next lint` abre assistente interativo e trava. Não chamar, não criar config
+  por conta própria.
+- **Nenhum e2e alcança guard de HTTP.** `e2e-guards-dinheiro.mjs` fala com o
+  Postgres direto, `e2e-modulo1.mjs` com supabase-js. Os guards de 409 de
+  `/lancamentos`, `/dividas`, `/cheques` e os novos desta leva **não têm
+  cobertura** — vale pra todos, não é regressão nova. Fechar = script novo que
+  faz login como admin e guarda o cookie.
+- **O banco não tem CHECK de `peso_bruto > peso_tara`** (testado: `update
+  peso_bruto_kg = 1` com tara 8000 passou). A defesa é o antiburro do app e o
+  guard do PATCH. Migration de 1 linha fecharia.
+
+---
+
+## O SALDO DO LUCIMAR — 14/09/2026 💰
+
+Só o dele não bate. Lucinei e Luiz batem. Investigação inteira feita com
+consulta ao banco; **duas conclusões minhas foram derrubadas no caminho** e
+vale registrar o porquê.
+
+**A conta hoje** (desde o acerto de 24/08): recebeu R$ 57.705, gastou R$ 57.630
+em 100 coletas, zero despesas, zero abastecimentos pagos em dinheiro →
+**R$ 75 na mão**.
+
+### O erro de raciocínio que eu cometi, duas vezes
+
+1. Achei que uma coleta tinha se **perdido** pelo bug do iOS. Errado: o Jean
+   tinha apagado, e o log de admin prova.
+2. Achei que a exclusão do Jean no "Mateus" (01/09, R$ 1.280) estava **errada**,
+   porque o GPS das duas estava a 8,5 km. Errado de novo — **o GPS marca onde
+   ele DIGITOU, não onde coletou.** Relançamento 2h depois carrega o GPS do
+   lugar novo por construção.
+
+**A prova de que o Jean acertou:** a coleta das 15:41 daquele dia levou
+**4h36min** pra chegar no servidor (`sincronizado_em − criado_em`); todas as
+outras do dia subiram em 1 segundo. Às 17:38, quando ele relançou, ela não
+estava lá mesmo.
+
+> Isso também mata o "fio solto" que estava aberto aqui: o evento carimbado
+> 4h36 depois não era relógio divergente — era o sync atrasado.
+
+### O risco que ficou medido
+
+| | Lucimar | Lucinei | Luiz |
+|---|---|---|---|
+| Coletas com +5min pra subir (após 24/08) | **11** | 0 | 1 |
+
+Onze chances de relançar. A do Mateus foi uma e o Jean pegou. **As outras dez
+não dá pra provar nem descartar por consulta** — se ele redigitou com o nome do
+dono em vez do nome da oficina, nenhuma query acha.
+
+### Os suspeitos mandados pro Jean conferir com ele
+
+1. **Motor Tek 25/08 — R$ 100.** Jean apagou uma de R$ 200 e ficou a de R$ 300
+   (3 min, 230 m). É duplicata, mas os **valores brigam**.
+2. **Cinco coletas a exatamente R$ 1,00/L — até R$ 575.** Ele costuma pagar
+   R$ 1,50. Pesa porque **o Jean já corrigiu 4 coletas que chegaram valendo
+   R$ 1** (viraram R$ 720, R$ 768, R$ 2.000, R$ 2.204) — tem algo fazendo o
+   valor chegar errado.
+3. **Zero despesa e zero combustível do bolso em 3 semanas.**
+4. As outras dez coletas lentas, uma a uma.
+
+### Fora do saldo, mas errado no histórico
+
+Duas coletas do Lucimar no cliente "Ss", **anteriores ao corte** (não mexem no
+saldo, mas envenenam o custo do óleo): **11/08 — 1.000 L por R$ 1** e
+**12/08 — 2.000 L por R$ 2**. Esse cliente paga R$ 2,00/L nas outras vezes.
 
 ---
 
@@ -93,11 +273,12 @@ Corrigido em 09/09. A lição está no CLAUDE.md.
 2. **O extrato mostra movimento anterior ao corte da conta** — essas linhas
    aparecem mas não somam no saldo (já estão no valor de partida). Ofereci
    marcar visualmente; sem resposta.
-3. **Fio solto sem explicação**: o evento `coleta_saved_local` da coleta
-   duplicada do Lucimar (01/09) veio carimbado 4h36 DEPOIS do lançamento, e
-   duplicado. `client_id` e `criado_em` nascem na mesma linha da função de
-   salvar — não têm como divergir. O antiburro protege o sintoma; a causa
-   continua de pé.
+3. ~~**Fio solto sem explicação**: o evento `coleta_saved_local` da coleta
+   duplicada do Lucimar (01/09) veio carimbado 4h36 DEPOIS do lançamento.~~
+   **RESOLVIDO em 14/09** — não era o evento atrasado, era o SYNC: aquela
+   coleta levou 4h36 pra chegar no servidor (`sincronizado_em − criado_em`),
+   enquanto as outras do dia subiram em 1 segundo. O evento subiu junto com
+   ela. Causa raiz: o WebKit abortando o fetch (ver seção do iPhone acima).
 4. **Dinheiro em mãos** e o **Bradesco** (R$ 100) — o Evaner ia conferir a
    gaveta e confirmar se o Bradesco é real. Nunca voltou nisso.
 

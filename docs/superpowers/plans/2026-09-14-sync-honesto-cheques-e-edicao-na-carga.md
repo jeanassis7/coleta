@@ -20,7 +20,7 @@ registrada no `CLAUDE.md`. O que existe, e é o que este plano usa:
 | Ferramenta | Comando | Cobre |
 |---|---|---|
 | Typecheck | `npm run typecheck` | tipos, assinaturas, props |
-| E2E de dados | `node scripts/e2e-modulo1.mjs` | RLS, idempotência, updates atômicos, saldo (55 checks hoje) |
+| E2E de dados | `node scripts/e2e-modulo1.mjs` | RLS, idempotência, updates atômicos, saldo (63 checks em 14/09/2026 — o CLAUDE.md ainda diz 55, está defasado) |
 | Verificação manual | tela, em produção | UI |
 
 ⚠️ **`npm run lint` NÃO roda neste repo** (descoberto em 14/09/2026, na
@@ -432,7 +432,10 @@ Acrescentar, usando a variável do client_id da coleta que o script já criou
 
 Run: `node scripts/e2e-modulo1.mjs`
 Expected: o check novo aparece e passa (a policy `motorista lê próprias
-coletas` da 0001 cobre). Total sobe de 55 para 56.
+coletas` da 0001 cobre). O total sobe em 1.
+
+⚠️ Não asserte o total absoluto: o script cresce, e a própria regra da casa
+é medir delta. Em 14/09/2026 ele passou de 62 para 63.
 
 **Se falhar:** PARE. A reconciliação precisaria de outro caminho (RPC
 `security definer`), e o desenho da Fase 2 muda. Avisar o Evaner antes de
@@ -2147,7 +2150,8 @@ existir, acrescentar:
 - [ ] **Step 3: Rodar o e2e**
 
 Run: `node scripts/e2e-modulo1.mjs`
-Expected: todos verdes. Total deve estar em ~59.
+Expected: todos verdes. O total cresce em 1 por check novo — confira que
+nenhum ficou vermelho, não o número absoluto.
 
 - [ ] **Step 4: Commit**
 
