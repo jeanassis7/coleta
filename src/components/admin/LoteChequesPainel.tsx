@@ -75,12 +75,19 @@ export function LoteChequesPainel({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ampliada, setAmpliada] = useState<string | null>(null);
+  const [totalRelatorioCentavos, setTotalRelatorioCentavos] = useState<number | null>(null);
+  const [confirmarDivergencia, setConfirmarDivergencia] = useState(false);
 
   const conferidas = linhas.filter((l) => l.conferido);
   const total = conferidas.reduce(
     (s, l) => s + (l.valorCentavos ? centavosParaReais(l.valorCentavos) : 0),
     0
   );
+  // Em centavos inteiros: comparar dinheiro em float erra por arredondamento.
+  const somaCentavos = conferidas.reduce((s, l) => s + (l.valorCentavos ?? 0), 0);
+  const diferencaCentavos =
+    totalRelatorioCentavos === null ? null : totalRelatorioCentavos - somaCentavos;
+  const bate = diferencaCentavos === null || diferencaCentavos === 0;
 
   function atualizar(id: string, campo: Partial<Linha>) {
     setLinhas((atual) =>
@@ -192,9 +199,28 @@ export function LoteChequesPainel({
             bom_para: l.bomPara,
             observacao: l.observacao,
           })),
+          total_conferencia:
+            totalRelatorioCentavos === null
+              ? null
+              : centavosParaReais(totalRelatorioCentavos),
+          confirmado: confirmarDivergencia,
         }),
       });
       const json = await res.json();
+      // 409 = a soma não bateu e o segundo clique não veio. A tela já mostra
+      // o bloco amarelo; isto é a rede de segurança pra quem chamar a API na
+      // mão ou pra estado dessincronizado.
+      if (res.status === 409 && json.erro_conferencia) {
+        setConfirmarDivergencia(false);
+        setErro(
+          `A soma não bate: ticado ${formatBRL(json.soma)}, relatório ${formatBRL(
+            json.total_informado
+          )} (${json.diferenca > 0 ? "faltam" : "sobram"} ${formatBRL(
+            Math.abs(json.diferenca)
+          )}). Confira e clique de novo pra lançar assim mesmo.`
+        );
+        return;
+      }
       if (!res.ok) {
         setErro(json.error || "Falha ao lançar.");
         return;
@@ -210,6 +236,8 @@ export function LoteChequesPainel({
       setLinhas([]);
       setFotos([]);
       setAberto(false);
+      setTotalRelatorioCentavos(null);
+      setConfirmarDivergencia(false);
       router.refresh();
     } finally {
       setSalvando(false);
@@ -244,7 +272,7 @@ export function LoteChequesPainel({
         </div>
       )}
 
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-sm font-medium mb-1">De quem é o maço</label>
           <select
@@ -268,6 +296,23 @@ export function LoteChequesPainel({
             onChange={(e) => setData(e.target.value)}
             className="w-full border border-cinza-borda rounded-lg px-3 py-2 text-base"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Total do relatório{" "}
+            <span className="text-cinza-suave font-normal">(opcional)</span>
+          </label>
+          <InputDinheiro
+            centavos={totalRelatorioCentavos}
+            onChange={(v) => {
+              setTotalRelatorioCentavos(v);
+              setConfirmarDivergencia(false);
+            }}
+            grande={false}
+          />
+          <p className="text-xs text-cinza-suave mt-0.5">
+            A soma que vem no papel. Se bater, os valores estão certos.
+          </p>
         </div>
       </div>
 
@@ -448,7 +493,50 @@ export function LoteChequesPainel({
               <strong>{conferidas.length}</strong> de {linhas.length} conferido
               {conferidas.length === 1 ? "" : "s"} ·{" "}
               <strong>{formatBRL(total)}</strong>
+              {diferencaCentavos !== null && diferencaCentavos !== 0 && (
+                <>
+                  {" · "}
+                  <strong className="text-alerta">
+                    {diferencaCentavos > 0 ? "faltam " : "sobram "}
+                    {formatBRL(Math.abs(diferencaCentavos) / 100)}
+                  </strong>
+                </>
+              )}
+              {bate && totalRelatorioCentavos !== null && (
+                <span className="text-verde font-semibold"> · ✅ bate</span>
+              )}
             </p>
+
+            {diferencaCentavos !== null &&
+              diferencaCentavos !== 0 &&
+              !confirmarDivergencia && (
+                <div className="w-full bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm text-amber-900">
+                  <p className="font-semibold">
+                    A soma não bate com o relatório.
+                  </p>
+                  <p className="mt-1">
+                    Ticado: {formatBRL(total)} · Relatório:{" "}
+                    {formatBRL(totalRelatorioCentavos! / 100)} ·{" "}
+                    <strong>
+                      {diferencaCentavos > 0 ? "faltam " : "sobram "}
+                      {formatBRL(Math.abs(diferencaCentavos) / 100)}
+                    </strong>
+                  </p>
+                  <p className="mt-1">Pode ser uma destas três:</p>
+                  <ul className="list-disc ml-5">
+                    <li>um cheque do maço não foi ticado</li>
+                    <li>um valor foi lido errado (confira com a foto)</li>
+                    <li>um cheque do relatório não veio no maço</li>
+                  </ul>
+                  <button
+                    onClick={() => setConfirmarDivergencia(true)}
+                    className="mt-2 px-4 py-2 bg-amber-600 text-white rounded-lg font-semibold"
+                  >
+                    LANÇAR MESMO ASSIM
+                  </button>
+                </div>
+              )}
+
             <button
               onClick={lancar}
               disabled={salvando || conferidas.length === 0}
