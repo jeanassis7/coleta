@@ -136,6 +136,24 @@ async function main() {
   });
   check("coleta com carga_id", !e4, e4?.message);
 
+  // ── Reconciliação: o motorista consegue perguntar "isso entrou?" ───────
+  // Sem esse SELECT, o conserto do iOS (14/09/2026) não tem como funcionar:
+  // ele consulta pelo client_id depois de um erro de rede pra descobrir se o
+  // servidor gravou. Se a RLS barrar, a consulta volta vazia e o app conclui
+  // "não entrou" — exatamente o bug que se quer consertar, agora silencioso.
+  {
+    const { data: achada, error: errAchar } = await mot
+      .from("coletas")
+      .select("id")
+      .eq("client_id", criados.coletaClientId)
+      .maybeSingle();
+    check(
+      "motorista lê a própria coleta pelo client_id (base da reconciliação)",
+      !errAchar && !!achada,
+      errAchar ? errAchar.message : achada ? "" : "voltou vazio"
+    );
+  }
+
   // ---- 5. upload de foto como motorista (storage RLS) ----
   const fotoDespesa = `${teste1.id}/despesa-${criados.despesaClientId}.jpg`;
   const { error: e5 } = await mot.storage.from("fotos-coletas")
