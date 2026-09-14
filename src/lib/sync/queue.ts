@@ -448,22 +448,34 @@ async function sincronizarDescargas(
  *
  * Se a própria consulta falhar (offline de verdade), devolve `false` e o item
  * continua pendente — que é o comportamento correto.
+ *
+ * ⏱ Timeout de 8s: o caso que dói não é offline (esse já é cortado antes do
+ * sync começar), é SINAL RUIM COM `navigator.onLine === true`. Sem teto, um
+ * fetch pendurado × 20 itens na fila vira uma fila de esperas encadeadas,
+ * queima bateria e segura o app em primeiro plano justamente no cenário que
+ * causou o bug original. Estourar o timeout é o mesmo que não achar: o item
+ * continua pendente, que é o comportamento correto.
  */
 async function jaEstaNoServidor(
   tabela: "coletas" | "despesas" | "abastecimentos" | "descargas",
   clientId: string
 ): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const supabase = getSupabaseBrowser();
     const { data, error } = await supabase
       .from(tabela)
       .select("id")
       .eq("client_id", clientId)
+      .abortSignal(controller.signal)
       .maybeSingle();
     if (error) return false;
     return !!data;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
