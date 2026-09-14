@@ -170,7 +170,7 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                   {c.encerrada_em ? (
                     formatDataHora(c.encerrada_em)
                   ) : c.status === "cancelada" ? (
-                    <span className="text-cinza-suave font-medium">
+                    <span className="text-cinza-texto font-medium">
                       cancelada
                     </span>
                   ) : (
