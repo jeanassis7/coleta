@@ -684,6 +684,75 @@ async function main() {
   check("coleta retroativa desconta do saldo do motorista (75 carry - 90)",
     saldoAposColeta === -15, `saldo=${saldoAposColeta}`);
 
+  // ---- 27. DELETE /api/admin/descargas/[id]: peso bruto <= tara ----
+  // O CHECK da 0007 só cobre peso_bruto_kg > 0 e peso_tara_kg > 0
+  // isoladamente — nada garante bruto > tara no banco. Se aceitar, não
+  // força o check a passar: registra que a defesa é só o endpoint (PATCH
+  // route.ts recusa com "o peso bruto precisa ser MAIOR que a tara") e
+  // confirma que o valor volta ao normal, sem mentir sobre o resultado.
+  {
+    const { data: descargaParaTestar } = await svc
+      .from("descargas")
+      .select("id, peso_bruto_kg")
+      .eq("client_id", criados.descargaClientId)
+      .maybeSingle();
+    const { error: errPesoRuim } = await svc
+      .from("descargas")
+      .update({ peso_bruto_kg: 1 })
+      .eq("id", descargaParaTestar?.id);
+    if (errPesoRuim) {
+      check("descarga recusa peso bruto menor que a tara", true);
+    } else {
+      const { error: errRestaura } = await svc
+        .from("descargas")
+        .update({ peso_bruto_kg: descargaParaTestar?.peso_bruto_kg })
+        .eq("id", descargaParaTestar?.id);
+      check(
+        "banco aceita peso bruto < tara (sem CHECK) — defesa é só o endpoint; valor restaurado",
+        !errRestaura,
+        errRestaura
+          ? errRestaura.message
+          : `o banco não tem CHECK bruto>tara — restaurado peso_bruto_kg=${descargaParaTestar?.peso_bruto_kg}`
+      );
+    }
+  }
+
+  // ---- 28. apagar descarga reabre a carga (14/09/2026) ----
+  // O posInsert do queue.ts grava TRÊS campos ao encerrar (status,
+  // encerrada_em, km_final). Desfazer só dois deixaria a carga rodando com
+  // km rodado já calculado, envenenando o km/L da frota. A rota é HTTP
+  // (não dá pra chamar direto do script) — reproduz aqui só os dois passos
+  // que o teste quer confirmar: apagar a descarga e reabrir a carga.
+  //
+  // POSICIONADO NO FIM DE PROPÓSITO: depois deste bloco a descarga não
+  // existe mais e a carga volta a "ativa" — qualquer check que dependa de
+  // descargas?.length===1 ou de status "encerrada" (passos 10-21, 26)
+  // precisa rodar ANTES daqui.
+  {
+    const { data: descargaParaApagar } = await svc
+      .from("descargas")
+      .select("id")
+      .eq("client_id", criados.descargaClientId)
+      .maybeSingle();
+    await svc.from("descargas").delete().eq("id", descargaParaApagar?.id);
+    await svc
+      .from("cargas")
+      .update({ status: "ativa", encerrada_em: null, km_final: null })
+      .eq("id", carga.id);
+    const { data: reaberta } = await svc
+      .from("cargas")
+      .select("status, encerrada_em, km_final")
+      .eq("id", carga.id)
+      .maybeSingle();
+    check(
+      "apagar descarga reabre a carga com km_final nulo",
+      reaberta?.status === "ativa" &&
+        reaberta?.encerrada_em === null &&
+        reaberta?.km_final === null,
+      JSON.stringify(reaberta)
+    );
+  }
+
   // ---- trava de apagar (0059): o BANCO recusa, nao so a API ----
   // O bot nasce desprotegido (default false). Protege, tenta apagar com a
   // chave de servico — que ignora RLS — e so entao desprotege de volta, pro
