@@ -20,9 +20,16 @@ registrada no `CLAUDE.md`. O que existe, e é o que este plano usa:
 | Ferramenta | Comando | Cobre |
 |---|---|---|
 | Typecheck | `npm run typecheck` | tipos, assinaturas, props |
-| Lint | `npm run lint` | regras do Next |
 | E2E de dados | `node scripts/e2e-modulo1.mjs` | RLS, idempotência, updates atômicos, saldo (55 checks hoje) |
 | Verificação manual | tela, em produção | UI |
+
+⚠️ **`npm run lint` NÃO roda neste repo** (descoberto em 14/09/2026, na
+Fase 1): não existe arquivo de config do ESLint nem `eslintConfig` no
+`package.json`, então `next lint` abre o assistente interativo
+"How would you like to configure ESLint?" e trava esperando resposta.
+**Não chamar em nenhuma task** — e não criar config por conta própria, que
+é decisão do Evaner e mudaria o CI. Onde este plano dizia "rodar o lint",
+vale só o typecheck.
 
 **Regra do e2e:** ele roda contra PRODUÇÃO e cria/apaga o próprio motorista
 descartável. Asserção sempre de **delta**, nunca de total absoluto — um total
@@ -186,19 +193,16 @@ por:
               >
 ```
 
-- [ ] **Step 5: Typecheck e lint**
+- [ ] **Step 5: Typecheck**
 
 Run: `npm run typecheck`
 Expected: sem erro.
 
-Run: `npm run lint`
-Expected: sem erro novo neste arquivo.
-
 - [ ] **Step 6: Conferir a contagem de colunas**
 
 O `<thead>` e cada `<tr>` do `<tbody>` precisam ter o MESMO número de células.
-Contar os `<th>` (incluindo os que vêm de `th(...)`) e os `<td>`. Eram 19 de
-cada; continuam 19 — só mudou a ordem.
+Contar os `<th>` (incluindo os que vêm de `th(...)`) e os `<td>`. São 20 de cada (contado em 14/09/2026 — não 19, como uma versão
+anterior deste plano dizia); continuam 20, só mudou a ordem.
 
 Run: `grep -c '<th' src/components/admin/TabelaCargas.tsx`
 
@@ -946,13 +950,10 @@ declaração de `enviar`/`relogar` — React não permite hook condicional, mas
 `return` antecipado depois de todos os hooks é válido. A guarda do Step 1 já
 segue essa regra hoje.
 
-- [ ] **Step 3: Typecheck e lint**
+- [ ] **Step 3: Typecheck**
 
 Run: `npm run typecheck`
 Expected: sem erro.
-
-Run: `npm run lint`
-Expected: sem erro novo. Atenção ao aviso de hooks (`react-hooks/rules-of-hooks`).
 
 - [ ] **Step 4: Commit**
 
@@ -1364,13 +1365,10 @@ nenhuma. Acrescentar, DEPOIS desse bloco:
       )}
 ```
 
-- [ ] **Step 5: Typecheck e lint**
+- [ ] **Step 5: Typecheck**
 
 Run: `npm run typecheck`
 Expected: sem erro.
-
-Run: `npm run lint`
-Expected: sem erro novo (atenção a `react-hooks/exhaustive-deps` no useEffect).
 
 - [ ] **Step 6: Commit**
 
@@ -2263,13 +2261,10 @@ Junto dos outros modais:
 
 ⚠️ Ajustar os nomes das props ao que o `ModalConfirmar` realmente expõe (Step 1).
 
-- [ ] **Step 5: Typecheck e lint**
+- [ ] **Step 5: Typecheck**
 
 Run: `npm run typecheck`
 Expected: sem erro.
-
-Run: `npm run lint`
-Expected: sem erro novo.
 
 - [ ] **Step 6: Commit**
 
@@ -2490,7 +2485,6 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] **Step 1: Rodar tudo antes de subir**
 
 Run: `npm run typecheck`
-Run: `npm run lint`
 Run: `node scripts/e2e-modulo1.mjs`
 Run: `node scripts/e2e-guards-dinheiro.mjs`
 
