@@ -8,6 +8,7 @@ import { ModalEditarDespesa } from "@/components/admin/ModalEditarDespesa";
 import { ModalEditarAbastecimento } from "@/components/admin/ModalEditarAbastecimento";
 import { ModalApagarDespesa } from "@/components/admin/ModalApagarDespesa";
 import { ModalApagarAbastecimento } from "@/components/admin/ModalApagarAbastecimento";
+import { ModalApagarDescarga } from "@/components/admin/ModalApagarDescarga";
 import type { CargaCompleta } from "@/lib/admin/queries";
 
 type Evento =
@@ -63,6 +64,9 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
   >(null);
   const [abastApagando, setAbastApagando] = useState<
     CargaCompleta["abastecimentos"][number] | null
+  >(null);
+  const [descargaApagando, setDescargaApagando] = useState<
+    NonNullable<CargaCompleta["descarga"]> | null
   >(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const eventos: Evento[] = [
@@ -170,6 +174,16 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
                 </button>
               </div>
             )}
+            {e.tipo === "descarga" && (
+              <div className="shrink-0 pt-1" onClick={(ev) => ev.stopPropagation()}>
+                <button
+                  onClick={() => setDescargaApagando(e.dados)}
+                  className="text-alerta hover:underline text-xs"
+                >
+                  Apagar descarga
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
@@ -273,6 +287,18 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
             tipo: abastApagando.tipo,
           }}
           onFechar={() => setAbastApagando(null)}
+          onAviso={setAviso}
+        />
+      )}
+
+      {descargaApagando && (
+        <ModalApagarDescarga
+          key={descargaApagando.id}
+          descarga={{
+            id: descargaApagando.id,
+            peso_liquido_kg: descargaApagando.peso_liquido_kg,
+          }}
+          onFechar={() => setDescargaApagando(null)}
           onAviso={setAviso}
         />
       )}
