@@ -190,7 +190,7 @@ type TabelaLancamento =
 async function sincronizarLancamentos<T extends LancamentoBase>(opts: {
   tabela: TabelaLancamento;
   tipo: string; // pra log e path da foto: "despesa" | "abastecimento" | "descarga"
-  tabelaServidor: string;
+  tabelaServidor: "despesas" | "abastecimentos" | "descargas";
   precisaSync: (item: T) => boolean;
   buildPayload: (item: T, fotoPath: string | null) => Record<string, unknown>;
   posInsert: ((item: T) => Promise<void>) | null;
@@ -266,23 +266,36 @@ async function sincronizarLancamentos<T extends LancamentoBase>(opts: {
           .from(opts.tabelaServidor)
           .insert(opts.buildPayload(item, fotoPath));
         if (insErr && insErr.code !== "23505") {
-          const motivo = `insert ${opts.tipo}: ${insErr.message}${insErr.code ? ` (${insErr.code})` : ""}`;
-          await tab.update(item.client_id, {
-            tentativas: (item.tentativas || 0) + 1,
-            ultimo_erro: motivo,
-          });
-          await logEvent(item.motorista_id, "sync_failure", {
+          // Erro de REDE: a resposta morreu, mas o servidor pode ter gravado.
+          // Mesmo conserto da coleta — ver erro-de-rede.ts.
+          const reconciliado =
+            ehErroDeRede(insErr) &&
+            (await jaEstaNoServidor(opts.tabelaServidor, item.client_id));
+          if (!reconciliado) {
+            const motivo = `insert ${opts.tipo}: ${insErr.message}${insErr.code ? ` (${insErr.code})` : ""}`;
+            await tab.update(item.client_id, {
+              tentativas: (item.tentativas || 0) + 1,
+              ultimo_erro: motivo,
+            });
+            await logEvent(item.motorista_id, "sync_failure", {
+              tipo: opts.tipo,
+              client_id: item.client_id,
+              motivo,
+              fase: "insert",
+            });
+            result.falhas++;
+            if (!result.ultimo_erro) {
+              result.ultimo_erro = motivo;
+              result.ultimo_erro_kind = classificarErro(motivo);
+            }
+            continue;
+          }
+          await logEvent(item.motorista_id, "sync_completed", {
+            reconciliado: true,
             tipo: opts.tipo,
             client_id: item.client_id,
-            motivo,
-            fase: "insert",
+            motivo: insErr.message,
           });
-          result.falhas++;
-          if (!result.ultimo_erro) {
-            result.ultimo_erro = motivo;
-            result.ultimo_erro_kind = classificarErro(motivo);
-          }
-          continue;
         }
         await tab.update(item.client_id, { registro_subido: true });
       }
