@@ -1,0 +1,184 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { formatDataHora } from "@/lib/format";
+import {
+  InputDinheiro,
+  centavosParaReais,
+  reaisParaCentavos,
+} from "@/components/InputDinheiro";
+import type { AbastecimentoAdmin } from "@/lib/admin/queries";
+
+/**
+ * Editar um abastecimento lançado pelo motorista.
+ *
+ * Arquivo próprio porque tem DOIS donos: a tabela de /admin/abastecimentos e
+ * a linha do tempo da carga.
+ *
+ * ⚠️ Uma nota do posto pode ter virado DUAS contas a pagar (parte dinheiro,
+ * parte cheque) — por isso os `.maybeSingle()` daqui viraram `.limit(1)` em
+ * 03/09/2026. Não reverter achando que é descuido.
+ */
+export function ModalEditarAbastecimento({
+  abastecimento,
+  onFechar,
+  onAviso,
+}: {
+  abastecimento: AbastecimentoAdmin;
+  onFechar: () => void;
+  onAviso: (aviso: string | null) => void;
+}) {
+  const router = useRouter();
+  const [posto, setPosto] = useState(abastecimento.posto_nome);
+  const [litrosTexto, setLitrosTexto] = useState(
+    String(abastecimento.litros).replace(".", ",")
+  );
+  const [valorCentavos, setValorCentavos] = useState<number | null>(
+    reaisParaCentavos(abastecimento.valor)
+  );
+  const [kmTexto, setKmTexto] = useState(String(abastecimento.km_atual));
+  const [pagoNaHora, setPagoNaHora] = useState(abastecimento.pago_na_hora);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function salvar() {
+    const litros = Number(litrosTexto.trim().replace(",", "."));
+    const km = Number(kmTexto);
+    if (!posto.trim()) return setErro("Posto obrigatório");
+    if (!Number.isFinite(litros) || litros <= 0) return setErro("Litros inválido");
+    if (valorCentavos === null || valorCentavos <= 0) return setErro("Valor inválido");
+    if (!Number.isFinite(km) || km <= 0) return setErro("Km inválido");
+    setErro(null);
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/admin/abastecimentos/${abastecimento.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posto_nome: posto.trim(),
+          litros,
+          valor: centavosParaReais(valorCentavos),
+          km_atual: Math.round(km),
+          pago_na_hora: pagoNaHora,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErro(data.error || "erro");
+        return;
+      }
+      onAviso(data.aviso || null);
+      router.refresh();
+      onFechar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+        <h2 className="text-lg font-bold">Editar abastecimento</h2>
+        <p className="text-sm text-cinza-suave">
+          {abastecimento.motorista_nome} ·{" "}
+          {formatDataHora(abastecimento.criado_em)}
+        </p>
+        <div>
+          <label className="block text-sm font-medium mb-1">Posto</label>
+          <input
+            type="text"
+            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            value={posto}
+            onChange={(e) => setPosto(e.target.value)}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Litros</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={litrosTexto}
+              onChange={(e) => setLitrosTexto(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Km</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+              value={kmTexto}
+              onChange={(e) => setKmTexto(e.target.value)}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Valor</label>
+          <InputDinheiro
+            centavos={valorCentavos}
+            onChange={setValorCentavos}
+            grande={false}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Como foi pago</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(true)}
+              className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                pagoNaHora
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              Pagou na hora
+            </button>
+            <button
+              type="button"
+              onClick={() => setPagoNaHora(false)}
+              className={`flex-1 px-3 py-2 rounded-xl border-2 text-sm ${
+                !pagoNaHora
+                  ? "bg-amber-500 text-white border-amber-500"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              Assinou a nota
+            </button>
+          </div>
+          {pagoNaHora !== abastecimento.pago_na_hora && (
+            <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-2">
+              {pagoNaHora
+                ? "Trocando pra PAGOU NA HORA: o gasto volta a descontar do saldo do motorista e a conta a pagar do posto é removida. Se a conta já foi paga, o sistema recusa — apague o pagamento primeiro."
+                : "Trocando pra ASSINOU A NOTA: o gasto sai do saldo do motorista e vira dívida com o posto em Contas a pagar (vencimento dia 1 do mês que vem)."}
+            </p>
+          )}
+        </div>
+        {erro && (
+          <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+            {erro}
+          </div>
+        )}
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onFechar}
+            disabled={salvando}
+            className="px-4 py-2 rounded-xl border border-cinza-borda"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            className="px-5 py-2 rounded-xl bg-verde text-white font-medium disabled:opacity-50"
+          >
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
