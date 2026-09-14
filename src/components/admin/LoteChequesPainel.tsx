@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import imageCompression from "browser-image-compression";
 import { InputDinheiro, centavosParaReais, reaisParaCentavos } from "@/components/InputDinheiro";
@@ -77,6 +77,17 @@ export function LoteChequesPainel({
   const [ampliada, setAmpliada] = useState<string | null>(null);
   const [totalRelatorioCentavos, setTotalRelatorioCentavos] = useState<number | null>(null);
   const [confirmarDivergencia, setConfirmarDivergencia] = useState(false);
+
+  // Rolar até a linha recém-criada: com 8 cheques na tela, a linha nova
+  // nascia fora da vista e o botão ficava lá em cima.
+  const fimDaListaRef = useRef<HTMLDivElement | null>(null);
+  const [rolarParaFim, setRolarParaFim] = useState(false);
+
+  useEffect(() => {
+    if (!rolarParaFim) return;
+    fimDaListaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setRolarParaFim(false);
+  }, [rolarParaFim]);
 
   const conferidas = linhas.filter((l) => l.conferido);
   const total = conferidas.reduce(
@@ -340,12 +351,6 @@ export function LoteChequesPainel({
             mão, funciona igual.
           </p>
         )}
-        <button
-          onClick={() => setLinhas((a) => [...a, novaLinha({ conferido: true })])}
-          className="text-sm text-verde hover:underline font-medium"
-        >
-          + Adicionar na mão
-        </button>
       </div>
 
       {lendo && (
@@ -488,6 +493,17 @@ export function LoteChequesPainel({
             );
           })}
 
+          <div ref={fimDaListaRef} />
+          <button
+            onClick={() => {
+              setLinhas((a) => [...a, novaLinha({ conferido: true })]);
+              setRolarParaFim(true);
+            }}
+            className="w-full border border-dashed border-cinza-borda rounded-xl py-2 text-sm text-verde hover:bg-slate-50 font-medium"
+          >
+            + Adicionar cheque na mão
+          </button>
+
           <div className="flex items-center justify-between gap-3 flex-wrap border-t border-cinza-borda pt-4">
             <p className="text-sm">
               <strong>{conferidas.length}</strong> de {linhas.length} conferido
@@ -548,6 +564,15 @@ export function LoteChequesPainel({
             </button>
           </div>
         </div>
+      )}
+
+      {linhas.length === 0 && (
+        <button
+          onClick={() => setLinhas([novaLinha({ conferido: true })])}
+          className="w-full border border-dashed border-cinza-borda rounded-xl py-3 text-sm text-verde hover:bg-slate-50 font-medium"
+        >
+          + Adicionar cheque na mão
+        </button>
       )}
 
       {ampliada && (
