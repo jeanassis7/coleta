@@ -27,7 +27,12 @@ export function BotaoSyncManual({ pendentes, online, onSyncDone, motoristaId }: 
   const [debouncedAt, setDebouncedAt] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  if (pendentes === 0 || !online) return null;
+  // Sem pendência não há o que mostrar. Mas OFFLINE COM PENDÊNCIA mostra
+  // sim: esconder o botão (que não dá pra apertar sem sinal) estava levando
+  // a informação junto, e o motorista sem sinal lançava três coletas sem a
+  // tela dizer nada. Pedido do Evaner em 14/09/2026: "fica pendente, mas ele
+  // fica ciente que tá ali esperando".
+  if (pendentes === 0) return null;
 
   async function enviar() {
     const agora = Date.now();
@@ -85,6 +90,26 @@ export function BotaoSyncManual({ pendentes, online, onSyncDone, motoristaId }: 
     router.push("/motorista/login");
   }
 
+  const rotuloPendentes = `${pendentes} ${
+    pendentes === 1 ? "lançamento" : "lançamentos"
+  }`;
+
+  // Offline: é o NORMAL, não é erro. Sem vermelho, sem alarme — só o aviso
+  // de que está guardado e vai sozinho.
+  if (!online) {
+    return (
+      <div className="card bg-cinza-fundo border-cinza-borda space-y-1">
+        <p className="text-center text-base font-medium">
+          📥 {rotuloPendentes} guardado{pendentes === 1 ? "" : "s"} no celular
+        </p>
+        <p className="text-center text-sm text-cinza-suave">
+          {pendentes === 1 ? "Vai" : "Vão"} sozinho{pendentes === 1 ? "" : "s"}{" "}
+          quando pegar sinal.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="card bg-atencao/5 border-atencao space-y-2">
       <button
@@ -95,8 +120,7 @@ export function BotaoSyncManual({ pendentes, online, onSyncDone, motoristaId }: 
         {carregando ? "Enviando..." : `📤 Enviar agora`}
       </button>
       <p className="text-center text-base text-cinza-suave">
-        {pendentes}{" "}
-        {pendentes === 1 ? "lançamento pendente" : "lançamentos pendentes"}
+        {rotuloPendentes} pendente{pendentes === 1 ? "" : "s"}
       </p>
       {feedback && (
         <div
