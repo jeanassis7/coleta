@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 /**
  * POST /api/admin/cheques/ocr — lê um maço de cheques por foto.
@@ -31,6 +32,79 @@ export const maxDuration = 60;
  * muda, e trocar não deve exigir deploy. Precisa ser um modelo com visão.
  */
 const MODELO = process.env.OPENAI_MODEL || "gpt-4o";
+
+/**
+ * Preço por 1 milhão de tokens, em dólar. Conferido em 14/09/2026 pro gpt-4o.
+ *
+ * ⚠️ Se o OPENAI_MODEL mudar, ESTE NÚMERO FICA ERRADO e a tela continua
+ * mostrando um valor bonitinho. Por isso a tela mostra o modelo ao lado do
+ * custo — é o que denuncia a divergência. Revisar junto com o modelo.
+ */
+const PRECO_POR_MILHAO = { entrada: 2.5, saida: 10.0 } as const;
+
+/**
+ * Chave "aaaa-mm" do mês corrente em horário de Brasília (UTC-3 fixo).
+ *
+ * Não dá pra reusar `nowBrParts` de src/lib/admin/queries.ts aqui: a função
+ * não é exportada, e este é um route handler solto, não um consumidor do
+ * módulo de queries do dashboard. Mesma técnica usada no resto do projeto
+ * pra data BR fora de Server Component (ver `hoje` em LoteChequesPainel.tsx):
+ * subtrai 3h fixas e lê os campos em UTC, que passam a representar o
+ * relógio de Brasília.
+ */
+function chaveMesBr(): string {
+  const brNow = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const ano = brNow.getUTCFullYear();
+  const mes = String(brNow.getUTCMonth() + 1).padStart(2, "0");
+  return `${ano}-${mes}`;
+}
+
+/**
+ * Soma o custo desta leitura ao acumulado do mês em `configuracoes`
+ * (chave `ocr_custo_<aaaa-mm>`, valor em dólar como texto).
+ *
+ * ⚠️ READ-MODIFY-WRITE com corrida teórica: duas leituras simultâneas podem
+ * ler o mesmo valor antigo e uma sobra por cima da outra, perdendo uma soma.
+ * Com um usuário só (o Jean, lançando cheques) é desprezível. Se um dia isso
+ * virar problema de verdade, o conserto é uma RPC que soma no banco (tipo
+ * `update ... set valor = valor + x`), não reescrever isto na mão.
+ *
+ * Nunca deixa a leitura cair por causa disso: qualquer falha aqui (leitura
+ * ou gravação) é engolida, e o retorno cai pro fallback de "pelo menos esta
+ * leitura" — o mês fica subcontado, nunca a tela quebra.
+ */
+async function acumularCustoDoMes(
+  atorId: string,
+  custoDestaLeitura: number
+): Promise<number> {
+  const chave = `ocr_custo_${chaveMesBr()}`;
+  try {
+    const admin = getSupabaseAdmin(atorId);
+    const { data } = await admin
+      .from("configuracoes")
+      .select("valor")
+      .eq("chave", chave)
+      .maybeSingle();
+    const atual = Number(data?.valor);
+    const novoTotal = (Number.isFinite(atual) ? atual : 0) + custoDestaLeitura;
+    const { error } = await admin.from("configuracoes").upsert({
+      chave,
+      valor: String(novoTotal),
+      atualizado_em: new Date().toISOString(),
+      atualizado_por: atorId,
+    });
+    if (error) throw error;
+    return novoTotal;
+  } catch (e) {
+    console.error(
+      "Falha ao acumular o custo mensal da leitura de cheques (não impede a leitura em si):",
+      e
+    );
+    // Fallback honesto: não sabemos o acumulado real, então devolvemos só o
+    // desta leitura em vez de inventar um total. O mês fica subcontado.
+    return custoDestaLeitura;
+  }
+}
 
 const SCHEMA = {
   type: "object",
@@ -262,7 +336,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ ok: true, cheques: lido.cheques ?? [] });
+    // Custo em dólar a partir dos tokens REAIS devolvidos pela OpenAI — nunca
+    // estimativa de tokens. `usage` pode faltar em teoria (contrato do SDK
+    // não garante); nesse caso o custo desta leitura fica 0 em vez de travar
+    // a resposta — melhor um número conservador do que quebrar a leitura.
+    const tokensEntrada = resposta.usage?.prompt_tokens ?? 0;
+    const tokensSaida = resposta.usage?.completion_tokens ?? 0;
+    const custoDestaLeitura =
+      (tokensEntrada / 1_000_000) * PRECO_POR_MILHAO.entrada +
+      (tokensSaida / 1_000_000) * PRECO_POR_MILHAO.saida;
+
+    const custoDoMes = await acumularCustoDoMes(user.id, custoDestaLeitura);
+
+    // COTACAO_DOLAR é opcional (cadastrada na Vercel junto com a
+    // OPENAI_API_KEY). Sem ela, ou com valor inválido, a tela mostra só
+    // dólar — nunca inventamos cotação.
+    const cotacaoBruta = Number(process.env.COTACAO_DOLAR);
+    const cotacao = Number.isFinite(cotacaoBruta) && cotacaoBruta > 0 ? cotacaoBruta : null;
+
+    return NextResponse.json({
+      ok: true,
+      cheques: lido.cheques ?? [],
+      custo: {
+        desta_leitura: custoDestaLeitura,
+        do_mes: custoDoMes,
+        modelo: MODELO,
+        cotacao,
+      },
+    });
   } catch (erro) {
     if (erro instanceof OpenAI.APIError) {
       // 401 = chave errada; 429 = limite; o resto é falha do provedor. Em

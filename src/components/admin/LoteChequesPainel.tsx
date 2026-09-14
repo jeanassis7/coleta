@@ -98,6 +98,17 @@ export function LoteChequesPainel({
   const [erro, setErro] = useState<string | null>(null);
   const [ampliada, setAmpliada] = useState<string | null>(null);
   const [totalRelatorioCentavos, setTotalRelatorioCentavos] = useState<number | null>(null);
+  // Último custo devolvido pela leitura por foto (dólar por token REAL da
+  // resposta). Só aparece depois da primeira leitura da sessão — antes
+  // disso não há o que mostrar. É estimativa, e a tela precisa dizer isso:
+  // o preço por token pode mudar sem aviso, e a régua do dinheiro
+  // (pergunta 6) proíbe número de dinheiro escondendo que pode estar errado.
+  const [custoOcr, setCustoOcr] = useState<{
+    destaLeitura: number;
+    doMes: number;
+    modelo: string;
+    cotacao: number | null;
+  } | null>(null);
   // Guarda A SOMA que foi confirmada, não um "sim" solto. Assim qualquer
   // mudança — ticar, desticar, corrigir um valor, apagar linha — invalida a
   // confirmação sozinha: a soma muda e a igualdade abaixo deixa de valer.
@@ -228,6 +239,17 @@ export function LoteChequesPainel({
     setLinhas((atual) => [...atual, ...lidas]);
     if (lidas.length === 0) {
       setErro("Não achei cheque nenhum nessas fotos. Confira ou lance na mão.");
+    }
+    if (json.custo) {
+      setCustoOcr({
+        destaLeitura: Number(json.custo.desta_leitura) || 0,
+        doMes: Number(json.custo.do_mes) || 0,
+        modelo: String(json.custo.modelo || ""),
+        cotacao:
+          typeof json.custo.cotacao === "number" && Number.isFinite(json.custo.cotacao)
+            ? json.custo.cotacao
+            : null,
+      });
     }
   }
 
@@ -423,6 +445,17 @@ export function LoteChequesPainel({
             </button>
           ))}
         </div>
+      )}
+
+      {custoOcr && (
+        <p className="text-xs text-cinza-suave">
+          ≈ US$ {custoOcr.destaLeitura.toFixed(2)} nesta leitura · US${" "}
+          {custoOcr.doMes.toFixed(2)} no mês
+          {custoOcr.cotacao !== null &&
+            ` (≈ ${formatBRL(custoOcr.doMes * custoOcr.cotacao)})`}{" "}
+          · estimativa pelo {custoOcr.modelo} · o valor real está no painel da
+          OpenAI
+        </p>
       )}
 
       {linhas.length > 0 && (
