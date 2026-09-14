@@ -6,6 +6,8 @@ import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import { DrawerDetalhe } from "@/components/admin/DrawerDetalhe";
 import { ModalEditarDespesa } from "@/components/admin/ModalEditarDespesa";
 import { ModalEditarAbastecimento } from "@/components/admin/ModalEditarAbastecimento";
+import { ModalApagarDespesa } from "@/components/admin/ModalApagarDespesa";
+import { ModalApagarAbastecimento } from "@/components/admin/ModalApagarAbastecimento";
 import type { CargaCompleta } from "@/lib/admin/queries";
 
 type Evento =
@@ -50,6 +52,16 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
     CargaCompleta["despesas"][number] | null
   >(null);
   const [abastAberto, setAbastAberto] = useState<
+    CargaCompleta["abastecimentos"][number] | null
+  >(null);
+  // Apagar é um botão à parte no card, não um botão dentro do modal de
+  // edição acima — aquele modal também é usado pela tabela de
+  // /admin/despesas e /admin/abastecimentos, que já tem seu próprio botão
+  // "Apagar" na coluna Ações. Botão dentro do modal duplicaria ali.
+  const [despesaApagando, setDespesaApagando] = useState<
+    CargaCompleta["despesas"][number] | null
+  >(null);
+  const [abastApagando, setAbastApagando] = useState<
     CargaCompleta["abastecimentos"][number] | null
   >(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -126,7 +138,7 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
               </div>
               <ConteudoEvento evento={e} />
             </div>
-            {/* A lupa da foto não abre o drawer junto. */}
+            {/* A lupa da foto não abre o modal de edição junto. */}
             <div className="shrink-0 pt-1" onClick={(ev) => ev.stopPropagation()}>
               <VisualizadorFoto
                 path={
@@ -137,6 +149,27 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
                 legenda={`${est.rotulo} · ${formatDataHora(e.quando)}`}
               />
             </div>
+            {/* Apagar é um botão próprio — não abre o modal de edição. */}
+            {e.tipo === "despesa" && (
+              <div className="shrink-0 pt-1" onClick={(ev) => ev.stopPropagation()}>
+                <button
+                  onClick={() => setDespesaApagando(e.dados)}
+                  className="text-alerta hover:underline text-xs"
+                >
+                  Apagar
+                </button>
+              </div>
+            )}
+            {e.tipo === "abastecimento" && (
+              <div className="shrink-0 pt-1" onClick={(ev) => ev.stopPropagation()}>
+                <button
+                  onClick={() => setAbastApagando(e.dados)}
+                  className="text-alerta hover:underline text-xs"
+                >
+                  Apagar
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
@@ -199,6 +232,47 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
             tipo: abastAberto.tipo,
           }}
           onFechar={() => setAbastAberto(null)}
+          onAviso={setAviso}
+        />
+      )}
+
+      {despesaApagando && (
+        <ModalApagarDespesa
+          key={despesaApagando.id}
+          despesa={{
+            id: despesaApagando.id,
+            carga_id: carga.id,
+            motorista_nome: carga.motorista_nome,
+            caminhao_placa: carga.caminhao_placa,
+            valor: despesaApagando.valor,
+            descricao: despesaApagando.descricao,
+            foto_path: despesaApagando.foto_path,
+            criado_em: despesaApagando.criado_em,
+            pago_na_hora: despesaApagando.pago_na_hora,
+          }}
+          onFechar={() => setDespesaApagando(null)}
+          onAviso={setAviso}
+        />
+      )}
+
+      {abastApagando && (
+        <ModalApagarAbastecimento
+          key={abastApagando.id}
+          abastecimento={{
+            id: abastApagando.id,
+            carga_id: carga.id,
+            motorista_nome: carga.motorista_nome,
+            caminhao_placa: carga.caminhao_placa,
+            posto_nome: abastApagando.posto_nome,
+            litros: abastApagando.litros,
+            valor: abastApagando.valor,
+            km_atual: abastApagando.km_atual,
+            foto_path: abastApagando.foto_path,
+            criado_em: abastApagando.criado_em,
+            pago_na_hora: abastApagando.pago_na_hora,
+            tipo: abastApagando.tipo,
+          }}
+          onFechar={() => setAbastApagando(null)}
           onAviso={setAviso}
         />
       )}
