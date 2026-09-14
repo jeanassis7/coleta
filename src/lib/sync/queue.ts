@@ -698,12 +698,20 @@ export async function countPendentes(): Promise<number> {
         .count(),
     ]);
     return coletas + despesas + abastecimentos + descargas;
-  } catch {
+  } catch (err) {
     // iOS congela o app no meio da varredura e a transação do Dexie morre:
     // "UnknownError: Attempt to iterate a cursor that doesn't exist".
     // Medido: 2 ocorrências, só no iPhone. É ruído de log, não perda de
     // dado — o laço de sync já lê com toArray() antes de iterar. Devolver 0
     // só apaga o badge até a próxima passada.
+    //
+    // Loga pra não ficar sem rastro se isso um dia virar 200 ocorrências em
+    // vez de 2 — fire-and-forget: não atrasa o contador, e sem motoristaId
+    // aqui (a função não recebe um).
+    logEvent(null, "js_error", {
+      origem: "countPendentes (cursor morto do Dexie)",
+      motivo: err instanceof Error ? err.message : String(err),
+    });
     return 0;
   }
 }
@@ -720,8 +728,13 @@ export async function countTravados(motoristaId: string): Promise<number> {
       db.descargas_locais.filter((x) => meu(x) && estaTravado(x)).count(),
     ]);
     return a + b + c + d;
-  } catch {
+  } catch (err) {
     // Mesmo cursor morto do Dexie no iOS — ver countPendentes acima.
+    // Fire-and-forget, mesmo motivo.
+    logEvent(motoristaId, "js_error", {
+      origem: "countTravados (cursor morto do Dexie)",
+      motivo: err instanceof Error ? err.message : String(err),
+    });
     return 0;
   }
 }
