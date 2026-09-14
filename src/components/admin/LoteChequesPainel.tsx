@@ -76,7 +76,12 @@ export function LoteChequesPainel({
   const [erro, setErro] = useState<string | null>(null);
   const [ampliada, setAmpliada] = useState<string | null>(null);
   const [totalRelatorioCentavos, setTotalRelatorioCentavos] = useState<number | null>(null);
-  const [confirmarDivergencia, setConfirmarDivergencia] = useState(false);
+  // Guarda A SOMA que foi confirmada, não um "sim" solto. Assim qualquer
+  // mudança — ticar, desticar, corrigir um valor, apagar linha — invalida a
+  // confirmação sozinha: a soma muda e a igualdade abaixo deixa de valer.
+  // Com um booleano, cada gatilho novo precisaria lembrar de resetar, e o
+  // esquecido deixaria passar uma divergência MAIOR do que a confirmada.
+  const [somaConfirmadaCentavos, setSomaConfirmadaCentavos] = useState<number | null>(null);
 
   // Rolar até a linha recém-criada: com 8 cheques na tela, a linha nova
   // nascia fora da vista e o botão ficava lá em cima.
@@ -99,6 +104,8 @@ export function LoteChequesPainel({
   const diferencaCentavos =
     totalRelatorioCentavos === null ? null : totalRelatorioCentavos - somaCentavos;
   const bate = diferencaCentavos === null || diferencaCentavos === 0;
+  const confirmarDivergencia =
+    somaConfirmadaCentavos !== null && somaConfirmadaCentavos === somaCentavos;
 
   function atualizar(id: string, campo: Partial<Linha>) {
     setLinhas((atual) =>
@@ -222,7 +229,7 @@ export function LoteChequesPainel({
       // o bloco amarelo; isto é a rede de segurança pra quem chamar a API na
       // mão ou pra estado dessincronizado.
       if (res.status === 409 && json.erro_conferencia) {
-        setConfirmarDivergencia(false);
+        setSomaConfirmadaCentavos(null);
         setErro(
           `A soma não bate: ticado ${formatBRL(json.soma)}, relatório ${formatBRL(
             json.total_informado
@@ -248,7 +255,7 @@ export function LoteChequesPainel({
       setFotos([]);
       setAberto(false);
       setTotalRelatorioCentavos(null);
-      setConfirmarDivergencia(false);
+      setSomaConfirmadaCentavos(null);
       router.refresh();
     } finally {
       setSalvando(false);
@@ -317,7 +324,7 @@ export function LoteChequesPainel({
             centavos={totalRelatorioCentavos}
             onChange={(v) => {
               setTotalRelatorioCentavos(v);
-              setConfirmarDivergencia(false);
+              setSomaConfirmadaCentavos(null);
             }}
             grande={false}
           />
@@ -545,7 +552,7 @@ export function LoteChequesPainel({
                     <li>um cheque do relatório não veio no maço</li>
                   </ul>
                   <button
-                    onClick={() => setConfirmarDivergencia(true)}
+                    onClick={() => setSomaConfirmadaCentavos(somaCentavos)}
                     className="mt-2 px-4 py-2 bg-amber-600 text-white rounded-lg font-semibold"
                   >
                     LANÇAR MESMO ASSIM
