@@ -96,13 +96,21 @@ export function BotaoSyncManual({ pendentes, online, onSyncDone, motoristaId }: 
 
   // Offline: é o NORMAL, não é erro. Sem vermelho, sem alarme — só o aviso
   // de que está guardado e vai sozinho.
+  //
+  // ⚠️ bg-slate-100, NÃO bg-cinza-fundo: `body` já é `cinza-fundo` (#f8fafc,
+  // globals.css), então o card ficaria da cor exata da tela e só a borda de
+  // 1px o separaria do fundo. Um aviso que o motorista não enxerga de relance
+  // — no sol, com o celular no suporte do painel — é o mesmo bug que este
+  // componente existe pra consertar, só que mais sutil.
   if (!online) {
     return (
-      <div className="card bg-cinza-fundo border-cinza-borda space-y-1">
+      <div className="card bg-slate-100 space-y-1">
         <p className="text-center text-base font-medium">
           📥 {rotuloPendentes} guardado{pendentes === 1 ? "" : "s"} no celular
         </p>
-        <p className="text-center text-sm text-cinza-suave">
+        {/* Esta é a linha que tranquiliza; fica no mesmo tamanho da de cima e
+            se distingue pela cor, não por ser menor. */}
+        <p className="text-center text-base text-cinza-suave">
           {pendentes === 1 ? "Vai" : "Vão"} sozinho{pendentes === 1 ? "" : "s"}{" "}
           quando pegar sinal.
         </p>
