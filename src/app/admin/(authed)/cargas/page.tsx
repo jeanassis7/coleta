@@ -6,7 +6,6 @@ import { formatDataHora } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function CargasPage() {
-  // Dev vê cargas de motorista de teste (com badge 🧪); admin nunca vê.
   const cargas = await buscarCargas();
 
   const linhasCsv = cargas.map((c) => {
@@ -65,8 +64,9 @@ export default async function CargasPage() {
       </div>
       <p className="text-sm text-cinza-suave mb-6">
         Todas as cargas dos motoristas (ativas, encerradas e canceladas).
-        Motoristas de teste aparecem só pra você (dev), marcados com 🧪 — o
-        admin não vê. Clique nas colunas pra ordenar.
+        Carga <strong>cancelada</strong> aparece apagada e com
+        &quot;cancelada&quot; na coluna Fim — ela nunca chegou a pesar na
+        balança. Clique nas colunas pra ordenar.
       </p>
       <TabelaCargas cargas={cargas} />
     </div>
