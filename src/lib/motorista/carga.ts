@@ -99,12 +99,26 @@ export async function fetchCargaAtiva(
 
     // Carga ativa no servidor MAS com descarga local esperando sync?
     // Então ela já foi encerrada aqui — o sync vai fechar no servidor.
+    //
+    // ⚠️ Só descarga AINDA NÃO FECHADA no servidor bloqueia. Contar todas
+    // as locais era um bug esperando o dia certo: o cleanup guarda a
+    // descarga sincronizada por 24h, então, quando o admin reabre uma carga
+    // (apagando a descarga), nessas 24h o app dizia "você não tem carga
+    // ativa" enquanto o servidor recusava abrir outra pelo índice único de
+    // 1 ativa. Motorista travado, sem saída pela tela.
+    //
+    // O mesmo predicado de temDescargaPendenteSync (acima) e de
+    // countPendentes (queue.ts) — três lugares, uma definição de pendente.
     try {
       const { getLocalDB } = await import("@/lib/db/dexie");
       const db = getLocalDB();
       const pendente = await db.descargas_locais
         .where("carga_id")
         .equals(carga.id)
+        .filter(
+          (d) =>
+            !d.registro_subido || !d.foto_subida || !d.carga_encerrada_servidor
+        )
         .count();
       if (pendente > 0) {
         clearCargaAtivaCached();
