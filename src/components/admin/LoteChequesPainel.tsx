@@ -320,6 +320,12 @@ export function LoteChequesPainel({
             Total do relatório{" "}
             <span className="text-cinza-suave font-normal">(opcional)</span>
           </label>
+          {/* Zero e vazio são o mesmo estado aqui (o InputDinheiro mapeia 0
+              para null), e tudo bem: um maço de cheques nunca soma zero, então
+              zero só pode ser engano de digitação ou campo não preenchido — os
+              dois querem dizer "não confira pela soma". O que NÃO pode é isso
+              ficar invisível: o rodapé diz "sem conferência pela soma" quando
+              há cheque ticado e nenhum total, pra ninguém achar que conferiu. */}
           <InputDinheiro
             centavos={totalRelatorioCentavos}
             onChange={(v) => {
@@ -527,6 +533,12 @@ export function LoteChequesPainel({
               )}
               {bate && totalRelatorioCentavos !== null && (
                 <span className="text-verde font-semibold"> · ✅ bate</span>
+              )}
+              {totalRelatorioCentavos === null && conferidas.length > 0 && (
+                <span className="text-cinza-suave">
+                  {" "}
+                  · sem conferência pela soma
+                </span>
               )}
             </p>
 

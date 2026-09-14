@@ -36,6 +36,20 @@ export async function POST(req: NextRequest) {
     body.total_conferencia === undefined || body.total_conferencia === null
       ? null
       : Math.round(Number(body.total_conferencia) * 100);
+
+  // Lixo no total NÃO pode virar "não informou": um guard que se desliga
+  // sozinho ao receber entrada inválida é pior que guard nenhum, porque
+  // parece que conferiu. Vazio/null continua sendo ausência legítima.
+  if (
+    totalConferenciaCentavos !== null &&
+    !Number.isFinite(totalConferenciaCentavos)
+  ) {
+    return NextResponse.json(
+      { error: "total do relatório inválido" },
+      { status: 400 }
+    );
+  }
+
   const confirmado = body.confirmado === true;
 
   if (!comprador_id) {
@@ -72,7 +86,10 @@ export async function POST(req: NextRequest) {
     const emitente = String(l.emitente || "").trim();
     const bom_para = String(l.bom_para || "").trim();
     const valor = Number(l.valor);
-    const ondeEsta = `cheque ${i + 1}`;
+    const ondeEsta =
+      banco || emitente
+        ? `cheque ${i + 1} (${[banco, emitente].filter(Boolean).join(" · ")})`
+        : `cheque ${i + 1}`;
 
     if (!banco) {
       return NextResponse.json(
@@ -121,7 +138,6 @@ export async function POST(req: NextRequest) {
   // Segundo clique (`confirmado`) passa — o padrão de antiburro da casa.
   if (
     totalConferenciaCentavos !== null &&
-    Number.isFinite(totalConferenciaCentavos) &&
     !confirmado
   ) {
     const somaCentavos = prontos.reduce(
