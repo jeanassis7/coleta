@@ -133,9 +133,11 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
             return (
               <tr
                 key={c.id}
-                className={`border-b border-cinza-borda hover:bg-slate-50${
-                  c.status === "cancelada" ? " opacity-50" : ""
-                }`}
+                className={
+                  c.status === "cancelada"
+                    ? "border-b border-cinza-borda bg-slate-50 text-cinza-suave hover:bg-slate-100"
+                    : "border-b border-cinza-borda hover:bg-slate-50"
+                }
               >
                 <td className="py-2 pr-3 whitespace-nowrap">
                   <Link
@@ -159,12 +161,18 @@ export function TabelaCargas({ cargas }: { cargas: CargaDetalhada[] }) {
                 {/* Vazio e cancelada são coisas diferentes: carga cancelada
                     nunca recebe encerrada_em, e "—" fazia ela parecer
                     aberta na leitura de cima pra baixo (o Jean leu 3
-                    cargas abertas em 12/09/2026, e só havia 1). */}
+                    cargas abertas em 12/09/2026, e só havia 1).
+                    Esmaecimento por cor herdada, não por opacity: opacity
+                    compõe na subárvore inteira e apagaria justamente o badge
+                    de Status e este texto — os dois elementos que esta
+                    correção existe pra tornar visíveis. */}
                 <td className="py-2 pr-3 whitespace-nowrap">
                   {c.encerrada_em ? (
                     formatDataHora(c.encerrada_em)
                   ) : c.status === "cancelada" ? (
-                    <span className="text-cinza-suave italic">cancelada</span>
+                    <span className="text-cinza-suave font-medium">
+                      cancelada
+                    </span>
                   ) : (
                     "—"
                   )}
