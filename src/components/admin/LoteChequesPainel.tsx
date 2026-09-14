@@ -43,6 +43,10 @@ interface Linha {
   observacao: string;
 }
 
+/** Dólar no padrão brasileiro: 0,04 e não 0.04. */
+const formatUSD = (v: number) =>
+  v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 let seq = 0;
 const novaLinha = (parcial: Partial<Linha> = {}): Linha => ({
   id: `l${seq++}`,
@@ -447,10 +451,12 @@ export function LoteChequesPainel({
         </div>
       )}
 
+      {/* Dólar com VÍRGULA: o app inteiro é pt-BR, e "US$ 0.04" no meio de
+          uma tela onde todo o resto usa vírgula lê como erro de digitação. */}
       {custoOcr && (
         <p className="text-xs text-cinza-suave">
-          ≈ US$ {custoOcr.destaLeitura.toFixed(2)} nesta leitura · US${" "}
-          {custoOcr.doMes.toFixed(2)} no mês
+          ≈ US$ {formatUSD(custoOcr.destaLeitura)} nesta leitura · US${" "}
+          {formatUSD(custoOcr.doMes)} no mês
           {custoOcr.cotacao !== null &&
             ` (≈ ${formatBRL(custoOcr.doMes * custoOcr.cotacao)})`}{" "}
           · estimativa pelo {custoOcr.modelo} · o valor real está no painel da
