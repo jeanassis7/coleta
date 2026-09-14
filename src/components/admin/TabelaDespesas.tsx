@@ -2,37 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
-import { ModalConfirmar } from "@/components/admin/Modais";
 import { ModalEditarDespesa } from "@/components/admin/ModalEditarDespesa";
+import { ModalApagarDespesa } from "@/components/admin/ModalApagarDespesa";
 import type { DespesaAdmin } from "@/lib/admin/queries";
 
 export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
-  const router = useRouter();
   const [editando, setEditando] = useState<DespesaAdmin | null>(null);
   const [apagando, setApagando] = useState<DespesaAdmin | null>(null);
-  const [loading, setLoading] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
-
-  async function apagar(d: DespesaAdmin) {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/admin/despesas/${d.id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) {
-        setAviso("Erro: " + data.error);
-        setTimeout(() => setAviso(null), 8000);
-      } else {
-        if (data.aviso) setAviso(data.aviso);
-        router.refresh();
-      }
-    } finally {
-      setLoading(false);
-      setApagando(null);
-    }
-  }
 
   if (despesas.length === 0) {
     return (
@@ -131,14 +110,10 @@ export function TabelaDespesas({ despesas }: { despesas: DespesaAdmin[] }) {
       )}
 
       {apagando && (
-        <ModalConfirmar
-          titulo="Apagar essa despesa?"
-          descricao={`"${apagando.descricao}" · ${formatBRL(apagando.valor)} · ${apagando.motorista_nome}. A foto do comprovante também será apagada. Atenção: o saldo do motorista vai AUMENTAR ${formatBRL(apagando.valor)}, porque esse gasto deixa de contar.`}
-          confirmarLabel="Apagar"
-          perigo
-          carregando={loading}
-          onConfirmar={() => apagar(apagando)}
+        <ModalApagarDespesa
+          despesa={apagando}
           onFechar={() => setApagando(null)}
+          onAviso={setAviso}
         />
       )}
     </div>
