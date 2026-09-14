@@ -231,9 +231,14 @@ export default async function CargaDetalhePage({
         />
       </div>
       <p className="text-sm text-cinza-suave mb-3">
-        Em ordem cronológica. Clique em 📷 pra ver a foto, ou{" "}
-        <strong>na coleta, despesa ou abastecimento</strong> pra corrigir ou
-        apagar.
+        {/* A coleta apaga daqui (o drawer tem o botão); despesa e
+            abastecimento só corrigem — apagar as duas continua sendo em
+            /admin/despesas e /admin/abastecimentos. O texto diz exatamente
+            isso pra não prometer botão que não existe. */}
+        Em ordem cronológica. Clique em 📷 pra ver a foto, na{" "}
+        <strong>coleta</strong> pra corrigir ou apagar, ou na{" "}
+        <strong>despesa</strong> e no <strong>abastecimento</strong> pra
+        corrigir.
       </p>
       <LinhaDoTempoCarga carga={carga} />
 
