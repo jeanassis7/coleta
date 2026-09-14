@@ -1,12 +1,13 @@
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
-import { buscarCargaCompleta } from "@/lib/admin/queries";
+import { buscarCargaCompleta, buscarCaminhoes } from "@/lib/admin/queries";
 import { formatBRL, formatDataHora } from "@/lib/format";
 import { LinhaDoTempoCarga } from "@/components/admin/LinhaDoTempoCarga";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import { AdicionarColetaNaCarga } from "@/components/admin/AdicionarColetaNaCarga";
 import { ApagarCarga } from "@/components/admin/ApagarCarga";
+import { CorrigirDadosCarga } from "@/components/admin/CorrigirDadosCarga";
 import type { PontoCarga } from "@/components/admin/MapaCarga";
 
 const MapaCarga = nextDynamic(() => import("@/components/admin/MapaCarga"), {
@@ -24,8 +25,18 @@ export default async function CargaDetalhePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const carga = await buscarCargaCompleta(id);
+  const [carga, caminhoes] = await Promise.all([
+    buscarCargaCompleta(id),
+    buscarCaminhoes(),
+  ]);
   if (!carga) notFound();
+
+  // Caminhão de carga é sempre tipo "caminhao" (nunca "carro"). Inclui o
+  // atual mesmo se foi desativado depois — senão o dropdown de correção
+  // ficaria sem a opção que já está selecionada.
+  const caminhoesParaTroca = caminhoes.filter(
+    (c) => c.tipo === "caminhao" && (c.ativo || c.id === carga.caminhao_id)
+  );
 
   const gastoColetas = carga.coletas.reduce((s, c) => s + Number(c.valor_pago), 0);
   const gastoDespesas = carga.despesas.reduce((s, d) => s + Number(d.valor), 0);
@@ -117,6 +128,18 @@ export default async function CargaDetalhePage({
       </div>
 
       {/* Cabeçalho */}
+      <div className="flex justify-end mb-1">
+        <CorrigirDadosCarga
+          carga={{
+            id: carga.id,
+            caminhao_id: carga.caminhao_id,
+            km_inicial: carga.km_inicial,
+            km_final: carga.km_final,
+            iniciada_em: carga.iniciada_em,
+          }}
+          caminhoes={caminhoesParaTroca}
+        />
+      </div>
       <div className="card mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <Info
           rotulo="Caminhão"
@@ -233,7 +256,8 @@ export default async function CargaDetalhePage({
       <p className="text-sm text-cinza-suave mb-3">
         Em ordem cronológica. Clique em 📷 pra ver a foto, ou{" "}
         <strong>na coleta, despesa ou abastecimento</strong> pra corrigir ou
-        apagar.
+        apagar. A descarga tem seu próprio "Corrigir peso" ao lado do
+        "Apagar descarga".
       </p>
       <LinhaDoTempoCarga carga={carga} />
 

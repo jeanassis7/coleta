@@ -661,6 +661,7 @@ export interface CargaCompleta {
   id: string;
   motorista_id: string;
   motorista_nome: string;
+  caminhao_id: string;
   caminhao_placa: string;
   caminhao_marca: string;
   caminhao_cor: string;
@@ -749,7 +750,7 @@ export async function buscarCargaCompleta(
   const { data, error } = await supabase
     .from("cargas")
     .select(
-      `id, motorista_id, km_inicial, km_final, status, iniciada_em, encerrada_em,
+      `id, motorista_id, caminhao_id, km_inicial, km_final, status, iniciada_em, encerrada_em,
        foto_painel_path,
        profiles!cargas_motorista_id_fkey(nome),
        caminhoes(placa, marca, cor, capacidade_l, tara_kg),
@@ -772,6 +773,7 @@ export async function buscarCargaCompleta(
     id: r.id,
     motorista_id: r.motorista_id,
     motorista_nome: r.profiles?.nome || "—",
+    caminhao_id: r.caminhao_id,
     caminhao_placa: r.caminhoes?.placa || "—",
     caminhao_marca: r.caminhoes?.marca || "",
     caminhao_cor: r.caminhoes?.cor || "",
