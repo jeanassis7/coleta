@@ -337,10 +337,13 @@ caça a linha no meio das despesas de todos os motoristas.
   recalcula sozinho, não se escreve nele). Os antiburros do motorista valem
   igual no painel: peso ≤ tara **bloqueia em vermelho**; ±30% contra
   `soma_litros × 0,9` são duas etapas.
-- **C3. Apagar descarga.** Reabre a carga (`status='ativa'`, `encerrada_em`
-  nulo). **Bloqueia** se o motorista já tiver outra carga ativa — o índice
-  único proíbe, e a mensagem explica em vez de vazar erro de banco. Duas
-  etapas, porque tira óleo do estoque.
+- **C3. Apagar descarga.** Reabre a carga no servidor **e no app do
+  motorista**. Decisão do Evaner (14/09): *"um dedo errado do motorista pra
+  bugar tudo e sem poder voltar atrás é ruim."* **Bloqueia** se o motorista já
+  tiver outra carga ativa — o índice único proíbe, e a mensagem explica em vez
+  de vazar erro de banco. Duas etapas, porque tira óleo do estoque.
+  **As nuances estão na seção própria abaixo — sete, e uma delas trava o
+  motorista sem saída pela tela.**
 - **C4. Editar a carga.** `PATCH /api/admin/cargas/[id]` novo: `km_inicial`,
   `km_final`, `caminhao_id`, `iniciada_em`. Guards: `km_final > km_inicial`
   bloqueia; salto de 1.500 km contra o histórico do caminhão são duas etapas
@@ -349,19 +352,141 @@ caça a linha no meio das despesas de todos os motoristas.
 ### Régua do dinheiro (C2 e C3 mexem em estoque)
 
 1. **Maior que o limite** — apagar descarga pode deixar o estoque **negativo**
-   se o óleo já foi vendido. A tela mostra o saldo resultante; negativo pede
-   segundo clique.
+   se o óleo já foi vendido (N6). A tela mostra o saldo resultante; negativo
+   pede segundo clique. Medido: 84.780 kg de folga hoje.
 2. **Zero/negativo** — peso ≤ tara é impossível: vermelho, bloqueia.
-3. **Dois cliques** — DELETE filtra por id; segunda vez é 404.
-4. **Apagar depois** — o desfazer é **completo**: some a descarga *e* a carga
-   reabre. Meio desfazer deixaria carga encerrada sem descarga.
+3. **Dois cliques** — DELETE filtra por id; segunda vez é 404. A corrida de
+   verdade é outra: o celular re-inserindo a descarga apagada (N4), e quem
+   fecha ela é a Parte 3.
+4. **Apagar depois** — o desfazer é **completo**: some a descarga, a carga
+   reabre `status`+`encerrada_em`+**`km_final`** (N2), a foto sai do Storage
+   (N7), e o app do motorista volta a enxergar a carga (N1). Meio desfazer
+   deixa o motorista travado.
 5. **Conta duas vezes** — `movimentos_estoque` lê a tabela `descargas`, então
-   some junto. Nada a dobrar.
+   some junto. O risco oposto é o N5: dinheiro que **deixa de contar** quando
+   há compra direta amarrada à carga.
 6. **Tela mascarando** — mostrar o estoque resultante **inclusive negativo**.
    Nenhum `Math.max(0, ...)`.
-7. **Guard no servidor** — todos os quatro, no endpoint.
-8. **Teste do caminho errado** — três casos novos no `e2e-modulo1.mjs`: peso <
-   tara, apagar descarga com outra carga ativa, `km_final < km_inicial`.
+7. **Guard no servidor** — todos, no endpoint. A tela não decide nada sozinha.
+8. **Teste do caminho errado** — casos novos no `e2e-modulo1.mjs`: peso < tara;
+   apagar descarga com outra carga ativa (espera 409); `km_final < km_inicial`;
+   e **apagar descarga e provar que a carga voltou com `km_final` nulo**.
+
+Fora da régua, mas do mesmo tamanho: **N3** — a comissão daquele período muda.
+23 comissões já pagas somam R$ 33.216,59. Avisa, não bloqueia: o fato mudou
+mesmo.
+
+### C3 — as sete nuances de apagar uma descarga
+
+Varridas no código em 14/09 a pedido do Evaner, antes de escrever qualquer
+linha. Cada uma traz o que foi **medido** junto.
+
+#### N1 — o app do motorista TRAVA (a mais grave)
+
+`src/lib/motorista/carga.ts` tem duas funções que perguntam a mesma coisa e
+**respondem diferente**:
+
+```js
+// linha 60 — temDescargaPendenteSync: CERTO
+.filter((d) => !d.registro_subido || !d.carga_encerrada_servidor)
+
+// linha 105 — dentro de fetchCargaAtiva: conta TODAS, sem filtro
+const pendente = await db.descargas_locais.where("carga_id").equals(carga.id).count();
+if (pendente > 0) { clearCargaAtivaCached(); return null; }
+```
+
+A descarga sincronizada **fica 24h no celular** antes do cleanup. Então, na
+janela de 24h depois de descarregar:
+
+1. o admin apaga a descarga e a carga reabre no servidor;
+2. o app ainda vê a descarga local, devolve `null` → **"você não tem carga
+   ativa"**;
+3. o motorista tenta abrir carga nova → o servidor recusa pelo índice único,
+   porque a reaberta *está* ativa.
+
+**Motorista travado, sem saída pela tela.** Hoje isso não aparece porque
+servidor e celular concordam que a carga fechou; reabrir é justamente o que
+os faz discordar.
+
+**Conserto:** a linha 105 passa a usar o mesmo predicado do `countPendentes()`
+— `!registro_subido || !foto_subida || !carga_encerrada_servidor`. Descarga já
+sincronizada, esperando só o cleanup, para de bloquear. É corrigir uma
+assimetria que já existe entre duas funções do mesmo arquivo.
+
+#### N2 — o `km_final` fica para trás
+
+`queue.ts:402` (`posInsert`) grava **três** campos ao encerrar:
+
+```js
+{ status: "encerrada", encerrada_em: ..., ...(d.km_final ? { km_final: d.km_final } : {}) }
+```
+
+Reabrir tem que desfazer os três. Carga `ativa` com `km_final` preenchido
+mostra "km rodado" de uma carga que ainda está rodando e envenena o km/L da
+frota inteira.
+
+#### N3 — a comissão já paga
+
+`src/lib/admin/remuneracao.ts:112` calcula a comissão a partir de `descargas`
+com `cargas.status = 'encerrada'` — a pesagem é o fato gerador. Apagar a
+descarga tira os litros da conta, **e a carga reaberta sai do filtro pelos
+dois motivos ao mesmo tempo**.
+
+Medido: **23 comissões já pagas, R$ 33.216,59.**
+
+Não dá pra impedir — o fato mudou de verdade. Mas a tela **avisa** quando a
+data da descarga é anterior ao último pagamento de comissão daquele
+motorista, no mesmo espírito do aviso que a coleta retroativa já dá quando
+cai em ciclo fechado.
+
+#### N4 — a corrida do re-sync
+
+Descarga ainda pendente no celular + admin apaga no servidor = o próximo sync
+**re-insere**. O `client_id` não protege: a linha foi apagada, então é insert
+novo, e a carga fecha sozinha de novo.
+
+Quando isso acontece? Exatamente quando o app acha que falhou e o servidor
+gravou — **o bug do iOS (0.2)**. Ou seja: **a Parte 3 (D) fecha essa corrida.**
+Por isso D sobe antes de C3, e a ordem de execução já está assim. Não
+inverter.
+
+#### N5 — o custo da compra vinculada some
+
+A view da 0050 soma no custo da descarga as `compras_diretas` da mesma carga
+com `entra_no_estoque = false`. Apagando a descarga, esse dinheiro **some do
+estoque inteiro**: a compra não entra pela própria linha (é excluída de
+propósito, senão o óleo contaria duas vezes) e deixa de entrar pela descarga.
+
+Medido: **zero casos hoje** — nenhuma compra direta amarrada a carga. Guardar
+mesmo assim, porque o dia que existir o buraco é silencioso: bloquear e
+explicar, em vez de deixar passar.
+
+#### N6 — estoque negativo
+
+Medido: **84.780 kg de fino** (custo médio R$ 1,5828) e 8.000 kg de grosso.
+Uma descarga sozinha não derruba pra negativo hoje, mas o óleo daquela carga
+pode já ter sido vendido.
+
+Régua #1 e #6: a tela mostra **o saldo que vai ficar**, e negativo pede
+segundo clique. Nenhum `Math.max(0, ...)`.
+
+#### N7 — a foto do papel da balança
+
+Apagar a descarga apaga `foto_papel_path` do Storage. É o mesmo nome de
+coluna que o C5 conserta — fazer os dois com o nome certo de uma vez.
+
+### O que C3 faz, em ordem
+
+1. valida: existe outra carga ativa do mesmo motorista? → 409 com a explicação
+2. valida: existe compra direta fora-do-estoque amarrada à carga? (N5) → 409
+3. calcula e devolve o estoque resultante; negativo exige `confirmado` (N6)
+4. avisa se a descarga é anterior à última comissão paga (N3) — avisa, não bloqueia
+5. apaga a descarga
+6. reabre a carga: `status='ativa'`, `encerrada_em=null`, **`km_final=null`** (N2)
+7. apaga a foto `foto_papel_path` (N7)
+
+E, fora do endpoint, o conserto do N1 no app do motorista — **sem ele o C3
+trava o motorista**, então os dois são a mesma entrega.
 
 ### Referência de cascata
 
