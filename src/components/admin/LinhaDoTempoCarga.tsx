@@ -4,6 +4,8 @@ import { useState } from "react";
 import { formatBRL, formatDataHora, formatLitros } from "@/lib/format";
 import { VisualizadorFoto } from "@/components/admin/VisualizadorFoto";
 import { DrawerDetalhe } from "@/components/admin/DrawerDetalhe";
+import { ModalEditarDespesa } from "@/components/admin/ModalEditarDespesa";
+import { ModalEditarAbastecimento } from "@/components/admin/ModalEditarAbastecimento";
 import type { CargaCompleta } from "@/lib/admin/queries";
 
 type Evento =
@@ -41,6 +43,16 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
   const [coletaAberta, setColetaAberta] = useState<
     CargaCompleta["coletas"][number] | null
   >(null);
+  // Despesa e abastecimento reusam os MESMOS modais da tabela de
+  // /admin/despesas e /admin/abastecimentos — mesmo motivo da coleta acima:
+  // é a única dona da regra de dinheiro (conta a pagar amarrada).
+  const [despesaAberta, setDespesaAberta] = useState<
+    CargaCompleta["despesas"][number] | null
+  >(null);
+  const [abastAberto, setAbastAberto] = useState<
+    CargaCompleta["abastecimentos"][number] | null
+  >(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const eventos: Evento[] = [
     ...carga.coletas.map((c) => ({
       tipo: "coleta" as const,
@@ -88,12 +100,16 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
             onClick={
               e.tipo === "coleta"
                 ? () => setColetaAberta(e.dados)
-                : undefined
+                : e.tipo === "despesa"
+                  ? () => setDespesaAberta(e.dados)
+                  : e.tipo === "abastecimento"
+                    ? () => setAbastAberto(e.dados)
+                    : undefined
             }
             className={`card border-l-4 ${est.cor} flex items-start gap-3${
-              e.tipo === "coleta"
-                ? " cursor-pointer hover:border-verde hover:bg-slate-50 transition-colors"
-                : ""
+              e.tipo === "descarga"
+                ? ""
+                : " cursor-pointer hover:border-verde hover:bg-slate-50 transition-colors"
             }`}
           >
             <div className="text-xl shrink-0" title={est.rotulo}>
@@ -125,6 +141,12 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
         );
       })}
 
+      {aviso && (
+        <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
+          {aviso}
+        </div>
+      )}
+
       {coletaAberta && (
         <DrawerDetalhe
           key={coletaAberta.id}
@@ -135,6 +157,49 @@ export function LinhaDoTempoCarga({ carga }: { carga: CargaCompleta }) {
             profiles: { nome: carga.motorista_nome },
           }}
           onClose={() => setColetaAberta(null)}
+        />
+      )}
+
+      {despesaAberta && (
+        <ModalEditarDespesa
+          key={despesaAberta.id}
+          despesa={{
+            id: despesaAberta.id,
+            carga_id: carga.id,
+            // Mesmo motivo do drawer da coleta acima: aqui é sempre o
+            // motorista e o caminhão desta carga, não vale consulta a mais.
+            motorista_nome: carga.motorista_nome,
+            caminhao_placa: carga.caminhao_placa,
+            valor: despesaAberta.valor,
+            descricao: despesaAberta.descricao,
+            foto_path: despesaAberta.foto_path,
+            criado_em: despesaAberta.criado_em,
+            pago_na_hora: despesaAberta.pago_na_hora,
+          }}
+          onFechar={() => setDespesaAberta(null)}
+          onAviso={setAviso}
+        />
+      )}
+
+      {abastAberto && (
+        <ModalEditarAbastecimento
+          key={abastAberto.id}
+          abastecimento={{
+            id: abastAberto.id,
+            carga_id: carga.id,
+            motorista_nome: carga.motorista_nome,
+            caminhao_placa: carga.caminhao_placa,
+            posto_nome: abastAberto.posto_nome,
+            litros: abastAberto.litros,
+            valor: abastAberto.valor,
+            km_atual: abastAberto.km_atual,
+            foto_path: abastAberto.foto_path,
+            criado_em: abastAberto.criado_em,
+            pago_na_hora: abastAberto.pago_na_hora,
+            tipo: abastAberto.tipo,
+          }}
+          onFechar={() => setAbastAberto(null)}
+          onAviso={setAviso}
         />
       )}
     </div>

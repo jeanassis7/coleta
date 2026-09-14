@@ -232,7 +232,8 @@ export default async function CargaDetalhePage({
       </div>
       <p className="text-sm text-cinza-suave mb-3">
         Em ordem cronológica. Clique em 📷 pra ver a foto, ou{" "}
-        <strong>na coleta</strong> pra corrigir ou apagar.
+        <strong>na coleta, despesa ou abastecimento</strong> pra corrigir ou
+        apagar.
       </p>
       <LinhaDoTempoCarga carga={carga} />
 
