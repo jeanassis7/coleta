@@ -33,7 +33,13 @@ interface Linha {
   emitente: string;
   numero: string;
   valorCentavos: number | null;
+  /** Só conferência na tela (número × extenso) — NUNCA vai pro /lote. */
+  valorExtensoCentavos: number | null;
   bomPara: string;
+  /** Só conferência na tela — NUNCA vai pro /lote. */
+  bomParaOrigem: "" | "bom_para" | "data_assinatura";
+  /** Só conferência na tela — NUNCA vai pro /lote. */
+  anoAssumido: boolean;
   observacao: string;
 }
 
@@ -48,10 +54,26 @@ const novaLinha = (parcial: Partial<Linha> = {}): Linha => ({
   emitente: "",
   numero: "",
   valorCentavos: null,
+  valorExtensoCentavos: null,
   bomPara: "",
+  bomParaOrigem: "",
+  anoAssumido: false,
   observacao: "",
   ...parcial,
 });
+
+/**
+ * Diferença em meses de calendário entre duas datas "aaaa-mm-dd" (positivo
+ * = a depois de b). Só olha ano/mês — é o suficiente pra marcar "essa data
+ * está longe do recebimento", não precisa de precisão de dia. Data pura,
+ * nunca passa por Date/fuso (regra do projeto).
+ */
+function diferencaEmMeses(aIso: string, bIso: string): number {
+  const [anoA, mesA] = aIso.split("-").map(Number);
+  const [anoB, mesB] = bIso.split("-").map(Number);
+  if (!anoA || !mesA || !anoB || !mesB) return 0;
+  return anoA * 12 + mesA - (anoB * 12 + mesB);
+}
 
 export function LoteChequesPainel({
   compradores,
@@ -158,6 +180,9 @@ export function LoteChequesPainel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         imagens: imgs.map((i) => ({ media_type: i.tipo, data: i.base64 })),
+        // Data que a tela já tem (campo "Recebido em") — o prompt usa ela
+        // pra assumir o ano do "bom para" quando ele vem sem ano (comum).
+        recebido_em: data,
       }),
     });
     const json = await res.json();
@@ -172,7 +197,10 @@ export function LoteChequesPainel({
       emitente?: string;
       numero?: string;
       valor?: number;
+      valor_extenso?: number;
       bom_para?: string;
+      bom_para_origem?: string;
+      ano_assumido?: boolean;
       observacao?: string;
     };
     const lidas: Linha[] = (json.cheques as LidoApi[]).map((c) =>
@@ -184,7 +212,16 @@ export function LoteChequesPainel({
         emitente: c.emitente || "",
         numero: c.numero || "",
         valorCentavos: c.valor && c.valor > 0 ? reaisParaCentavos(c.valor) : null,
+        valorExtensoCentavos:
+          c.valor_extenso && c.valor_extenso > 0
+            ? reaisParaCentavos(c.valor_extenso)
+            : null,
         bomPara: c.bom_para || "",
+        bomParaOrigem:
+          c.bom_para_origem === "bom_para" || c.bom_para_origem === "data_assinatura"
+            ? c.bom_para_origem
+            : "",
+        anoAssumido: c.ano_assumido === true,
         observacao: c.observacao || "",
       })
     );
@@ -400,6 +437,26 @@ export function LoteChequesPainel({
           {linhas.map((l) => {
             const foto =
               l.imagemIndex != null ? fotos[l.imagemIndex] : undefined;
+            // Divergência número × extenso: só conta quando os DOIS foram
+            // lidos e discordam. Um dos dois em branco não é divergência,
+            // é só falta de conferência — merece um aviso mais leve.
+            const divergeValor =
+              l.valorCentavos !== null &&
+              l.valorExtensoCentavos !== null &&
+              l.valorCentavos !== l.valorExtensoCentavos;
+            const faltaConferirValor =
+              !divergeValor &&
+              (l.valorCentavos !== null || l.valorExtensoCentavos !== null) &&
+              (l.valorCentavos === null || l.valorExtensoCentavos === null);
+            // Antiburro de janela: só marca (amarelo), nunca bloqueia. Fora
+            // de mais de 12 meses à frente ou 6 meses atrás do recebimento.
+            const foraDaJanela =
+              l.bomPara && data
+                ? (() => {
+                    const diff = diferencaEmMeses(l.bomPara, data);
+                    return diff > 12 || diff < -6;
+                  })()
+                : false;
             return (
               <div
                 key={l.id}
@@ -420,6 +477,20 @@ export function LoteChequesPainel({
                 )}
                 {l.observacao && l.deuPraLer && (
                   <p className="text-xs text-cinza-suave mb-2">⚠️ {l.observacao}</p>
+                )}
+                {l.deuPraLer && divergeValor && (
+                  <p className="text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-2 py-1.5 mb-2">
+                    ⚠️ O número diz{" "}
+                    {formatBRL(centavosParaReais(l.valorCentavos!))} e o extenso diz{" "}
+                    {formatBRL(centavosParaReais(l.valorExtensoCentavos!))} — confira
+                    na foto.
+                  </p>
+                )}
+                {l.deuPraLer && !divergeValor && faltaConferirValor && (
+                  <p className="text-xs text-cinza-suave mb-2">
+                    Só {l.valorCentavos !== null ? "o número" : "o extenso"} foi
+                    lido com certeza — confira o outro na foto.
+                  </p>
                 )}
 
                 <div className="flex gap-3">
@@ -467,6 +538,21 @@ export function LoteChequesPainel({
                         onChange={(e) => atualizar(l.id, { bomPara: e.target.value })}
                         className="w-full border border-cinza-borda rounded-lg px-2 py-1.5"
                       />
+                      {l.anoAssumido && (
+                        <p className="text-xs text-amber-700 mt-0.5">
+                          ano assumido pelo sistema
+                        </p>
+                      )}
+                      {l.bomParaOrigem === "data_assinatura" && (
+                        <p className="text-xs text-cinza-suave mt-0.5">
+                          sem &quot;bom para&quot; escrito — veio da data de assinatura
+                        </p>
+                      )}
+                      {foraDaJanela && (
+                        <p className="text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded px-1.5 py-0.5 mt-0.5">
+                          ⚠️ data distante do recebimento — confira
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs text-cinza-suave">
