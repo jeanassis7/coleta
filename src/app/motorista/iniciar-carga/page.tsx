@@ -9,6 +9,7 @@ import {
 } from "@/lib/motorista/carga";
 import { manualSync } from "@/lib/sync/trigger";
 import { logEvent } from "@/lib/events/log";
+import { ehErroDeRede } from "@/lib/sync/erro-de-rede";
 import { FotoPicker } from "@/components/motorista/FotoPicker";
 import { InputInteiro } from "@/components/InputInteiro";
 import { CardSaldo } from "@/components/motorista/CardSaldo";
@@ -238,9 +239,60 @@ export default function IniciarCargaPage() {
           setErro(
             "Você já tem uma carga aberta. Volta pra home que ela vai aparecer."
           );
-        } else {
-          setErro(error?.message || "Não consegui iniciar a carga.");
+          return;
         }
+
+        // Erro de REDE: o servidor pode ter criado a carga e a resposta ter
+        // morrido no caminho (iOS). Medido em 14/09/2026: o Lucimar cancelou
+        // e recomeçou 3x em 2 dias, uma delas 52 segundos depois — sintoma
+        // exato disso. Iniciar carga não passa pela fila offline (exige
+        // sinal por desenho), então a reconciliação é aqui mesmo.
+        if (ehErroDeRede(error)) {
+          const { data: jaAtiva } = await supabase
+            .from("cargas")
+            .select("id, caminhao_id, km_inicial, iniciada_em")
+            .eq("motorista_id", motoristaId)
+            .eq("status", "ativa")
+            .maybeSingle();
+          if (jaAtiva) {
+            const caminhao = caminhoes.find((c) => c.id === jaAtiva.caminhao_id);
+            if (caminhao) {
+              // Entrou. Segue o mesmo fluxo que o ramo de sucesso faz
+              // (cache local, sugestão de km/caminhão, log, navegação).
+              setCargaAtivaCached({
+                id: jaAtiva.id,
+                motorista_id: motoristaId,
+                caminhao_id: caminhao.id,
+                caminhao_placa: caminhao.placa,
+                caminhao_marca: caminhao.marca,
+                caminhao_cor: caminhao.cor,
+                capacidade_l: caminhao.capacidade_l,
+                tara_kg: caminhao.tara_kg,
+                km_inicial: jaAtiva.km_inicial,
+                iniciada_em: jaAtiva.iniciada_em,
+              });
+
+              localStorage.setItem(LAST_CAMINHAO_KEY, caminhao.id);
+              localStorage.setItem(
+                LAST_KM_KEY_PREFIX + caminhao.id,
+                String(jaAtiva.km_inicial)
+              );
+
+              await logEvent(motoristaId, "carga_iniciada", {
+                carga_id: jaAtiva.id,
+                caminhao_id: caminhao.id,
+                km_inicial: jaAtiva.km_inicial,
+                tem_foto_painel: !!fotoPainel,
+                reconciliado: true,
+              });
+
+              router.push("/motorista");
+              return;
+            }
+          }
+        }
+
+        setErro(error?.message || "Não consegui iniciar a carga.");
         return;
       }
 
