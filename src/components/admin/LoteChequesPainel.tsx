@@ -26,8 +26,10 @@ interface Linha {
    *  o gestor clicar de novo, o reenvio com o MESMO client_id não duplica. */
   clientId: string;
   conferido: boolean;
-  /** null quando foi digitada na mão */
-  imagemIndex: number | null;
+  /** null quando foi digitada na mão. Aponta pro `id` estável da foto (nunca
+   *  pro índice do array — remover uma foto do meio deslocaria os índices e
+   *  faria a linha errada apontar pra foto errada). */
+  imagemId: string | null;
   deuPraLer: boolean;
   banco: string;
   emitente: string;
@@ -43,6 +45,19 @@ interface Linha {
   observacao: string;
 }
 
+interface Foto {
+  /** Estável pra sempre (não é o índice do array) — é o que a linha guarda
+   *  pra achar a foto certa mesmo depois de outras serem removidas. */
+  id: string;
+  url: string;
+  base64: string;
+  tipo: string;
+  /** true só quando a LEVA dela terminou de ler com sucesso. Se a leva
+   *  falhar, a foto continua false — dá pra tentar de novo sem perder as
+   *  fotos de outras levas nem duplicar linha das que já leram. */
+  lida: boolean;
+}
+
 /** Dólar no padrão brasileiro: 0,04 e não 0.04. */
 const formatUSD = (v: number) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -52,7 +67,7 @@ const novaLinha = (parcial: Partial<Linha> = {}): Linha => ({
   id: `l${seq++}`,
   clientId: crypto.randomUUID(),
   conferido: false,
-  imagemIndex: null,
+  imagemId: null,
   deuPraLer: true,
   banco: "",
   emitente: "",
@@ -95,9 +110,18 @@ export function LoteChequesPainel({
   const [aberto, setAberto] = useState(false);
   const [compradorId, setCompradorId] = useState("");
   const [data, setData] = useState(hoje);
-  const [fotos, setFotos] = useState<{ url: string; base64: string; tipo: string }[]>([]);
+  const [fotos, setFotos] = useState<Foto[]>([]);
   const [linhas, setLinhas] = useState<Linha[]>([]);
+  // Duas fases distintas, de propósito: preparar (comprimir/acumular fotos,
+  // não chama API) e ler (chama a API de OCR). O botão "Ler" só existe pra
+  // separar as duas — chamar a API a cada foto tirada custava dinheiro a
+  // cada toque no celular.
+  const [adicionandoFotos, setAdicionandoFotos] = useState(false);
   const [lendo, setLendo] = useState(false);
+  const [progressoLeitura, setProgressoLeitura] = useState<{
+    atual: number;
+    total: number;
+  } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ampliada, setAmpliada] = useState<string | null>(null);
@@ -150,13 +174,16 @@ export function LoteChequesPainel({
     );
   }
 
-  async function escolherFotos(files: FileList | null) {
+  /** O botão de foto só ACUMULA — nunca chama a API. O gestor tira uma
+   *  foto por vez no celular (a câmera fecha e volta pra tela a cada
+   *  toque), e chamar a leitura a cada uma custaria dinheiro a cada toque. */
+  async function escolherFotos(files: FileList | null, inputEl: HTMLInputElement) {
     if (!files || files.length === 0) return;
     setErro(null);
-    setLendo(true);
+    setAdicionandoFotos(true);
     try {
-      const novas: { url: string; base64: string; tipo: string }[] = [];
-      for (const file of Array.from(files).slice(0, 10)) {
+      const novas: Foto[] = [];
+      for (const file of Array.from(files)) {
         // Comprime antes de subir: cheque não precisa de resolução de
         // impressão, e payload grande estoura o limite da função serverless.
         const comprimida = await imageCompression(file, {
@@ -171,30 +198,57 @@ export function LoteChequesPainel({
           r.readAsDataURL(comprimida);
         });
         novas.push({
+          id: crypto.randomUUID(),
           url: URL.createObjectURL(comprimida),
           base64,
           tipo: comprimida.type || "image/jpeg",
+          lida: false,
         });
       }
-      setFotos(novas);
-      // Em levas de 3: 10 fotos numa chamada só estouravam o limite de
-      // payload da função (4,5MB) com erro genérico antes de qualquer coisa.
-      for (let i = 0; i < novas.length; i += 3) {
-        await ler(novas.slice(i, i + 3), i);
-      }
+      // Acumula — nunca substitui. Escolher fotos de novo não pode apagar
+      // as anteriores nem desalinhar as linhas já lidas.
+      setFotos((atual) => [...atual, ...novas]);
     } catch (e) {
       setErro("Não consegui preparar as fotos: " + String(e));
     } finally {
-      setLendo(false);
+      setAdicionandoFotos(false);
+      // Sem isso, escolher a MESMA foto de novo não dispara o onChange (o
+      // navegador só avisa quando o valor muda) e a tela parece travada.
+      inputEl.value = "";
     }
   }
 
-  async function ler(imgs: { base64: string; tipo: string }[], offset = 0) {
+  function removerFoto(id: string) {
+    setFotos((atual) => {
+      const alvo = atual.find((f) => f.id === id);
+      if (alvo) URL.revokeObjectURL(alvo.url);
+      return atual.filter((f) => f.id !== id);
+    });
+  }
+
+  type LidoApi = {
+    imagem_index?: number;
+    deu_pra_ler?: boolean;
+    banco?: string;
+    emitente?: string;
+    numero?: string;
+    valor?: number;
+    valor_extenso?: number;
+    bom_para?: string;
+    bom_para_origem?: string;
+    ano_assumido?: boolean;
+    observacao?: string;
+  };
+
+  /** Lê UMA leva (até 3 fotos, o limite de payload da função). Devolve
+   *  true/false pra quem chama saber se pode marcar a leva como lida —
+   *  em caso de falha as fotos continuam disponíveis pra tentar de novo. */
+  async function lerLeva(leva: Foto[]): Promise<boolean> {
     const res = await fetch("/api/admin/cheques/ocr", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        imagens: imgs.map((i) => ({ media_type: i.tipo, data: i.base64 })),
+        imagens: leva.map((f) => ({ media_type: f.tipo, data: f.base64 })),
         // Data que a tela já tem (campo "Recebido em") — o prompt usa ela
         // pra assumir o ano do "bom para" quando ele vem sem ano (comum).
         recebido_em: data,
@@ -203,25 +257,16 @@ export function LoteChequesPainel({
     const json = await res.json();
     if (!res.ok) {
       setErro(json.error || "A leitura falhou. Lance na mão.");
-      return;
+      return false;
     }
-    type LidoApi = {
-      imagem_index?: number;
-      deu_pra_ler?: boolean;
-      banco?: string;
-      emitente?: string;
-      numero?: string;
-      valor?: number;
-      valor_extenso?: number;
-      bom_para?: string;
-      bom_para_origem?: string;
-      ano_assumido?: boolean;
-      observacao?: string;
-    };
     const lidas: Linha[] = (json.cheques as LidoApi[]).map((c) =>
       novaLinha({
-        imagemIndex:
-          typeof c.imagem_index === "number" ? c.imagem_index + offset : null,
+        // imagem_index vem RELATIVO a esta leva — converte pro id estável
+        // da foto na hora, e a linha nunca mais depende de posição.
+        imagemId:
+          typeof c.imagem_index === "number" && leva[c.imagem_index]
+            ? leva[c.imagem_index].id
+            : null,
         deuPraLer: c.deu_pra_ler !== false,
         banco: c.banco || "",
         emitente: c.emitente || "",
@@ -254,6 +299,36 @@ export function LoteChequesPainel({
             ? json.custo.cotacao
             : null,
       });
+    }
+    return true;
+  }
+
+  /** O botão "Ler" dispara isto: lê SÓ as fotos ainda não lidas, em levas
+   *  de 3 (limite de payload de 4,5MB da função da Vercel). Ler de novo
+   *  não relê o que já leu — não cobra de novo nem duplica linha. */
+  async function lerPendentes() {
+    const pendentes = fotos.filter((f) => !f.lida);
+    if (pendentes.length === 0) return;
+    setErro(null);
+    setLendo(true);
+    setProgressoLeitura({ atual: 0, total: pendentes.length });
+    try {
+      for (let i = 0; i < pendentes.length; i += 3) {
+        const leva = pendentes.slice(i, i + 3);
+        const ok = await lerLeva(leva);
+        if (ok) {
+          const idsDaLeva = new Set(leva.map((f) => f.id));
+          setFotos((atual) =>
+            atual.map((f) => (idsDaLeva.has(f.id) ? { ...f, lida: true } : f))
+          );
+        }
+        setProgressoLeitura((p) =>
+          p ? { ...p, atual: Math.min(p.atual + leva.length, p.total) } : p
+        );
+      }
+    } finally {
+      setLendo(false);
+      setProgressoLeitura(null);
     }
   }
 
@@ -407,18 +482,22 @@ export function LoteChequesPainel({
         {ocrDisponivel ? (
           <label className="text-sm">
             <span className="text-verde hover:underline cursor-pointer font-medium">
-              📷 Ler por foto
+              📷 Adicionar fotos
             </span>
             <input
               type="file"
               accept="image/*"
               multiple
               className="hidden"
-              disabled={lendo}
-              onChange={(e) => escolherFotos(e.target.files)}
+              disabled={adicionandoFotos}
+              onChange={(e) => {
+                const el = e.currentTarget;
+                escolherFotos(el.files, el);
+              }}
             />
             <span className="text-cinza-suave block text-xs mt-0.5">
-              Até 10 fotos. Pode fotografar o maço junto.
+              Tire quantas fotos precisar, uma de cada vez ou o maço junto.
+              Depois toque em &quot;Ler&quot;.
             </span>
           </label>
         ) : (
@@ -429,26 +508,54 @@ export function LoteChequesPainel({
         )}
       </div>
 
-      {lendo && (
-        <p className="text-sm text-cinza-suave">
-          Lendo as fotos… isso leva alguns segundos.
-        </p>
+      {adicionandoFotos && (
+        <p className="text-sm text-cinza-suave">Preparando fotos…</p>
       )}
 
       {fotos.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {fotos.map((f, i) => (
-            <button
-              key={i}
-              onClick={() => setAmpliada(f.url)}
-              className="shrink-0 border border-cinza-borda rounded-lg overflow-hidden"
-              title={`Foto ${i + 1} — clique pra ampliar`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={f.url} alt={`Foto ${i + 1}`} className="h-20 w-auto" />
-            </button>
+            <div key={f.id} className="relative shrink-0">
+              <button
+                onClick={() => setAmpliada(f.url)}
+                className={`border rounded-lg overflow-hidden block ${
+                  f.lida ? "border-cinza-borda" : "border-amber-300"
+                }`}
+                title={`Foto ${i + 1} — clique pra ampliar`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={f.url} alt={`Foto ${i + 1}`} className="h-20 w-auto" />
+              </button>
+              {!f.lida && (
+                <span className="absolute bottom-0 left-0 right-0 bg-amber-600/80 text-white text-[10px] text-center leading-tight">
+                  não lida
+                </span>
+              )}
+              <button
+                onClick={() => removerFoto(f.id)}
+                disabled={lendo}
+                title="Remover foto"
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-alerta text-white text-xs leading-none flex items-center justify-center disabled:opacity-40"
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
+      )}
+
+      {fotos.some((f) => !f.lida) && (
+        <button
+          onClick={lerPendentes}
+          disabled={lendo}
+          className="btn-primario disabled:opacity-40"
+        >
+          {lendo
+            ? `Lendo ${progressoLeitura?.atual ?? 0} de ${progressoLeitura?.total ?? 0}…`
+            : `🔍 Ler ${fotos.filter((f) => !f.lida).length} foto${
+                fotos.filter((f) => !f.lida).length === 1 ? "" : "s"
+              }`}
+        </button>
       )}
 
       {/* Dólar com VÍRGULA: o app inteiro é pt-BR, e "US$ 0.04" no meio de
@@ -475,7 +582,7 @@ export function LoteChequesPainel({
 
           {linhas.map((l) => {
             const foto =
-              l.imagemIndex != null ? fotos[l.imagemIndex] : undefined;
+              l.imagemId != null ? fotos.find((f) => f.id === l.imagemId) : undefined;
             // Divergência número × extenso: só conta quando os DOIS foram
             // lidos e discordam. Um dos dois em branco não é divergência,
             // é só falta de conferência — merece um aviso mais leve.

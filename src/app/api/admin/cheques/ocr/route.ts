@@ -262,9 +262,15 @@ export async function POST(req: NextRequest) {
   if (imagens.length === 0) {
     return NextResponse.json({ error: "mande ao menos uma foto" }, { status: 400 });
   }
-  if (imagens.length > 10) {
+  // Teto por CHAMADA, não pelo total de fotos da tela: é o limite de
+  // payload da função (4,5MB) que manda aqui, não uma regra de negócio. A
+  // tela nunca manda mais de 3 por vez (o batching fica bem abaixo disso).
+  if (imagens.length > 5) {
     return NextResponse.json(
-      { error: "no máximo 10 fotos por vez" },
+      {
+        error:
+          "no máximo 5 fotos por chamada — é o limite de payload da função",
+      },
       { status: 400 }
     );
   }
