@@ -309,7 +309,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const client = new Anthropic(); // lê ANTHROPIC_API_KEY do ambiente sozinho
+    // Lê ANTHROPIC_API_KEY do ambiente sozinho.
+    //
+    // ⚠️ ANTHROPIC_WORKSPACE_ID é OPCIONAL e só importa pra um caso: chave
+    // criada com escopo de ORGANIZAÇÃO. Ela não sabe em qual workspace rodar,
+    // e a API recusa com 400 pedindo o header `anthropic-workspace-id`
+    // (aconteceu de verdade em 14/09/2026, na primeira tentativa de ligar).
+    // Chave criada dentro de um workspace já carrega essa informação e não
+    // precisa de nada disso — por isso a variável não é obrigatória.
+    const client = new Anthropic({
+      defaultHeaders: process.env.ANTHROPIC_WORKSPACE_ID
+        ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
+        : undefined,
+    });
     const resposta = await client.messages.create({
       model: MODELO,
       max_tokens: 8000,
