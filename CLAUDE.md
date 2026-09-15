@@ -234,6 +234,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0068_movimentos_caixa.sql` — ⚠️ **A VIEW `movimentos_caixa` É A FONTE DO DINHEIRO.** Toda linha que mexe numa conta financeira, com sinal (+ entra, − sai). O `saldo_contas()` deixou de somar 14 braços por conta própria e virou a SOMA dela. Mesmo desenho do estoque (`movimentos_estoque` + `estoque_atual()`). **Mexer na view muda o caixa** — e a troca só subiu porque os saldos das 3 contas ficaram idênticos ao centavo
 - `0069_tipos_de_movimento.sql` — RPC `tipos_de_movimento()`: o filtro de tipo da tela de Lançamentos se monta a partir do DADO, não de lista no código. Fonte nova aparece sozinha
 - `0070_conta_paga_com_cheque_no_extrato.sql` — conta quitada com cheque entra no extrato com `conta_id` nulo (o saldo continua ignorando). Recebimento em cheque NÃO entra: o cheque vira dinheiro quando compensa, e a compensação já é uma linha
+- `0072_troco_tem_dono.sql` — `entradas_avulsas.origem_tipo/origem_id`: o troco do cheque deixa de nascer solto. Índice único parcial garante **um troco por cheque** (dois seriam caixa maior que o banco), e o DELETE do pagamento leva o troco junto — régua #4, "o desfazer tem que ser tão completo quanto o fazer". Não entra no DRE nem na anti-dobra: `entradas_avulsas` é caixa puro e o `jaTemConta` se monta só de `contas_a_pagar`
 - `0071_cheques_em_lote.sql` — RPCs `depositar_cheques()` e `compensar_cheques()`: o maço se deposita e se compensa de uma vez. **Tudo-ou-nada** (o UPDATE é um só e a função levanta exceção se a contagem não bater — PostgREST não tem transação de vários comandos, e lote meio-aplicado não dá erro nem dá pra reproduzir). ⚠️ **`cheques.conta_id` passa a ser gravado no DEPÓSITO**, não só na compensação — é seguro porque o único leitor é a `movimentos_caixa`, que filtra `status='compensado'`. **Braço novo que leia `cheques.conta_id` SEM filtrar status faz cheque depositado virar dinheiro que não existe.** O e2e tem um check só pra isso ("DEPÓSITO NÃO MEXE NO CAIXA"). As duas funções são `security invoker` de propósito: `definer` + `grant to authenticated` deixaria motorista depositar cheque
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
@@ -285,6 +286,14 @@ do bolso do motorista e desconta do saldo dele. Os três podem coexistir na
 MESMA coleta (0058) — o `pago_pela_sede` virou só "a sede entrou nessa", com
 CHECK amarrando os dois. Query nova que fala de saldo soma a **diferença**,
 nunca filtra por `not pago_pela_sede`.
+
+**O cheque tem que BATER com o que ele paga.** Cheque maior exige o **troco
+declarado** (valor + conta em que entrou) — não "lance depois no Caixa", que
+depende de memória e memória não fecha caixa. Cheque menor pergunta o que
+aconteceu: **resto** (nasce conta nova com a diferença) ou **desconto** (a
+conta passa a valer o cheque e acabou). As três portas seguem a mesma regra —
+pagar conta, lançar no extrato e fechar posto. Fechar uma e deixar a outra
+encostada só muda o lugar do buraco.
 
 **A saída que nasce de um fato NÃO se lança de novo pelo extrato.** A conta
 a pagar de origem `coleta`/`abastecimento`/`manutencao` já é a linha do

@@ -101,38 +101,75 @@ export async function POST(req: NextRequest) {
   // contra 500 de despesa e inflava o resultado do mês em 2.500 — e o
   // troco ficava fora do sistema. A tela de Contas já avisava disso; esta
   // não avisava nem no cliente nem no servidor.
+  let trocoValor = 0;
+  let trocoContaId: string | null = null;
+
+  // ⚠️ ATUALIZADO (15/09/2026): antes esta guarda só AVISAVA e um segundo
+  // clique (`confirmado`) passava por cima — com a instrução de "lance o
+  // troco como entrada avulsa depois". Instrução que depende de memória não
+  // fecha caixa: o troco simplesmente não era lançado, e o buraco continuava
+  // aberto atrás de uma confirmação.
+  //
+  // Agora o troco é EXIGIDO e registrado aqui mesmo, igual ao fechamento do
+  // posto (03/09) e ao pagamento de conta. Fechar uma porta e deixar a outra
+  // encostada só muda o lugar do buraco.
   if (cheque_id) {
     const { data: chq } = await client
       .from("cheques")
-      .select("valor, emitente")
+      .select("valor")
       .eq("id", cheque_id)
+      .eq("status", "em_carteira")
       .maybeSingle();
-    const vChq = Math.round(Number(chq?.valor ?? 0) * 100) / 100;
-    const troco = Math.round((vChq - valor) * 100) / 100;
-    if (troco > 0.009 && !body.confirmado) {
+    if (!chq) {
       return NextResponse.json(
-        {
-          error: `O cheque é de ${vChq.toFixed(2)} e o gasto é ${valor.toFixed(
-            2
-          )} — sobram ${troco.toFixed(
-            2
-          )} de troco. O cheque inteiro vira receita no dia do repasse, então esse troco precisa existir em algum lugar: receba o troco e lance como entrada avulsa no Caixa. Se está certo assim, confirme.`,
-          precisaConfirmar: true,
-        },
+        { error: "esse cheque não está na carteira — recarregue a tela" },
         { status: 409 }
       );
     }
-    if (troco < -0.009 && !body.confirmado) {
+    const vChq = Math.round(Number(chq.valor) * 100) / 100;
+    const dif = Math.round(vChq * 100) - Math.round(valor * 100);
+
+    if (dif > 0) {
+      const excedente = Math.round(dif) / 100;
+      const tv = Number(body.troco_valor ?? 0);
+      if (Math.round(tv * 100) !== dif || !body.troco_conta_id) {
+        return NextResponse.json(
+          {
+            error: `O cheque é de R$ ${vChq.toFixed(2)} e o gasto é R$ ${valor.toFixed(
+              2
+            )} — sobram R$ ${excedente.toFixed(
+              2
+            )}. Informe o troco de R$ ${excedente.toFixed(
+              2
+            )} e em qual conta ele entrou. O cheque inteiro vira receita no dia do repasse, então sem isso o resultado do mês fica inflado nesse valor.`,
+            precisaTroco: true,
+            excedente,
+            chequeValor: vChq,
+          },
+          { status: 400 }
+        );
+      }
+      trocoValor = Math.round(dif) / 100;
+      trocoContaId = String(body.troco_conta_id);
+    }
+
+    if (dif < 0) {
+      // Aqui o gasto é declarado pelo gestor (não é uma dívida que existia),
+      // então "desconto" não faz sentido: se o cheque não cobre o valor que
+      // ele digitou, ou o valor está errado, ou outra coisa completou — e
+      // essa outra coisa é um lançamento próprio.
       return NextResponse.json(
         {
-          error: `O cheque é de ${vChq.toFixed(2)} e o gasto é ${valor.toFixed(
+          error: `O cheque é de R$ ${vChq.toFixed(2)} e o gasto é R$ ${valor.toFixed(
             2
-          )} — o cheque não cobre tudo. Faltam ${Math.abs(troco).toFixed(
+          )} — o cheque não cobre tudo. Lance R$ ${vChq.toFixed(
             2
-          )}, que saíram de outro lugar e precisam de lançamento próprio. Se está certo assim, confirme.`,
-          precisaConfirmar: true,
+          )} pagos com este cheque e o restante de R$ ${(
+            Math.abs(dif) / 100
+          ).toFixed(2)} como um lançamento separado, dizendo de qual conta saiu.`,
+          chequeValor: vChq,
         },
-        { status: 409 }
+        { status: 400 }
       );
     }
   }
@@ -274,6 +311,39 @@ export async function POST(req: NextRequest) {
         },
         { status: 409 }
       );
+    }
+
+    // O troco que voltou do fornecedor entra no caixa. Entrada avulsa (0047):
+    // soma no saldo e fica FORA do DRE, porque não é resultado. Carimbada com
+    // a origem (0072) pra que apagar o lançamento leve o troco junto.
+    if (trocoValor > 0 && trocoContaId) {
+      const { error: eTroco } = await client.from("entradas_avulsas").insert({
+        tipo: "reembolso",
+        valor: trocoValor,
+        data,
+        conta_id: trocoContaId,
+        descricao: `Troco do cheque que pagou ${descricao || linha.label}`,
+        origem_tipo: "cheque",
+        origem_id: cheque_id,
+        registrado_por: admin.id,
+      });
+      if (eTroco) {
+        // Desfaz TUDO: o cheque volta pra carteira e o lançamento some. Um
+        // troco não registrado deixaria o saldo do app menor que o do banco —
+        // e esse tipo de diferença só aparece meses depois, sem pista de onde
+        // nasceu. Melhor não registrar nada e pedir pra repetir.
+        await client
+          .from("cheques")
+          .update({ status: "em_carteira", repassado_em: null, repassado_para: null })
+          .eq("id", cheque_id);
+        await client.from("contas_a_pagar").delete().eq("id", criado.id);
+        return NextResponse.json(
+          {
+            error: `não consegui registrar o troco (${eTroco.message}) — nada foi lançado, tenta de novo`,
+          },
+          { status: 500 }
+        );
+      }
     }
   }
 

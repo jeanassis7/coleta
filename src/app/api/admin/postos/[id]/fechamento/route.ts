@@ -351,6 +351,12 @@ export async function POST(
       data,
       conta_id: trocoContaId,
       descricao: `Troco do acerto com ${String(body.posto_nome || "o posto").trim()}`,
+      // Carimbo de origem (0072): o troco deixa de ser linha solta no caixa.
+      // Vai no PRIMEIRO cheque, mesma convenção do `cheque_id` das notas —
+      // é rastro, não rateio. Acerto pago só em dinheiro não tem papel pra
+      // carimbar e fica sem origem, como as entradas lançadas na mão.
+      origem_tipo: chequePrincipal ? "cheque" : null,
+      origem_id: chequePrincipal,
       registrado_por: admin.id,
     });
     if (error) {

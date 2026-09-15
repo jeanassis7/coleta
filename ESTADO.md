@@ -49,9 +49,49 @@ forma por DATA, misturando emitentes e compradores — e tinha outro pronto:
 E2E: **77/77**, incluindo "DEPÓSITO NÃO MEXE NO CAIXA" (0 → 0) e "COMPENSAR
 PÕE O DINHEIRO NA CONTA" (0 → 300).
 
-**Próximo:** item 2 do plano — o cheque tem que bater com o valor da conta
-(hoje uma conta de R$ 1.360 foi quitada com um cheque de R$ 1.355,36 e o
-sistema não disse nada).
+---
+
+## O CHEQUE TEM QUE BATER — 15/09/2026 💵 (item 2 de 5)
+
+O servidor **não comparava** o valor do cheque com o valor da conta. Cheque de
+R$ 5.000 marcava como paga uma conta de R$ 600 e os R$ 4.400 evaporavam;
+cheque menor marcava a conta inteira como paga e sumia com a diferença.
+
+Já tinha acontecido: 26/08, `BATERIAS VM 330 — JUNINHO JM BATERIAS`, conta de
+R$ 1.360,00 quitada com cheque de R$ 1.355,36. **A tela avisava; o servidor
+aceitava** — a definição da pergunta 7 da régua ("validação só no componente
+não é validação, é sugestão").
+
+**Como ficou:**
+
+- **Cheque maior** → exige o troco: quanto voltou e em qual conta entrou.
+  Recusa sem isso, igual ao fechamento do posto. O troco vira entrada avulsa
+  (caixa sim, DRE não) carimbada com o cheque de origem.
+- **Cheque menor** → pergunta o que aconteceu: **"ainda devo esse resto"**
+  (nasce conta nova com a diferença) ou **"o fornecedor abateu"** (a conta
+  passa a valer o cheque). Adivinhar qualquer uma perde dinheiro numa direção.
+  É isso que destrava **1 conta paga com 2 cheques**, sem esperar o item 4.
+- **As três portas passaram a seguir a mesma regra.** O endpoint de Lançamentos
+  tinha um escape: avisava e um segundo clique passava, com a instrução de
+  "lance o troco depois no Caixa". Instrução que depende de memória não fecha
+  caixa — agora ele também exige e registra.
+- **Apagar o pagamento leva o troco junto** (0072). Antes o cheque voltava pra
+  carteira, a conta reabria, e o troco ficava no caixa — dinheiro que entrou
+  por um pagamento que não existe mais.
+
+O caso do BATERIAS **não foi corrigido** (R$ 4,64, provável desconto
+negociado). Se for pra mexer, é SQL com intenção.
+
+E2E: módulo 1 **77/77**; guards de dinheiro **todos de pé**, com dois casos
+novos (um cheque não gera dois trocos; pago + restante = a conta original).
+
+⚠️ `scripts/e2e-modulo2.mjs` tem **1 falha anterior a isto** e sem relação
+("custo do fino não mudou com a saída: 1.9517, esperado ~1.9656") — parece
+asserção de valor absoluto contra produção, que é justamente o que o
+`CLAUDE.md` manda não fazer. Confirmado que já falhava antes.
+
+**Próximo:** item 3 do plano — cheque devolvido vira dívida (ou reverte),
+com a R68 do `NEGOCIOv3.md` reescrita junto.
 
 ---
 

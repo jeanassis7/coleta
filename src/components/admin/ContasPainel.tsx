@@ -683,6 +683,11 @@ function ModalPagar({
   );
   // Juros/multa de atraso — vão pra categoria própria (Juros e multas).
   const [jurosCentavos, setJurosCentavos] = useState<number | null>(null);
+  // Cheque que não bate com a conta. A tela já avisava disso, mas o servidor
+  // aceitava calado (e perdeu R$ 4,64 em 26/08). Agora o servidor RECUSA sem
+  // estes campos — aqui eles existem pra que a recusa não seja uma parede.
+  const [trocoContaId, setTrocoContaId] = useState("");
+  const [diferenca, setDiferenca] = useState<"resto" | "desconto" | "">("");
   // Vales de acerto que este pagamento (de Salário) desconta.
   const [valesMarcados, setValesMarcados] = useState<string[]>([]);
   const [salvando, setSalvando] = useState(false);
@@ -694,9 +699,25 @@ function ModalPagar({
       ? vales.filter((v) => v.motorista_id === conta.pessoa_id)
       : [];
 
+  // A diferença entre o papel e a conta, em centavos (inteiro: comparar
+  // reais com ponto flutuante é como o R$ 0,01 some).
+  const difCentavos = cheque
+    ? Math.round(cheque.valor * 100) - Math.round(conta.valor * 100)
+    : 0;
+  const chequeSobra = forma === "cheque" && difCentavos > 0;
+  const chequeFalta = forma === "cheque" && difCentavos < 0;
+
   async function pagar() {
     if (forma === "cheque" && !chequeId) {
       return setErro("Escolha qual cheque da carteira vai pagar");
+    }
+    if (chequeSobra && !trocoContaId) {
+      return setErro("Diga em qual conta o troco entrou");
+    }
+    if (chequeFalta && !diferenca) {
+      return setErro(
+        "Diga o que aconteceu com a diferença: o resto continua devido, ou foi desconto?"
+      );
     }
     if (forma !== "cheque" && !contaFinId) {
       return setErro("Diga de qual conta saiu o dinheiro");
@@ -734,6 +755,13 @@ function ModalPagar({
           ...(jurosCentavos && forma !== "cheque"
             ? { juros: centavosParaReais(jurosCentavos) }
             : {}),
+          // O troco vai com o valor CALCULADO, não digitado: o servidor
+          // confere que bate com o excedente ao centavo, e um campo livre
+          // aqui só serviria pra errar.
+          ...(chequeSobra
+            ? { troco_valor: difCentavos / 100, troco_conta_id: trocoContaId }
+            : {}),
+          ...(chequeFalta ? { diferenca } : {}),
           ...(valesMarcados.length > 0 ? { vales_quitados: valesMarcados } : {}),
         }),
       });
@@ -806,22 +834,68 @@ function ModalPagar({
                 </option>
               ))}
             </select>
-            {cheque && cheque.valor - conta.valor > 0.009 && (
-              <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-1">
-                O cheque é de {formatBRL(cheque.valor)} e a conta é de{" "}
-                {formatBRL(conta.valor)}: sobra{" "}
-                <strong>{formatBRL(cheque.valor - conta.valor)}</strong> de
-                troco com o fornecedor. Quando o troco voltar, lance como{" "}
-                <strong>Entrada avulsa</strong> no Caixa (tipo Reembolso) —
-                senão esse dinheiro fica fora do sistema.
-              </p>
+            {chequeSobra && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mt-2 space-y-2">
+                <p className="text-xs">
+                  O cheque é de {formatBRL(cheque!.valor)} e a conta é de{" "}
+                  {formatBRL(conta.valor)}: o fornecedor devolve{" "}
+                  <strong>{formatBRL(difCentavos / 100)}</strong> de troco. Diga
+                  onde esse dinheiro entrou — sem isso ele sumiria do caixa, e o
+                  cheque inteiro já conta como receita no dia do repasse.
+                </p>
+                <SelectConta
+                  contas={contasFinanceiras}
+                  valor={trocoContaId}
+                  onChange={setTrocoContaId}
+                  label="O troco entrou em"
+                />
+              </div>
             )}
-            {cheque && conta.valor - cheque.valor > 0.009 && (
-              <p className="text-xs text-cinza-suave mt-1">
-                O cheque é de {formatBRL(cheque.valor)} e a conta é de{" "}
-                {formatBRL(conta.valor)} — a diferença que você completar por
-                outra forma merece um lançamento próprio.
-              </p>
+            {chequeFalta && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mt-2 space-y-2">
+                <p className="text-xs">
+                  O cheque é de {formatBRL(cheque!.valor)} e a conta é de{" "}
+                  {formatBRL(conta.valor)}: faltam{" "}
+                  <strong>{formatBRL(-difCentavos / 100)}</strong>. O que
+                  aconteceu?
+                </p>
+                <div className="grid gap-2">
+                  {(
+                    [
+                      [
+                        "resto",
+                        "Ainda devo esse resto",
+                        `Nasce uma conta nova de ${formatBRL(-difCentavos / 100)}, em aberto — dá pra pagar com outro cheque.`,
+                      ],
+                      [
+                        "desconto",
+                        "O fornecedor abateu",
+                        "A conta passa a valer o cheque e a dívida acabou aqui.",
+                      ],
+                    ] as const
+                  ).map(([v, titulo, ajuda]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setDiferenca(v)}
+                      className={`text-left px-3 py-2 rounded-lg border-2 ${
+                        diferenca === v
+                          ? "bg-verde text-white border-verde"
+                          : "bg-white border-cinza-borda"
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{titulo}</div>
+                      <div
+                        className={`text-xs ${
+                          diferenca === v ? "text-white/80" : "text-cinza-suave"
+                        }`}
+                      >
+                        {ajuda}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

@@ -435,6 +435,28 @@ export async function PATCH(
     );
   }
 
+  // ---------------------------------------------------------------------
+  // RÉGUA DO DINHEIRO #1 e #7 — o cheque tem que BATER com a conta
+  // ---------------------------------------------------------------------
+  // O servidor não comparava nada. Cheque de R$ 5.000 marcava como paga uma
+  // conta de R$ 600 e os R$ 4.400 evaporavam; cheque de R$ 600 numa conta de
+  // R$ 1.000 marcava a conta inteira como paga e sumia com R$ 400 de dívida,
+  // inflando o DRE.
+  //
+  // Já aconteceu: 26/08/2026, "BATERIAS VM 330 — JUNINHO JM BATERIAS", conta
+  // de R$ 1.360,00 quitada com um cheque de R$ 1.355,36. R$ 4,64 de dívida
+  // sumiram e o DRE contou R$ 4,64 a mais. A TELA avisava; o servidor aceitava
+  // — que é a definição da pergunta 7 ("validação só no componente não é
+  // validação, é sugestão").
+  //
+  // E o cheque repassado conta como RECEITA no dia do repasse (R67-b), então
+  // o erro pra cima entrava DOIS lados: receita cheia contra despesa menor.
+  let chequeValor = 0;
+  let trocoValor = 0;
+  let trocoContaId: string | null = null;
+  let valorDoCheque: number | null = null;
+  let descontoDoFornecedor = false;
+
   let chequeId: string | null = null;
   if (forma === "cheque") {
     chequeId = String(body.cheque_id || "") || null;
@@ -443,6 +465,82 @@ export async function PATCH(
         { error: "escolha qual cheque da carteira vai pagar" },
         { status: 400 }
       );
+    }
+
+    const { data: chq, error: eLer } = await client
+      .from("cheques")
+      .select("valor, banco, numero")
+      .eq("id", chequeId)
+      .eq("status", "em_carteira")
+      .maybeSingle();
+    if (eLer) return NextResponse.json({ error: eLer.message }, { status: 400 });
+    if (!chq) {
+      return NextResponse.json(
+        { error: "esse cheque não está na carteira — recarregue a tela" },
+        { status: 409 }
+      );
+    }
+    chequeValor = n2(Number(chq.valor));
+    const diferenca = Math.round((chequeValor - valorConta) * 100);
+
+    if (diferenca > 0) {
+      // ---------------------------------------------------- cheque MAIOR
+      // O excedente volta do fornecedor em dinheiro. Exigir aqui (em vez de
+      // avisar "lance depois no Caixa") é o que o fechamento do posto já faz
+      // desde 03/09: pagar a mais sem informar o troco é RECUSADO, porque
+      // "lance depois" depende de memória e memória não fecha caixa.
+      const excedente = n2(diferenca / 100);
+      trocoValor = Number(body.troco_valor ?? 0);
+      trocoContaId = body.troco_conta_id ? String(body.troco_conta_id) : null;
+      if (Math.round(trocoValor * 100) !== diferenca || !trocoContaId) {
+        return NextResponse.json(
+          {
+            error:
+              `O cheque é de R$ ${chequeValor.toFixed(2)} e a conta é de R$ ${valorConta.toFixed(
+                2
+              )} — sobram R$ ${excedente.toFixed(2)}. ` +
+              `Informe o troco de R$ ${excedente.toFixed(2)} e em qual conta ele entrou. ` +
+              `Sem isso esse dinheiro sumiria do caixa e o resultado do mês ficaria inflado ` +
+              `(o cheque inteiro vira receita no dia do repasse).`,
+            precisaTroco: true,
+            excedente,
+            chequeValor,
+          },
+          { status: 400 }
+        );
+      }
+    } else if (diferenca < 0) {
+      // ---------------------------------------------------- cheque MENOR
+      // Duas verdades possíveis, e só o gestor sabe qual é. Adivinhar
+      // qualquer uma delas perde dinheiro numa direção:
+      //   'resto'    → vou completar depois; o que falta continua devido
+      //   'desconto' → o fornecedor abateu; a conta vale o cheque e acabou
+      // É a mesma distinção que a conta PREVISTA já faz entre "valor real da
+      // fatura" e "pagamento parcial".
+      const escolha = String(body.diferenca || "");
+      if (escolha !== "resto" && escolha !== "desconto") {
+        const falta = n2(-diferenca / 100);
+        return NextResponse.json(
+          {
+            error:
+              `O cheque é de R$ ${chequeValor.toFixed(2)} e a conta é de R$ ${valorConta.toFixed(
+                2
+              )} — faltam R$ ${falta.toFixed(2)}. ` +
+              `Diga o que aconteceu: o resto continua devido, ou o fornecedor deu desconto? ` +
+              `Marcar a conta inteira como paga por um cheque menor faria R$ ${falta.toFixed(
+                2
+              )} de dívida sumirem sem ninguém pagar.`,
+            precisaEscolher: true,
+            falta,
+            chequeValor,
+          },
+          { status: 400 }
+        );
+      }
+      // Nos dois casos a conta passa a valer o que o papel pagou. A diferença
+      // é só se nasce ou não uma conta nova com o resto.
+      valorDoCheque = chequeValor;
+      descontoDoFornecedor = escolha === "desconto";
     }
     // Tira da carteira ANTES de quitar a conta: se o cheque já tiver sido
     // usado em outra aba, a conta não pode ficar marcada como paga por um
@@ -478,6 +576,10 @@ export async function PATCH(
       ...(valorParcial !== null ? { valor: valorParcial } : {}),
       // Prevista confirmada: o chute dá lugar ao valor da fatura.
       ...(valorConfirmado !== null ? { valor: valorConfirmado } : {}),
+      // Cheque menor que a conta: a conta passa a valer o que o papel pagou
+      // (nos dois caminhos — resto e desconto). Sem isto o DRE contaria uma
+      // despesa maior do que o cheque que a pagou.
+      ...(valorDoCheque !== null ? { valor: valorDoCheque } : {}),
     })
     .eq("id", id)
     .in("status", ["prevista", "a_pagar"])
@@ -499,6 +601,56 @@ export async function PATCH(
   }
 
   const avisos: string[] = [];
+
+  // ------------------------------------------------- o que o cheque deixou
+  // Cheque MENOR: ou o resto continua devido, ou o fornecedor abateu. O
+  // caminho 'desconto' não cria nada de propósito — a dívida acabou ali.
+  if (valorDoCheque !== null && !descontoDoFornecedor) {
+    const resto = n2(valorConta - valorDoCheque);
+    const { error: eResto } = await client.from("contas_a_pagar").insert({
+      descricao: `${contaAlvo.descricao} (restante)`,
+      fornecedor: contaAlvo.fornecedor,
+      categoria: contaAlvo.categoria,
+      valor: resto,
+      vencimento: contaAlvo.vencimento,
+      status: "a_pagar",
+      pessoa_id: contaAlvo.pessoa_id,
+      origem_tipo: contaAlvo.origem_tipo,
+      origem_id: contaAlvo.origem_id,
+      registrado_por: admin.id,
+    });
+    avisos.push(
+      eResto
+        ? `ATENÇÃO: o cheque quitou R$ ${valorDoCheque.toFixed(2).replace(".", ",")} mas o RESTANTE de R$ ${resto.toFixed(2).replace(".", ",")} NÃO virou conta (${eResto.message}) — crie a conta do resto na mão, senão essa dívida some`
+        : `o restante de R$ ${resto.toFixed(2).replace(".", ",")} continua em aberto como conta nova — pode pagar com outro cheque`
+    );
+  } else if (valorDoCheque !== null) {
+    avisos.push(
+      `a conta passou a valer R$ ${valorDoCheque.toFixed(2).replace(".", ",")} (desconto do fornecedor) — nada ficou em aberto`
+    );
+  }
+
+  // Cheque MAIOR: o troco que voltou do fornecedor entra no caixa. Entrada
+  // avulsa (0047) — soma no caixa e fica FORA do DRE, porque não é resultado.
+  // Carimbada com a origem (0072) pra que apagar o pagamento leve o troco
+  // junto: meio desfazer deixa número órfão.
+  if (trocoValor > 0 && trocoContaId && chequeId) {
+    const { error: eTroco } = await client.from("entradas_avulsas").insert({
+      tipo: "reembolso",
+      valor: n2(trocoValor),
+      data: pagoEm,
+      conta_id: trocoContaId,
+      descricao: `Troco do cheque que pagou ${contaAlvo.descricao}`,
+      origem_tipo: "cheque",
+      origem_id: chequeId,
+      registrado_por: admin.id,
+    });
+    avisos.push(
+      eTroco
+        ? `ATENÇÃO: a conta foi paga, mas o TROCO de R$ ${trocoValor.toFixed(2).replace(".", ",")} NÃO foi registrado (${eTroco.message}) — lance a entrada avulsa na mão em Caixa, senão o saldo do app fica menor que o do banco`
+        : `R$ ${trocoValor.toFixed(2).replace(".", ",")} de troco entraram no caixa`
+    );
+  }
 
   // O resto da dívida continua em aberto, como conta nova.
   if (valorParcial !== null) {
@@ -632,6 +784,24 @@ export async function DELETE(
   }
 
   if (conta?.cheque_id) {
+    // O TROCO SAI PRIMEIRO. Se o cheque voltasse pra carteira antes e o
+    // delete do troco falhasse, o caixa ficaria com um dinheiro que entrou
+    // por um pagamento que não existe mais — e nada na tela contaria isso.
+    // Apagando na ordem inversa da criação, uma falha aqui interrompe o
+    // desfazer inteiro em vez de deixá-lo pela metade.
+    const { data: troco, error: eTroco } = await client
+      .from("entradas_avulsas")
+      .delete()
+      .eq("origem_tipo", "cheque")
+      .eq("origem_id", conta.cheque_id)
+      .select("valor");
+    if (eTroco) return NextResponse.json({ error: eTroco.message }, { status: 400 });
+    if (troco?.length) {
+      desfeito.push(
+        `o troco de R$ ${Number(troco[0].valor).toFixed(2).replace(".", ",")} saiu do caixa junto`
+      );
+    }
+
     const { data: ch, error: eCh } = await client
       .from("cheques")
       .update({ status: "em_carteira", repassado_em: null, repassado_para: null })

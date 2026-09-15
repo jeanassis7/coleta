@@ -107,8 +107,20 @@ export function LancamentosPainel({
   const [erro, setErro] = useState<string | null>(null);
   // Pagamento que passa do que falta na dívida: explica e pede o 2º clique.
   const [precisaConfirmar, setPrecisaConfirmar] = useState(false);
+  // Cheque maior que o gasto: o troco volta do fornecedor e precisa entrar
+  // em algum lugar. Antes a tela mandava "lance depois no Caixa" e o segundo
+  // clique passava — instrução que depende de memória não fecha caixa.
+  const [trocoContaId, setTrocoContaId] = useState("");
   const [ok, setOk] = useState<string | null>(null);
   const [apagando, setApagando] = useState<Lancamento | null>(null);
+
+  // Quanto o cheque passa do gasto, EM CENTAVOS (inteiro: comparar reais em
+  // ponto flutuante é como o R$ 0,01 some).
+  const chequeEscolhido = cheques.find((c) => c.id === chequeId);
+  const sobraDoCheque =
+    comCheque && chequeEscolhido && valorCentavos
+      ? Math.round(chequeEscolhido.valor * 100) - valorCentavos
+      : 0;
 
   // Editar um pagamento já feito: data, conta, categoria, pessoa, obs.
   // Valor fica de fora — valor errado é apagar e relançar.
@@ -187,6 +199,9 @@ export function LancamentosPainel({
     e.preventDefault();
     if (!valorCentavos) return setErro("Quanto foi?");
     if (comCheque && !chequeId) return setErro("Escolha qual cheque pagou.");
+    if (sobraDoCheque > 0 && !trocoContaId) {
+      return setErro("Diga em qual conta o troco do cheque entrou.");
+    }
     setErro(null);
     setPrecisaConfirmar(false);
     setOk(null);
@@ -205,6 +220,11 @@ export function LancamentosPainel({
           pessoa_id: pedePessoa(categoria) ? pessoaId : null,
           divida_id: categoria === "dividas_pf" && dividaId ? dividaId : null,
           descricao: descricao.trim() || null,
+          // Valor calculado, não digitado: o servidor confere que bate com o
+          // excedente ao centavo.
+          ...(sobraDoCheque > 0
+            ? { troco_valor: sobraDoCheque / 100, troco_conta_id: trocoContaId }
+            : {}),
           confirmado,
         }),
       });
@@ -311,6 +331,31 @@ export function LancamentosPainel({
                   </option>
                 ))}
               </select>
+              {sobraDoCheque > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mt-2 space-y-2">
+                  <p className="text-xs">
+                    O cheque passa{" "}
+                    <strong>{formatBRL(sobraDoCheque / 100)}</strong> do gasto —
+                    o fornecedor devolve essa diferença. Diga onde ela entrou: o
+                    cheque inteiro já conta como receita no dia do repasse, então
+                    sem isso o resultado do mês fica inflado nesse valor.
+                  </p>
+                  <SelectConta
+                    contas={contas}
+                    valor={trocoContaId}
+                    onChange={setTrocoContaId}
+                    label="O troco entrou em"
+                  />
+                </div>
+              )}
+              {sobraDoCheque < 0 && (
+                <p className="text-xs bg-amber-50 border border-amber-300 rounded-lg p-2 mt-2">
+                  O cheque é menor que o gasto. Lance{" "}
+                  <strong>{formatBRL(chequeEscolhido!.valor)}</strong> pagos com
+                  ele, e o restante como um lançamento separado dizendo de qual
+                  conta saiu.
+                </p>
+              )}
             </div>
           ) : (
             <SelectConta
