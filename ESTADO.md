@@ -232,8 +232,12 @@ ficou aberto, de propósito:
 
 - **Desfazer uma devolução de cheque** não existe (limitação conhecida,
   registrada no plano).
-- **Backfill do `repassado_local_id`** dos cheques antigos não foi feito:
-  `repassado_para` é texto livre e casar por semelhança erraria calado.
+- ~~**Backfill do `repassado_local_id`**~~ ✅ **feito em 15/09** (0075), com o
+  Evaner confirmando nome por nome: 38 cheques (R$ 111.686,73) ligados aos
+  dois postos. **E o cuidado se provou certo**: "CATARATAS DIESEL VM330
+  ACERTO FINAL" parece posto pelo nome, mas era o acerto final da **compra de
+  um veículo** — adivinhar por semelhança teria mandado R$ 4.199 de dívida
+  pro posto errado.
 - **`e2e-modulo2` tem 1 falha anterior e sem relação** ("custo do fino"),
   parece asserção de valor absoluto contra produção.
 - **A invariante "conta paga com cheque: ou o valor bate ou existe troco"**
