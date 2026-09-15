@@ -1,10 +1,117 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 14/09/2026 (o app para de mentir, cheques conferem pela soma,
+> Atualizado em 15/09/2026 (leitor de cheques ligou; o app para de mentir;
 > admin edita tudo na carga — e o saldo do Lucimar).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
 > `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
 > fechado de dinheiro, mapeados em 20/08).
+
+---
+
+## O LEITOR DE CHEQUES LIGOU — 14/09/2026 📷
+
+Estava construído desde 19/08 e **nunca tinha rodado**: faltava a chave. Ao
+ligar, descobriu-se que a premissa do provedor estava errada, e no caminho
+saíram várias melhorias decididas com o Evaner olhando cheque de verdade.
+
+### Trocou de provedor: OpenAI → Claude
+
+O comentário de 19/08 dizia "usa OpenAI porque é o provedor que o Evaner já
+paga". Em 14/09 apareceu que **ele não tem conta na OpenAI** e tem conta
+Anthropic com crédito. O mesmo critério apontando pro outro lado.
+
+`openai` era importado em um arquivo só — troca limpa. Hoje: `@anthropic-ai/sdk`,
+modelo `claude-opus-5`, saída estruturada por `output_config.format`
+(`{ type: "json_schema", schema }` — sem campo `name`), `effort: "low"`
+(a função tem `maxDuration = 60` e ler imagem é percepção, não raciocínio).
+
+⚠️ **A chave precisa ser de WORKSPACE, não de organização.** Chave com escopo
+de organização devolve 400 pedindo o header `anthropic-workspace-id`. Existe
+`ANTHROPIC_WORKSPACE_ID` (opcional) como rede, mas o caminho certo é criar a
+chave dentro do workspace — ela também não acessa a Admin API, que é o que se
+quer aqui.
+
+### ⚠️ A lição que custou DUAS rodadas no mesmo dia
+
+O tratamento de erro **descartava a mensagem do provedor**. Um 401 chegou como
+"a chave está inválida" e um 400 como "a leitura falhou (400)" — enquanto o
+provedor tinha mandado o motivo exato nos dois casos.
+
+Consertado para o 401 de manhã; a reescrita pro Claude dividiu o tratamento em
+três ramos e o genérico **perdeu de novo** — e foi exatamente onde o 400 caiu.
+Assim que a explicação passou a vir junto, o 400 foi resolvido em **uma
+tentativa**: era o escopo da chave, e a Anthropic dizia isso com todas as
+letras.
+
+> **Erro sem motivo é adivinhação.** A mensagem do provedor vai JUNTO da nossa,
+> nunca no lugar dela.
+
+### O que o leitor faz hoje
+
+- **Número do cheque sai da linha CMC7** (rodapé, fonte magnética — impressa a
+  máquina) e é conferido contra a tabelinha do topo. Divergiu, vem vazio.
+- **Valor é lido DUAS vezes** — em número e por extenso, de forma independente,
+  sem um corrigir o outro. A tela marca quando divergem. É o único campo
+  realmente perigoso: manuscrito.
+- **Emitente sai do texto impresso**, nunca da assinatura. E é um **terceiro
+  aleatório**, não o comprador que entregou o maço (a PERFILAZ repassa cheque
+  de cliente dela, como a gente faz). Não existe autocomplete de emitente de
+  propósito — sugeriria o nome errado.
+- **Banco vira CÓDIGO numérico** sem zero à esquerda (`41`, `1`, `748`), como o
+  Jean lançou os 324 da base. Normalizado **no servidor**, não só pedido no
+  prompt: a base já tinha "085" ao lado de "85" e "041" ao lado de "41" — pedir
+  não garante formato.
+- Foto pode vir girada; o prompt avisa.
+
+### As regras do "bom para" (decididas pelo Evaner)
+
+É o campo que mais erra, e ele sabia antes de testar:
+
+1. **"Bom para" explícito ganha** — em qualquer canto, ou em papel grampeado
+2. **Sem "bom para", vale a data de assinatura** do cheque
+3. **Ano não escrito** (só "13/10", comum) → assume o que deixa a data mais
+   perto do recebimento, janela de 3 meses atrás a 12 à frente
+4. **Quando assume, a linha nasce marcada** — nunca decide calado
+
+### Fotografar e ler viraram coisas separadas
+
+Era um bug real: `setFotos(novas)` **substituía** a lista, e a leitura
+disparava a cada seleção. No celular, cada foto é uma seleção — então cada
+cheque custava uma chamada de API **e apagava as fotos anteriores**, deixando
+as linhas já lidas apontando pra foto errada.
+
+Hoje: "📷 Adicionar fotos" acumula, "🔍 Ler N fotos" dispara uma vez. A linha
+guarda o **id** da foto, não o índice — remover uma do meio não desalinha nada.
+Ler de novo lê só as não lidas.
+
+### Contador de custo
+
+Num cantinho, depois da primeira leitura: custo desta leitura, acumulado do mês
+e o equivalente em reais (se `COTACAO_DOLAR` estiver cadastrada). Calculado
+pelos tokens REAIS da resposta; acumulado em `configuracoes`, chave
+`ocr_custo_<aaaa-mm>` — sem migration.
+
+⚠️ O preço por token é **chumbado no código**. Por isso a tela mostra **qual
+modelo** calculou: se o `ANTHROPIC_MODEL` mudar, o número fica errado e o nome
+do modelo é o que denuncia. Ordem de grandeza: maço de 10 cheques ≈ US$ 0,15.
+
+### A foto NÃO fica guardada — verificado
+
+Perguntado pelo Evaner depois do teste, conferido em cinco lugares:
+`cheques.foto_path` vazio nos **327** cheques da base; nenhum arquivo de cheque
+nos três buckets; o log não grava imagem; a tela não usa localStorage nem
+IndexedDB. A imagem vive em memória e some quando a aba fecha.
+
+**O que sai do controle:** a foto vai pra API da Anthropic (retenção ~30 dias
+pra antiabuso, sem treino). E fica no rolo da câmera de quem fotografou —
+**esse é o risco maior, e é físico**. O tutorial do Jean manda apagar.
+
+### Pendências deste bloco
+
+- Passar um **maço real** (o teste foi com cheques avulsos), principalmente pra
+  ver o "bom para" na prática
+- Os 7 cheques antigos com banco em grafia torta ("085", "041", "Sicredi",
+  "Banrisul") — o Evaner disse que **não precisa** limpar
 
 ---
 

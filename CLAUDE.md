@@ -32,6 +32,20 @@ Guaíra, Toledo, Cascavel, Foz do Iguaçu (oeste do PR). Muita área rural sem s
 - **Serwist** — Service Worker, estratégia `StaleWhileRevalidate` pra navegação (CRÍTICO pro offline funcionar com sinal ruim)
 - **Leaflet + OSM** — mapa do admin (zero custo, sem API key)
 - **PDFKit** — gera o manual do Jean
+- **`@anthropic-ai/sdk`** — leitura de cheque por foto (`/api/admin/cheques/ocr`). Único lugar do projeto que chama IA. Um provedor só é regra: em 19/08/2026 foi OpenAI "porque é o que o Evaner já paga", e em 14/09 descobriu-se que ele não tem conta lá e tem crédito na Anthropic — mesmo critério, outro lado
+
+## Variáveis de ambiente (Vercel)
+
+Além das do Supabase, o painel usa estas. **Variável nova só entra num deploy novo** — cadastrar sem Redeploy não faz nada.
+
+| Variável | Obrigatória? | Pra quê |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | pra ler cheque por foto | Sem ela o botão de foto some e a tela cai no modo manual (501 com mensagem amigável). Nada quebra |
+| `COTACAO_DOLAR` | não | Mostra o custo da leitura em reais além do dólar. Sem ela, só dólar — não inventa cotação |
+| `ANTHROPIC_MODEL` | não | Troca o modelo sem deploy de código. Padrão `claude-opus-5` |
+| `ANTHROPIC_WORKSPACE_ID` | não | Só se a chave tiver escopo de ORGANIZAÇÃO (ver abaixo) |
+
+⚠️ **A chave tem que ser de WORKSPACE, não de organização.** Chave com escopo de organização devolve **400** pedindo o header `anthropic-workspace-id` — não é erro de digitação nem de cópia, é escopo. Crie a chave dentro do workspace (ela também não acessa a Admin API, que é o que se quer para uma tela que só lê imagem).
 
 ## URLs, acessos e credenciais
 
@@ -394,6 +408,8 @@ Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fa
 - **`select` de coluna que NÃO EXISTE não explode — volta `data: null`, e o `?? []` engole.** O `DELETE` da carga consultava `descargas.foto_path` por 3 semanas; a coluna é `foto_papel_path`. Resultado: a foto do papel da balança nunca era apagada **e o endpoint reportava `descargas: 0` mesmo tendo apagado uma** — mentia sobre o que tinha feito. Mesma família do `em_carteira`: o erro fica no `error` que ninguém lê, e o `?? []` transforma em silêncio. Conferir nome de coluna no schema antes de escrever `select`, e desconfiar de todo `?? []` em cima de query cujo erro não é checado.
 - **O GPS marca onde o motorista DIGITOU, não onde coletou.** Se ele relança uma coleta 2h depois, de outro lugar (porque a primeira não apareceu), a linha carrega o GPS do lugar novo. Em 14/09 isso me fez concluir errado que duas coletas a 8,5 km eram clientes diferentes — eram a mesma, relançada. **Pra saber se uma coleta foi lançada duas vezes, olhar `sincronizado_em − criado_em`**, não a distância: a original tinha 4h36 de atraso e as vizinhas 1 segundo.
 - **`npm run lint` não roda neste repo** — não existe config de ESLint nem `eslintConfig` no `package.json`, então `next lint` abre o assistente interativo "How would you like to configure ESLint?" e trava. Usar só `npm run typecheck`. Não criar config por conta própria: mudaria o CI e é decisão do Evaner.
+- **Erro de serviço externo tem que carregar o motivo que o serviço deu.** Em 14/09/2026 isso custou DUAS rodadas de adivinhação no mesmo dia: um 401 virou "a chave está inválida" e um 400 virou "a leitura falhou (400)", enquanto o provedor tinha mandado o motivo exato nos dois casos — e o código descartava. Assim que a mensagem passou a ir junto, o 400 foi resolvido em uma tentativa (era o escopo da chave). **A mensagem do provedor vai JUNTO da nossa, nunca no lugar dela** — e cuidado ao dividir o tratamento em ramos, que foi assim que se perdeu na segunda vez.
+- **Pedir formato no prompt não garante formato.** O leitor de cheques pede o código do banco, mas quem garante é uma normalização no servidor. Motivo: a base já tinha "085" ao lado de "85" e "041" ao lado de "41", digitados por gente — deixar o formato na mão do modelo repetiria a fragmentação em escala. Mesma família da curadoria de postos ("Texas" × "Posto texas"): melhor normalizar na entrada do que juntar depois.
 - **iOS Safari NÃO tem `beforeinstallprompt`** — motorista iPhone precisa instalar manual via Compartilhar > Adicionar à Tela de Início. Fluxo pós-instalação é idêntico.
 
 ## Workflow de deploy
