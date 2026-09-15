@@ -405,8 +405,17 @@ export async function POST(req: NextRequest) {
       // 401/429 já foram tratados acima com mensagem específica; o resto é
       // falha do provedor. Em qualquer caso a saída é a mesma: lançar na
       // mão, que sempre funciona.
+      //
+      // ⚠️ A explicação da Anthropic vai JUNTO. Isto já tinha sido consertado
+      // em 14/09/2026 e se perdeu na troca de provedor no mesmo dia — e
+      // custou de novo: um 400 chegou como "A leitura falhou (400)." e a
+      // mensagem que dizia QUAL campo do pedido estava errado foi descartada
+      // pelo próprio código. Erro sem motivo é adivinhação.
+      const detalhe = erro.message ? ` Motivo: ${erro.message}` : "";
       return NextResponse.json(
-        { error: `A leitura falhou (${erro.status}). Lance os cheques na mão.` },
+        {
+          error: `A leitura falhou (${erro.status}).${detalhe} Lance os cheques na mão.`,
+        },
         { status: 502 }
       );
     }
