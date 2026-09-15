@@ -366,16 +366,26 @@ export async function POST(req: NextRequest) {
     });
   } catch (erro) {
     if (erro instanceof OpenAI.APIError) {
-      // 401 = chave errada; 429 = limite; o resto é falha do provedor. Em
-      // qualquer caso a saída é a mesma: lançar na mão, que sempre funciona.
+      // 401 = chave errada; 429 = limite ou saldo; o resto é falha do
+      // provedor. Em qualquer caso a saída é a mesma: lançar na mão, que
+      // sempre funciona.
+      //
+      // ⚠️ A explicação da OpenAI vai JUNTO, e não no lugar da nossa frase.
+      // Em 14/09/2026 um 401 custou uma rodada de adivinhação porque a
+      // mensagem dizia só "chave inválida" — e a OpenAI tinha mandado o
+      // motivo exato (chave incompleta? revogada? projeto sem acesso?), que
+      // o código descartava. Ela mascara a própria chave (sk-proj-ab***yz),
+      // então mostrar é seguro e ainda deixa conferir começo e fim contra o
+      // que foi colado na Vercel.
       const msg =
         erro.status === 401
-          ? "A chave da leitura por foto está inválida."
+          ? "A chave da leitura por foto foi recusada pela OpenAI."
           : erro.status === 429
-            ? "Muita leitura ao mesmo tempo. Espere um minuto."
+            ? "Limite atingido, ou a conta da OpenAI está sem saldo."
             : `A leitura falhou (${erro.status}).`;
+      const detalhe = erro.message ? ` Motivo: ${erro.message}` : "";
       return NextResponse.json(
-        { error: `${msg} Lance os cheques na mão.` },
+        { error: `${msg}${detalhe} Lance os cheques na mão.` },
         { status: erro.status === 429 ? 429 : 502 }
       );
     }
