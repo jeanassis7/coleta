@@ -1571,6 +1571,10 @@ export interface Cheque {
   depositado_em: string | null;
   compensado_em: string | null;
   devolvido_em: string | null;
+  /** Em qual conta da empresa o cheque entrou (ou vai entrar). Gravado no
+   *  DEPÓSITO desde a 0071 — mas o caixa só enxerga quando o status é
+   *  'compensado' (`movimentos_caixa` filtra). Ver a 0071. */
+  conta_id: string | null;
   foto_path: string | null;
   observacao: string | null;
   criado_em: string;
@@ -1580,16 +1584,27 @@ export async function buscarCheques(
   opts: { compradorId?: string; status?: StatusCheque[] } = {}
 ): Promise<Cheque[]> {
   const supabase = await getSupabaseServer();
-  let q = supabase
-    .from("cheques")
-    .select("*, compradores(nome)")
-    .order("bom_para", { ascending: true })
-    .limit(500);
-  if (opts.compradorId) q = q.eq("comprador_id", opts.compradorId);
-  if (opts.status?.length) q = q.in("status", opts.status);
-  const { data, error } = await q;
-  if (error) throw error;
-  return ((data as unknown as Record<string, unknown>[]) || []).map((r) => ({
+  // PAGINADO (selectTudo): tinha `.limit(500)` e já existiam 324 cheques em
+  // 15/09/2026 — passaria do teto em poucos meses e começaria a esconder
+  // cheque da lista SEM ERRO NENHUM. Cheque escondido é cheque que não se
+  // deposita e dinheiro que não entra: o pior erro possível aqui, porque
+  // não dá sinal.
+  //
+  // Ordena por `bom_para` (é a ordem em que o maço se forma) com `id` de
+  // desempate — sem desempate estável duas páginas podem se sobrepor e
+  // repetir ou perder linha.
+  const linhas = await selectTudo<Record<string, unknown>>((de, ate) => {
+    let q = supabase
+      .from("cheques")
+      .select("*, compradores(nome)")
+      .order("bom_para", { ascending: true })
+      .order("id", { ascending: true })
+      .range(de, ate);
+    if (opts.compradorId) q = q.eq("comprador_id", opts.compradorId);
+    if (opts.status?.length) q = q.in("status", opts.status);
+    return q;
+  });
+  return linhas.map((r) => ({
     ...(r as unknown as Cheque),
     comprador_nome: (r.compradores as { nome: string } | null)?.nome || "—",
     valor: Number(r.valor),

@@ -64,10 +64,19 @@ export function ChequesPainel({
   const vencendo = carteira.filter((c) => diasAte(c.bom_para) <= 7);
   const totalVencendo = vencendo.reduce((s, c) => s + c.valor, 0);
   const devolvidos = cheques.filter((c) => c.status === "devolvido");
+  // O LIMBO. Entre depositar e compensar o cheque some de todos os números
+  // da tela: não está mais "na carteira" e ainda não é caixa. Quem esquecer
+  // de marcar a compensação deixa esse dinheiro fora do saldo PRA SEMPRE,
+  // sem nenhum sinal — e o app fica menor que o banco, calado.
+  //
+  // Card, não alerta: decisão do Evaner ("os alertas têm que ser poucos pra
+  // serem objetivos e olháveis"). Número parado na tela, sem cutucar.
+  const depositados = cheques.filter((c) => c.status === "depositado");
+  const totalDepositado = depositados.reduce((s, c) => s + c.valor, 0);
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         <div className="card">
           <div className="text-xs text-cinza-suave">Na carteira</div>
           <div className="text-2xl font-bold font-mono">{formatBRL(totalCarteira)}</div>
@@ -86,6 +95,19 @@ export function ChequesPainel({
           </div>
           <div className="text-xs text-cinza-suave mt-1">
             {vencendo.length} {vencendo.length === 1 ? "cheque" : "cheques"}
+          </div>
+        </div>
+        <div className="card">
+          <div className="text-xs text-cinza-suave">Depositado, aguardando</div>
+          <div className="text-2xl font-bold font-mono text-blue-700">
+            {formatBRL(totalDepositado)}
+          </div>
+          <div className="text-xs text-cinza-suave mt-1">
+            {depositados.length === 0
+              ? "nada no banco agora"
+              : `${depositados.length} ${
+                  depositados.length === 1 ? "cheque" : "cheques"
+                } — ainda não é caixa`}
           </div>
         </div>
         <div className="card">

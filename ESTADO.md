@@ -1,10 +1,57 @@
 # Estado do projeto — onde paramos
 
-> Atualizado em 15/09/2026 (leitor de cheques ligou; o app para de mentir;
-> admin edita tudo na carga — e o saldo do Lucimar).
+> Atualizado em 15/09/2026 (cheque se deposita em maço; leitor de cheques
+> ligou; o app para de mentir; admin edita tudo na carga — e o saldo do
+> Lucimar).
 > Ler junto com `CLAUDE.md` (contexto permanente), `PLANO-MODULO-1.md`,
-> `PLANO-MODULO-2.md` e `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema
-> fechado de dinheiro, mapeados em 20/08).
+> `PLANO-MODULO-2.md`, `PLANO-PAGAMENTO-FLEXIVEL.md` (o que vem agora) e
+> `VARREDURA-DINHEIRO.md` (os 47 buracos do sistema fechado de dinheiro,
+> mapeados em 20/08).
+
+---
+
+## O MAÇO DE CHEQUES — 15/09/2026 🏦 (item 1 de 5)
+
+Primeiro item do `PLANO-PAGAMENTO-FLEXIVEL.md`, que nasceu do debate sobre
+pagar N contas com M cheques. **Os outros 4 ainda não foram feitos.**
+
+Nasceu de um fato: nesse mesmo dia o Evaner depositou 10 cheques
+(R$ 36.841,69) clicando um a um, com "bom para" de 17/jun a 22/jul. O maço se
+forma por DATA, misturando emitentes e compradores — e tinha outro pronto:
+37 na carteira, 18 já vencidos.
+
+**O que entrou:**
+
+- **Depositar um maço** — lista por "bom para", atalho "marcar os N vencidos",
+  soma na tela, escolhe a conta bancária. RPC `depositar_cheques` (0071),
+  **tudo-ou-nada**.
+- **O limbo virou card.** Entre depositar e compensar o cheque sumia de todos
+  os números da tela: não estava mais "na carteira" e ainda não era caixa.
+  Quem esquecesse de marcar a compensação deixava esse dinheiro fora do saldo
+  pra sempre, sem sinal nenhum. Agora tem card: *"Depositado, aguardando"*.
+- **Compensar o maço inteiro** — abre "Bradesco, 15/09, 10 cheques,
+  R$ 36.841,69", tica o que caiu, confirma. A conta não se digita de novo (vem
+  do depósito). O que não caiu se resolve individual, com "Voltou".
+- **Tirar do maço** — desfaz um depósito lançado errado, limpando data E conta.
+- **18 alertas viraram 1.** Decisão do Evaner: *"os alertas têm que ser poucos
+  pra serem objetivos e olháveis"*. A chave carrega a quantidade, senão o
+  "OK, VI" de hoje esconderia o alerta pra sempre.
+
+**Dois achados de caminho:**
+
+1. `buscarCheques` tinha `.limit(500)` e já existiam **324 cheques**. Ia
+   truncar calado em poucos meses — e cheque escondido é cheque que não se
+   deposita. Virou `selectTudo`.
+2. O primeiro check do e2e passou **verde à toa**, comparando `null` com
+   `null`. Ver a lição no `CLAUDE.md`: falso positivo em check de dinheiro é
+   pior que vermelho.
+
+E2E: **77/77**, incluindo "DEPÓSITO NÃO MEXE NO CAIXA" (0 → 0) e "COMPENSAR
+PÕE O DINHEIRO NA CONTA" (0 → 300).
+
+**Próximo:** item 2 do plano — o cheque tem que bater com o valor da conta
+(hoje uma conta de R$ 1.360 foi quitada com um cheque de R$ 1.355,36 e o
+sistema não disse nada).
 
 ---
 

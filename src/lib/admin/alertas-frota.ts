@@ -222,27 +222,48 @@ export async function alertasFrota(): Promise<Alerta[]> {
       Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())
     );
 
-    for (const ch of cheques) {
-      const dias = Math.round(
-        (new Date(`${ch.bom_para.slice(0, 10)}T00:00:00Z`).getTime() -
-          hojeIso.getTime()) /
-          86_400_000
-      );
-      if (dias >= 0) continue;
+    // ⚠️ UM alerta, não um por cheque (15/09/2026). Havia 18 cheques
+    // vencidos na carteira acendendo 18 linhas iguais no dashboard —
+    // e alerta ruidoso ensina a ignorar alerta. Decisão do Evaner: "os
+    // alertas têm que ser poucos pra serem objetivos e olháveis".
+    const vencidos = cheques
+      .filter(
+        (ch) =>
+          new Date(`${ch.bom_para.slice(0, 10)}T00:00:00Z`).getTime() <
+          hojeIso.getTime()
+      )
+      .sort((a, b) => a.bom_para.localeCompare(b.bom_para));
 
-      const quem = ch.emitente || ch.banco || "sem emitente";
+    if (vencidos.length > 0) {
+      const total = vencidos.reduce((s, ch) => s + Number(ch.valor), 0);
+      const maisAntigo = vencidos[0];
+      const diasAntigo = Math.abs(
+        Math.round(
+          (new Date(`${maisAntigo.bom_para.slice(0, 10)}T00:00:00Z`).getTime() -
+            hojeIso.getTime()) /
+            86_400_000
+        )
+      );
       alertas.push({
-        chave: `cheque_vencido:${ch.id}`,
+        // A chave carrega a QUANTIDADE de propósito. Chave fixa faria o
+        // "OK, VI" de hoje esconder o alerta pra sempre — inclusive quando
+        // outros 20 cheques vencessem. Mudou o conjunto, alerta novo.
+        chave: `cheques_vencidos:${vencidos.length}`,
         icone: "🏦",
         severidade: "alta",
-        titulo: "Cheque passou do bom para e continua na carteira",
+        titulo:
+          vencidos.length === 1
+            ? "1 cheque passou do bom para e continua na carteira"
+            : `${vencidos.length} cheques passaram do bom para e continuam na carteira`,
         texto:
-          `O cheque de ${quem}, ${real(Number(ch.valor))}, era bom para ` +
-          `${formatData(ch.bom_para)} — ${Math.abs(dias)} dia${Math.abs(dias) === 1 ? "" : "s"} ` +
-          `atrás — e ainda não foi depositado nem repassado. Pode ser só que o ` +
-          `depósito não foi lançado aqui. Se já depositou, marque na tela de cheques.`,
-        link: { href: "/admin/cheques", label: "Ver cheques" },
-        data: ch.bom_para,
+          `${real(total)} em cheque${vencidos.length === 1 ? "" : "s"} que já ` +
+          `podia${vencidos.length === 1 ? "" : "m"} ter ido pro banco — o mais ` +
+          `antigo era bom para ${formatData(maisAntigo.bom_para)}, ${diasAntigo} ` +
+          `dia${diasAntigo === 1 ? "" : "s"} atrás. Pode ser só que o depósito ` +
+          `não foi lançado aqui. Monte o maço na tela de cheques e deposite ` +
+          `de uma vez — enquanto o papel fica na gaveta, esse dinheiro não é seu.`,
+        link: { href: "/admin/cheques", label: "Montar o maço" },
+        data: maisAntigo.bom_para,
       });
     }
   } catch {

@@ -134,6 +134,7 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
   /acertos, /alertas/visto, /manutencoes[/id], /documentos[/id],
   /contas-financeiras[/id], /transferencias[/id], /vigencias[/id],
   /caixa/lancamentos, /cheques/ocr, /cheques/lote,
+  /cheques/deposito, /cheques/compensacao (maço inteiro, tudo-ou-nada),
   /postos/[id] (curadoria), /postos/[id]/fechamento
 /api/cron/backup                → backup mensal em CSV (cron da Vercel, dia 1º;
                                   admin logado também pode disparar na mão)
@@ -233,6 +234,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0068_movimentos_caixa.sql` — ⚠️ **A VIEW `movimentos_caixa` É A FONTE DO DINHEIRO.** Toda linha que mexe numa conta financeira, com sinal (+ entra, − sai). O `saldo_contas()` deixou de somar 14 braços por conta própria e virou a SOMA dela. Mesmo desenho do estoque (`movimentos_estoque` + `estoque_atual()`). **Mexer na view muda o caixa** — e a troca só subiu porque os saldos das 3 contas ficaram idênticos ao centavo
 - `0069_tipos_de_movimento.sql` — RPC `tipos_de_movimento()`: o filtro de tipo da tela de Lançamentos se monta a partir do DADO, não de lista no código. Fonte nova aparece sozinha
 - `0070_conta_paga_com_cheque_no_extrato.sql` — conta quitada com cheque entra no extrato com `conta_id` nulo (o saldo continua ignorando). Recebimento em cheque NÃO entra: o cheque vira dinheiro quando compensa, e a compensação já é uma linha
+- `0071_cheques_em_lote.sql` — RPCs `depositar_cheques()` e `compensar_cheques()`: o maço se deposita e se compensa de uma vez. **Tudo-ou-nada** (o UPDATE é um só e a função levanta exceção se a contagem não bater — PostgREST não tem transação de vários comandos, e lote meio-aplicado não dá erro nem dá pra reproduzir). ⚠️ **`cheques.conta_id` passa a ser gravado no DEPÓSITO**, não só na compensação — é seguro porque o único leitor é a `movimentos_caixa`, que filtra `status='compensado'`. **Braço novo que leia `cheques.conta_id` SEM filtrar status faz cheque depositado virar dinheiro que não existe.** O e2e tem um check só pra isso ("DEPÓSITO NÃO MEXE NO CAIXA"). As duas funções são `security invoker` de propósito: `definer` + `grant to authenticated` deixaria motorista depositar cheque
 
 ⚠️ **Consulta sem limite natural usa `selectTudo()`** (`src/lib/supabase/select-tudo.ts`): o Supabase trunca em 1.000 linhas SEM ERRO. Toda query que cresce com o tempo (histórico inteiro, janelas de 90 dias) pagina com o helper — exige `.order()` estável. Já aplicado em DRE (jaTemConta), coletas do dashboard, coletas dos alertas, alertas_vistos e km da frota. Query nova sem teto = selectTudo, sempre.
 
@@ -410,6 +412,7 @@ Cleanup automático roda dentro de cada `safeSync` — motorista não precisa fa
 - **`npm run lint` não roda neste repo** — não existe config de ESLint nem `eslintConfig` no `package.json`, então `next lint` abre o assistente interativo "How would you like to configure ESLint?" e trava. Usar só `npm run typecheck`. Não criar config por conta própria: mudaria o CI e é decisão do Evaner.
 - **Erro de serviço externo tem que carregar o motivo que o serviço deu.** Em 14/09/2026 isso custou DUAS rodadas de adivinhação no mesmo dia: um 401 virou "a chave está inválida" e um 400 virou "a leitura falhou (400)", enquanto o provedor tinha mandado o motivo exato nos dois casos — e o código descartava. Assim que a mensagem passou a ir junto, o 400 foi resolvido em uma tentativa (era o escopo da chave). **A mensagem do provedor vai JUNTO da nossa, nunca no lugar dela** — e cuidado ao dividir o tratamento em ramos, que foi assim que se perdeu na segunda vez.
 - **Pedir formato no prompt não garante formato.** O leitor de cheques pede o código do banco, mas quem garante é uma normalização no servidor. Motivo: a base já tinha "085" ao lado de "85" e "041" ao lado de "41", digitados por gente — deixar o formato na mão do modelo repetiria a fragmentação em escala. Mesma família da curadoria de postos ("Texas" × "Posto texas"): melhor normalizar na entrada do que juntar depois.
+- **Teste de dinheiro que compara `null` com `null` passa VERDE sem medir nada.** O check "depósito não mexe no caixa" (0071) lia o saldo pela `saldo_contas()`, que filtra `ativa = true` — e a conta do teste nascia inativa. Os dois lados voltavam `null`, `null === null` deu verde, e o check prometia uma garantia que ele nunca tinha checado. **Falso positivo em check de dinheiro é pior que vermelho**: o vermelho você conserta, o verde você acredita. Hoje o helper devolve `NaN` quando a conta não aparece, e `NaN === NaN` é falso — o check quebra em vez de mentir. Vale pra todo comparador de saldo: o "não encontrei" tem que ser diferente do "encontrei zero".
 - **iOS Safari NÃO tem `beforeinstallprompt`** — motorista iPhone precisa instalar manual via Compartilhar > Adicionar à Tela de Início. Fluxo pós-instalação é idêntico.
 
 ## Workflow de deploy
@@ -424,7 +427,7 @@ git push
 
 Scripts auxiliares:
 - `node scripts/aplicar-migration.mjs <arquivo.sql>` — aplica migration direto no Postgres (usa `DATABASE_URL`, roda em transação)
-- `node scripts/e2e-modulo1.mjs` — **rodar após qualquer mexida no Módulo 1**: **55 checks** contra produção (RLS, idempotência, updates atômicos, queries aninhadas do admin e dos alertas, cálculo de saldo). Cria e apaga o próprio motorista descartável.
+- `node scripts/e2e-modulo1.mjs` — **rodar após qualquer mexida no Módulo 1**: **77 checks** contra produção (RLS, idempotência, updates atômicos, queries aninhadas do admin e dos alertas, cálculo de saldo, maço de cheques). Cria e apaga o próprio motorista descartável — e uma conta financeira e um comprador descartáveis pro bloco dos cheques.
 - `node scripts/limpar-lancamentos-teste.mjs <email> --sim-eu-confirmo` — zera os lançamentos de um motorista. **A trava agora é a flag**, não mais o `is_teste`: sem ela, recusa. Rodar em perfil real APAGA de verdade.
 - `node scripts/gerar-icones.mjs` — regenera PNGs a partir de `icone-gota.jfif`
 - `node scripts/gerar-tutorial-pdf.mjs` — regenera o manual do Jean (`tutorial-coleta.pdf` fica na raiz, ignorado pelo .gitignore)

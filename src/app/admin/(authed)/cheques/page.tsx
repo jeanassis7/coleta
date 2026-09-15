@@ -2,6 +2,7 @@ import { buscarCheques, buscarCompradores } from "@/lib/admin/queries";
 import { buscarContasFinanceiras } from "@/lib/admin/caixa";
 import { ChequesPainel } from "@/components/admin/ChequesPainel";
 import { LoteChequesPainel } from "@/components/admin/LoteChequesPainel";
+import { MacoCheques } from "@/components/admin/MacoCheques";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,8 @@ export default async function ChequesPage() {
         compradores={compradores.map((c) => ({ id: c.id, nome: c.nome }))}
         ocrDisponivel={ocrDisponivel}
       />
+
+      <MacoCheques cheques={cheques} contas={opcoesConta} />
 
       <ChequesPainel cheques={cheques} contas={opcoesConta} />
     </div>

@@ -180,6 +180,38 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  // ------------------------------------------------------------------
+  // TIRAR DO MAÇO — desfazer um depósito
+  // ------------------------------------------------------------------
+  // Depósito em lote (0071) torna fácil marcar um cheque a mais sem querer.
+  // O desfazer tem que ser tão completo quanto o fazer: além do status, a
+  // data e a CONTA do depósito voltam a ser nulas — senão o cheque ficaria
+  // na carteira carregando a conta de um depósito que não existiu, e a
+  // próxima compensação o mandaria pro banco errado calado.
+  //
+  // Só antes de compensar. Depois de compensar o dinheiro já entrou no
+  // caixa, e desfazer isso é 'devolver', que é outra história.
+  if (String(body.acao || "") === "desfazer_deposito") {
+    const client = getSupabaseAdmin(admin.id);
+    const { data, error } = await client
+      .from("cheques")
+      .update({ status: "em_carteira", depositado_em: null, conta_id: null })
+      .eq("id", id)
+      .eq("status", "depositado")
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!data?.length) {
+      return NextResponse.json(
+        {
+          error:
+            "esse cheque não está depositado — se já compensou, o caminho é 'Voltou'; se já voltou, ele não está no maço",
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const t = TRANSICOES[String(body.acao || "")];
   if (!t) return NextResponse.json({ error: "ação inválida" }, { status: 400 });
 

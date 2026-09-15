@@ -60,6 +60,11 @@ const criados = {
   coletaAdminClientId: null,
   logDesdeId: null,
   fotos: [],
+  // maço de cheques (0071)
+  contaFinId: null,
+  compradorId: null,
+  chequeIds: [],
+  recebimentoIds: [],
 };
 
 async function main() {
@@ -769,7 +774,227 @@ async function main() {
   check("o perfil protegido continua no banco depois da tentativa", !!aindaLa);
   await svc.from("profiles").update({ protegido: false }).eq("id", teste1.id);
 
+  await chequesEmMaco();
+
   await mot.auth.signOut();
+}
+
+/**
+ * MAÇO DE CHEQUES (0071) — depositar e compensar em lote.
+ *
+ * O que estes checks defendem, em ordem de importância:
+ *
+ *  1. DEPÓSITO NÃO É DINHEIRO. A 0071 passou a gravar `cheques.conta_id` já
+ *     no depósito, e a segurança disso depende de UM fato: o caixa só lê
+ *     cheque com status 'compensado'. Se alguém acrescentar um braço que
+ *     leia `conta_id` sem filtrar o status, o depositado vira dinheiro que
+ *     não existe — e ninguém percebe. O check do delta zero é o guardião
+ *     dessa promessa.
+ *  2. TUDO-OU-NADA. Lote meio-aplicado (8 depositados, 2 na carteira) não dá
+ *     erro e não dá pra reproduzir. O check manda um lote com um cheque
+ *     "sujo" e exige que os OUTROS continuem intactos.
+ */
+async function chequesEmMaco() {
+  // ⚠️ Devolve NaN quando a conta não aparece, nunca null. A primeira versão
+  // devolvia null e o check de "depósito não mexe no caixa" passou VERDE
+  // comparando null === null — sem ter medido nada. Falso positivo num check
+  // de dinheiro é pior que vermelho: ele promete uma garantia que não existe.
+  const saldoDaConta = async (id) => {
+    const { data } = await svc.rpc("saldo_contas");
+    const linha = (data ?? []).find((c) => c.conta_id === id);
+    return linha ? Number(linha.saldo) : NaN;
+  };
+
+  // Conta e comprador descartáveis — nada de usar os de verdade.
+  const { data: conta } = await svc
+    .from("contas_financeiras")
+    .insert({
+      nome: `E2E Banco ${Date.now()}`,
+      tipo: "banco",
+      saldo_inicial: 0,
+      saldo_inicial_em: "2020-01-01",
+      // ATIVA de propósito: a `saldo_contas()` filtra `ativa = true`. Com a
+      // conta inativa ela não aparece na resposta e os checks de saldo
+      // mediriam o nada. Ela existe por ~1 minuto e some no cleanup — mesma
+      // escolha do motorista descartável.
+      ativa: true,
+    })
+    .select("id")
+    .single();
+  criados.contaFinId = conta?.id ?? null;
+
+  const { data: comprador } = await svc
+    .from("compradores")
+    .insert({ nome: `E2E Comprador ${Date.now()}`, ativo: false })
+    .select("id")
+    .single();
+  criados.compradorId = comprador?.id ?? null;
+  if (!conta || !comprador) {
+    check("maço de cheques: conseguiu montar o cenário", false, "conta/comprador");
+    return;
+  }
+
+  // 3 cheques na carteira, R$ 100 + 200 + 300 = 600.
+  const valores = [100, 200, 300];
+  const ids = [];
+  for (const v of valores) {
+    const { data: rec } = await svc
+      .from("recebimentos")
+      .insert({
+        comprador_id: comprador.id,
+        forma: "cheque",
+        valor: v,
+        data: "2026-01-02",
+        registrado_por: criados.motoristaId,
+      })
+      .select("id")
+      .single();
+    const { data: ch } = await svc
+      .from("cheques")
+      .insert({
+        recebimento_id: rec.id,
+        comprador_id: comprador.id,
+        banco: "999",
+        emitente: "E2E Emitente",
+        numero: String(v),
+        valor: v,
+        bom_para: "2026-02-01",
+      })
+      .select("id")
+      .single();
+    ids.push(ch.id);
+    criados.chequeIds.push(ch.id);
+    criados.recebimentoIds.push(rec.id);
+  }
+
+  const saldoAntes = await saldoDaConta(conta.id);
+
+  // ---- guards que têm que RECUSAR ----
+  const { error: eSemConta } = await svc.rpc("depositar_cheques", {
+    ids,
+    conta: null,
+    quando: "2026-02-02",
+  });
+  check("depósito sem conta é RECUSADO", !!eSemConta, eSemConta ? "" : "passou");
+
+  const { error: eRepetido } = await svc.rpc("depositar_cheques", {
+    ids: [ids[0], ids[0]],
+    conta: conta.id,
+    quando: "2026-02-02",
+  });
+  check("depósito com cheque repetido é RECUSADO", !!eRepetido);
+
+  // ---- tudo-ou-nada: um cheque sujo derruba o lote inteiro ----
+  await svc.from("cheques").update({ status: "depositado" }).eq("id", ids[2]);
+  const { error: eSujo } = await svc.rpc("depositar_cheques", {
+    ids,
+    conta: conta.id,
+    quando: "2026-02-02",
+  });
+  const { data: intactos } = await svc
+    .from("cheques")
+    .select("id, status")
+    .in("id", [ids[0], ids[1]]);
+  check(
+    "lote com 1 cheque fora da carteira é RECUSADO",
+    !!eSujo,
+    eSujo ? "" : "depositou e não devia"
+  );
+  check(
+    "e os OUTROS cheques do lote recusado ficam intactos na carteira",
+    (intactos ?? []).length === 2 &&
+      intactos.every((c) => c.status === "em_carteira"),
+    JSON.stringify(intactos)
+  );
+  await svc.from("cheques").update({ status: "em_carteira" }).eq("id", ids[2]);
+
+  // ---- o caminho feliz ----
+  const { error: eDep } = await svc.rpc("depositar_cheques", {
+    ids,
+    conta: conta.id,
+    quando: "2026-02-02",
+  });
+  const { data: depositados } = await svc
+    .from("cheques")
+    .select("status, conta_id, depositado_em")
+    .in("id", ids);
+  check("depósito do maço inteiro funciona", !eDep, eDep?.message ?? "");
+  check(
+    "os 3 ficam depositados, com a conta e a data gravadas",
+    (depositados ?? []).length === 3 &&
+      depositados.every(
+        (c) =>
+          c.status === "depositado" &&
+          c.conta_id === conta.id &&
+          String(c.depositado_em).slice(0, 10) === "2026-02-02"
+      ),
+    JSON.stringify(depositados)
+  );
+
+  // ⚠️ O CHECK MAIS IMPORTANTE DESTE BLOCO.
+  const saldoDepois = await saldoDaConta(conta.id);
+  check(
+    "DEPÓSITO NÃO MEXE NO CAIXA (a conta continua com o mesmo saldo)",
+    Number(saldoAntes) === Number(saldoDepois),
+    `antes=${saldoAntes} depois=${saldoDepois}`
+  );
+
+  // ---- idempotência: reenviar o mesmo lote não deposita de novo ----
+  const { error: eDeNovo } = await svc.rpc("depositar_cheques", {
+    ids,
+    conta: conta.id,
+    quando: "2026-02-02",
+  });
+  check("reenviar o mesmo maço é RECUSADO", !!eDeNovo);
+
+  // ---- tirar do maço devolve o cheque limpo ----
+  await svc
+    .from("cheques")
+    .update({ status: "em_carteira", depositado_em: null, conta_id: null })
+    .eq("id", ids[2]);
+  const { data: tirado } = await svc
+    .from("cheques")
+    .select("status, conta_id, depositado_em")
+    .eq("id", ids[2])
+    .maybeSingle();
+  check(
+    "tirar do maço devolve o cheque SEM conta e SEM data de depósito",
+    tirado?.status === "em_carteira" &&
+      tirado?.conta_id === null &&
+      tirado?.depositado_em === null,
+    JSON.stringify(tirado)
+  );
+
+  // ---- compensar: agora sim o dinheiro entra ----
+  const doMaco = [ids[0], ids[1]];
+  const { error: eComp } = await svc.rpc("compensar_cheques", {
+    ids: doMaco,
+    quando: "2026-02-05",
+    conta: null,
+  });
+  const saldoCompensado = await saldoDaConta(conta.id);
+  check("compensação do maço funciona", !eComp, eComp?.message ?? "");
+  check(
+    "COMPENSAR PÕE O DINHEIRO NA CONTA (+300 dos dois cheques)",
+    Math.round((Number(saldoCompensado) - Number(saldoAntes)) * 100) === 30000,
+    `antes=${saldoAntes} depois=${saldoCompensado}`
+  );
+
+  // ---- compensar sem saber a conta é recusado ----
+  await svc
+    .from("cheques")
+    .update({ status: "depositado", conta_id: null, depositado_em: "2026-02-02" })
+    .eq("id", ids[2]);
+  const { error: eSemDestino } = await svc.rpc("compensar_cheques", {
+    ids: [ids[2]],
+    quando: "2026-02-05",
+    conta: null,
+  });
+  check(
+    "compensar cheque que não sabe em qual conta caiu é RECUSADO",
+    !!eSemDestino,
+    eSemDestino ? "" : "compensou sem conta — o dinheiro sumiria do caixa"
+  );
 }
 
 async function cleanup() {
@@ -788,6 +1013,15 @@ async function cleanup() {
   };
 
   try {
+    // Maço de cheques: o cheque segura a conta financeira por FK e o
+    // recebimento segura o comprador. Ordem importa — cheque, recebimento,
+    // comprador, conta. (O cheque cai junto com o recebimento por cascade,
+    // mas o delete explícito deixa o erro visível se algo prender.)
+    for (const id of criados.chequeIds) await del("cheques", "id", id);
+    for (const id of criados.recebimentoIds) await del("recebimentos", "id", id);
+    await del("compradores", "id", criados.compradorId);
+    await del("contas_financeiras", "id", criados.contaFinId);
+
     // SÓ ids que este run criou — nunca deletes amplos por motorista
     // (o Teste 1 do Evaner vive no mesmo banco).
     await del("coletas", "client_id", criados.coletaAdminClientId);
