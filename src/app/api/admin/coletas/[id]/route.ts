@@ -209,14 +209,19 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const desmarcandoAgora =
     updates.pago_pela_sede === false && antes?.pago_pela_sede === true;
   if (desmarcandoAgora) {
+    // ⚠️ `.limit(1)` e NÃO `.maybeSingle()`: desde o pagamento em lote uma
+    // origem pode ter DUAS contas (a nota partida entre dois meios de
+    // pagamento). `.maybeSingle()` com 2 linhas devolve erro e `data: null`
+    // — e como o erro não é lido, a guarda passaria a deixar tudo passar,
+    // calada. Mesma blindagem feita no editor de abastecimento em 03/09.
     const { data: contaPagaSede } = await adminClient
       .from("contas_a_pagar")
       .select("id")
       .eq("origem_tipo", "coleta")
       .eq("origem_id", id)
       .eq("status", "paga")
-      .maybeSingle();
-    if (contaPagaSede) {
+      .limit(1);
+    if (contaPagaSede?.length) {
       // Reverte o flag: a coleta continua marcada como paga pela sede.
       await adminClient
         .from("coletas")
@@ -367,13 +372,16 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   // Conta ABERTA morre junto; conta PAGA fica (o dinheiro saiu de verdade)
   // e quem apagou fica sabendo — mesmo padrão do abastecimento.
-  const { data: contaPaga } = await adminClient
+  // `.limit(1)`: uma origem pode ter mais de uma conta (nota partida entre
+  // dois meios). Ver o comentário no PATCH.
+  const { data: contasPagas } = await adminClient
     .from("contas_a_pagar")
     .select("id")
     .eq("origem_tipo", "coleta")
     .eq("origem_id", id)
     .eq("status", "paga")
-    .maybeSingle();
+    .limit(1);
+  const contaPaga = contasPagas?.length ? contasPagas[0] : null;
   const { error: eConta } = await adminClient
     .from("contas_a_pagar")
     .delete()

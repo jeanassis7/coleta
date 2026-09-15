@@ -477,6 +477,86 @@ try {
     );
   }
 
+  // =========================================================================
+  console.log("\nCONTA PARTIDA ENTRE MEIOS (0074)");
+  // =========================================================================
+  // A alocação mora no endpoint, mas a invariante que a sustenta é de dado:
+  // a SOMA dos pedaços é o valor original da conta. Se ela quebrar, o gestor
+  // vê na tela uma conta de R$ 1.000 que na verdade pagou outro valor — e
+  // não tem como perceber, porque a tela junta os pedaços.
+  {
+    const mae = (
+      await client.query(
+        `insert into contas_a_pagar (descricao, categoria, valor, vencimento, status, pago_em, forma_pagamento, conta_id, registrado_por, pagamento_id)
+         values ('E2E partida', 'sistema', 600, current_date, 'paga', current_date, 'pix', $1, $2, gen_random_uuid())
+         returning id, pagamento_id`,
+        [conta, evaner]
+      )
+    ).rows[0];
+
+    await client.query(
+      `insert into contas_a_pagar (descricao, categoria, valor, vencimento, status, pago_em, forma_pagamento, conta_id, conta_pai_id, pagamento_id, registrado_por)
+       values ('E2E partida', 'sistema', 400, current_date, 'paga', current_date, 'dinheiro', $1, $2, $3, $4)`,
+      [conta, mae.id, mae.pagamento_id, evaner]
+    );
+
+    const soma = Number(
+      (
+        await client.query(
+          `select sum(valor) s from contas_a_pagar where id = $1 or conta_pai_id = $1`,
+          [mae.id]
+        )
+      ).rows[0].s
+    );
+    igual("a soma dos pedaços é o valor original da conta", soma, 1000);
+
+    // Dois níveis viraria árvore num lugar que só precisa de mãe e filhos —
+    // e um pedaço apontando pra outro pedaço quebraria o agrupamento da tela
+    // (a conta apareceria duas vezes, cada uma com parte do valor).
+    let recusouNeto = false;
+    try {
+      await client.query("savepoint p1");
+      const filho = (
+        await client.query(
+          `select id from contas_a_pagar where conta_pai_id = $1 limit 1`,
+          [mae.id]
+        )
+      ).rows[0].id;
+      await client.query(
+        `insert into contas_a_pagar (descricao, categoria, valor, vencimento, status, pago_em, forma_pagamento, conta_id, conta_pai_id, registrado_por)
+         values ('E2E neto', 'sistema', 10, current_date, 'paga', current_date, 'pix', $1, $2, $3)`,
+        [conta, filho, evaner]
+      );
+      await client.query("release savepoint p1");
+    } catch {
+      recusouNeto = true;
+      await client.query("rollback to savepoint p1");
+    }
+    afirmar(
+      "pedaço não pode ser mãe de outro pedaço (trigger da 0074)",
+      recusouNeto,
+      recusouNeto ? "" : "aceitou dois níveis — o agrupamento da tela quebraria"
+    );
+
+    // Sem `on delete cascade` de propósito: apagar a mãe levaria os filhos
+    // junto, inclusive filhos JÁ PAGOS por outro meio. O banco tem que
+    // recusar, e o caminho certo é desfazer o acerto inteiro.
+    let recusouApagarMae = false;
+    try {
+      await client.query("savepoint p2");
+      await client.query("delete from contas_a_pagar where id = $1", [mae.id]);
+      await client.query("release savepoint p2");
+    } catch {
+      recusouApagarMae = true;
+      await client.query("rollback to savepoint p2");
+    }
+    afirmar(
+      "o banco RECUSA apagar a conta-mãe enquanto houver pedaço apontando",
+      recusouApagarMae,
+      recusouApagarMae ? "" : "apagou a mãe e deixou o pedaço órfão"
+    );
+  }
+
   console.log(
     falhas === 0
       ? "\nTODOS OS GUARDS DE PÉ.\n"

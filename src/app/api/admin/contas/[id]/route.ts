@@ -762,11 +762,43 @@ export async function DELETE(
   //    ter sido descontado de salário nenhum (o FK só limpava o ponteiro).
   const { data: conta } = await client
     .from("contas_a_pagar")
-    .select("cheque_id, status, origem_tipo, origem_id")
+    .select("cheque_id, status, origem_tipo, origem_id, conta_pai_id, pagamento_id, valor")
     .eq("id", id)
     .maybeSingle();
 
   const desfeito: string[] = [];
+
+  // ---------------------------------------------------------------------
+  // PEDAÇO DE CONTA PARTIDA NÃO SE APAGA SOZINHO (0074)
+  // ---------------------------------------------------------------------
+  // Uma conta de R$ 1.000 paga com dinheiro + cheque são duas linhas. Apagar
+  // uma delas deixaria a conta valendo R$ 600 — e o gestor, que na tela vê
+  // uma linha só, não teria como perceber que o valor encolheu. O caminho é
+  // desfazer o ACERTO INTEIRO, que devolve os cheques e reabre a dívida
+  // cheia.
+  if (conta?.conta_pai_id) {
+    return NextResponse.json(
+      {
+        error:
+          "essa conta foi paga com mais de um meio e isto é só um pedaço dela — apagar só este deixaria a conta menor do que ela é. Desfaça o pagamento inteiro.",
+        pagamento_id: conta.pagamento_id,
+      },
+      { status: 409 }
+    );
+  }
+  const { count: filhos } = await client
+    .from("contas_a_pagar")
+    .select("id", { count: "exact", head: true })
+    .eq("conta_pai_id", id);
+  if ((filhos ?? 0) > 0) {
+    return NextResponse.json(
+      {
+        error: `essa conta foi paga com mais de um meio (${(filhos ?? 0) + 1} pedaços) — desfaça o pagamento inteiro em vez de apagar um pedaço.`,
+        pagamento_id: conta?.pagamento_id ?? null,
+      },
+      { status: 409 }
+    );
+  }
 
   // ---------------------------------------------------------------------
   // RÉGUA DO DINHEIRO #7 — o guard existia só na TELA (varredura 21/08)

@@ -10,6 +10,7 @@ import {
   reaisParaCentavos,
 } from "@/components/InputDinheiro";
 import { ModalConfirmar } from "@/components/admin/Modais";
+import { PagamentoEmLote } from "@/components/admin/PagamentoEmLote";
 import {
   CATEGORIAS_LANCAVEIS,
   labelCategoria,
@@ -85,6 +86,7 @@ export function ContasPainel({
   const [aba, setAba] = useState<Aba>("a_pagar");
   const [novaConta, setNovaConta] = useState(false);
   const [novaRecorrente, setNovaRecorrente] = useState(false);
+  const [avisoLote, setAvisoLote] = useState<string | null>(null);
 
   const daAba = useMemo(
     () => contas.filter((c) => c.status === aba),
@@ -141,6 +143,25 @@ export function ContasPainel({
           Adiantamentos (pagar agora ou somar no salário).
         </div>
       )}
+
+      {avisoLote && (
+        <div className="bg-blue-50 border border-blue-300 rounded-xl p-3 text-sm mb-4 flex items-start justify-between gap-3">
+          <span>{avisoLote}</span>
+          <button
+            onClick={() => setAvisoLote(null)}
+            className="text-cinza-suave text-xs hover:underline shrink-0"
+          >
+            ok
+          </button>
+        </div>
+      )}
+
+      <PagamentoEmLote
+        contas={contas}
+        chequesCarteira={chequesCarteira}
+        contasFinanceiras={contasFinanceiras}
+        onAviso={setAvisoLote}
+      />
 
       <div className="flex flex-wrap gap-2 mb-4">
         {(
@@ -471,6 +492,48 @@ function TabelaContas({
   contasFinanceiras: ContaOpcao[];
   vales: ValePendente[];
 }) {
+  // ---------------------------------------------------------------------
+  // O BANCO PARTE, A TELA JUNTA (0074)
+  // ---------------------------------------------------------------------
+  // Uma conta paga com dois meios vira duas linhas no banco (cada pedaço
+  // carrega exatamente um meio — é o que deixa `conta_id` e `cheque_id`
+  // continuarem valendo 1:1, e por isso o caixa e o DRE não mudaram nada).
+  // Aqui elas voltam a ser UMA, com o valor somado: o gestor lançou uma
+  // conta de R$ 1.000 e é uma conta de R$ 1.000 que ele tem que ver.
+  const linhas = useMemo(() => {
+    const porMae = new Map<string, ContaAPagar[]>();
+    for (const c of contas) {
+      const k = c.conta_pai_id ?? c.id;
+      porMae.set(k, [...(porMae.get(k) ?? []), c]);
+    }
+    // Uma linha por grupo, na ordem em que o grupo aparece. O `vistas` é o
+    // que garante isso: sem ele, uma conta-mãe fora da janela carregada
+    // faria cada pedaço virar uma linha com a soma dos dois — a conta
+    // apareceria DUAS vezes, pelo valor cheio, e o total da tela mentiria.
+    const vistas = new Set<string>();
+    const out: {
+      conta: ContaAPagar;
+      valorTotal: number;
+      pedacos: ContaAPagar[];
+    }[] = [];
+    for (const c of contas) {
+      const k = c.conta_pai_id ?? c.id;
+      if (vistas.has(k)) continue;
+      vistas.add(k);
+      const pedacos = porMae.get(k) ?? [c];
+      out.push({
+        // Representa o grupo o pedaço ORIGINAL — é ele que a origem aponta
+        // e que o histórico conhece. Se ele não estiver carregado, o
+        // primeiro pedaço representa (melhor mostrar do que sumir).
+        conta: pedacos.find((p) => !p.conta_pai_id) ?? pedacos[0],
+        valorTotal:
+          Math.round(pedacos.reduce((s, p) => s + p.valor, 0) * 100) / 100,
+        pedacos,
+      });
+    }
+    return out;
+  }, [contas]);
+
   const router = useRouter();
   const [pagando, setPagando] = useState<ContaAPagar | null>(null);
   const [confirmando, setConfirmando] = useState<ContaAPagar | null>(null);
@@ -541,7 +604,7 @@ function TabelaContas({
           </tr>
         </thead>
         <tbody>
-          {contas.map((c) => {
+          {linhas.map(({ conta: c, valorTotal, pedacos }) => {
             const dias = diasAte(c.vencimento);
             const vencida = aba === "a_pagar" && dias < 0;
             return (
@@ -566,12 +629,31 @@ function TabelaContas({
                   {labelCategoria(c.categoria)}
                 </td>
                 <td className="py-2 pr-3 text-right font-mono font-semibold">
-                  {formatBRL(c.valor)}
+                  {formatBRL(valorTotal)}
                 </td>
                 {aba === "paga" && (
                   <td className="py-2 pr-3 text-xs text-cinza-suave">
-                    {c.forma_pagamento}
-                    {c.pago_em ? ` · ${formatData(c.pago_em)}` : ""}
+                    {/* O BANCO PARTE, A TELA JUNTA (0074). Uma conta paga com
+                        dois meios são duas linhas lá embaixo; aqui é uma só,
+                        com os pedaços listados. */}
+                    {pedacos.length === 1 ? (
+                      <>
+                        {c.forma_pagamento}
+                        {c.pago_em ? ` · ${formatData(c.pago_em)}` : ""}
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          {pedacos.length} meios
+                          {c.pago_em ? ` · ${formatData(c.pago_em)}` : ""}
+                        </div>
+                        {pedacos.map((p) => (
+                          <div key={p.id} className="whitespace-nowrap">
+                            └ {formatBRL(p.valor)} {p.forma_pagamento}
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </td>
                 )}
                 <td className="py-2 pr-3">

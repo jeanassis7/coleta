@@ -48,14 +48,18 @@ export async function PATCH(
       : null;
 
   if (trocaPago === true) {
+    // ⚠️ `.limit(1)` e NÃO `.maybeSingle()`: desde o pagamento em lote uma
+    // origem pode ter DUAS contas (nota partida entre dois meios). Com 2
+    // linhas o `.maybeSingle()` devolve erro e `data: null`, e como o erro
+    // não é lido a guarda pararia de guardar, calada.
     const { data: contaPaga } = await client
       .from("contas_a_pagar")
       .select("id")
       .eq("origem_tipo", "despesa")
       .eq("origem_id", id)
       .eq("status", "paga")
-      .maybeSingle();
-    if (contaPaga) {
+      .limit(1);
+    if (contaPaga?.length) {
       return NextResponse.json(
         {
           error:
@@ -90,14 +94,18 @@ export async function PATCH(
   const valorFinal = (updates.valor as number) ?? Number(atual.valor);
 
   if (trocaPago === false) {
+    // ⚠️⚠️ ESTE ERA O PIOR DOS TRÊS. Com `.maybeSingle()` e duas contas na
+    // mesma origem (nota partida), o retorno é `data: null` — o código
+    // concluía "não existe conta" e CRIAVA MAIS UMA. A dívida do posto
+    // nasceria duplicada, e ninguém veria erro nenhum.
     const { data: jaExiste } = await client
       .from("contas_a_pagar")
       .select("id")
       .eq("origem_tipo", "despesa")
       .eq("origem_id", id)
       .in("status", ["prevista", "a_pagar", "paga"])
-      .maybeSingle();
-    if (!jaExiste) {
+      .limit(1);
+    if (!jaExiste?.length) {
       const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000);
       const venc = new Date(
         Date.UTC(hojeBr.getUTCFullYear(), hojeBr.getUTCMonth() + 1, 1)
@@ -179,13 +187,15 @@ export async function DELETE(
     .eq("id", id)
     .maybeSingle();
 
-  const { data: contaPaga } = await client
+  // `.limit(1)`: uma origem pode ter mais de uma conta (nota partida).
+  const { data: contasPagas } = await client
     .from("contas_a_pagar")
     .select("id")
     .eq("origem_tipo", "despesa")
     .eq("origem_id", id)
     .eq("status", "paga")
-    .maybeSingle();
+    .limit(1);
+  const contaPaga = contasPagas?.length ? contasPagas[0] : null;
   const { error: eConta } = await client
     .from("contas_a_pagar")
     .delete()

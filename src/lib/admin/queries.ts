@@ -1683,6 +1683,12 @@ export interface ContaAPagar {
   competencia: string | null;
   parcela: number | null;
   parcelas_total: number | null;
+  /** Carimbo do acerto (0073): tudo que foi pago junto compartilha o uuid. */
+  pagamento_id: string | null;
+  /** Pedaço de uma conta partida entre meios de pagamento (0074). Aponta pro
+   *  pedaço original; a SOMA dos pedaços é o valor da conta. A tela agrupa
+   *  por `conta_pai_id ?? id` — o banco parte, a tela junta. */
+  conta_pai_id: string | null;
   observacao: string | null;
   criado_em: string;
 }

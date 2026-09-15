@@ -137,10 +137,58 @@ novos (o CHECK aceita o tipo; devolver duas vezes não cria duas dívidas; a
 dívida aparece no saldo do posto; conta de abastecimento com `local_id` não
 conta duas vezes).
 
-**Próximo:** item 4 do plano — pagamento em lote de contas a pagar (N contas
-× M meios). ⚠️ **Antes dele, blindar as 6 consultas** que buscam conta por
-origem esperando uma linha só (`coletas` ×2, `compras`, `despesas` ×3,
-`manutencoes`) — partir conta cria duas linhas com o mesmo `origem_id`.
+---
+
+## PAGAR VÁRIAS CONTAS DE UMA VEZ — 15/09/2026 🧾 (item 4 de 5)
+
+O grosso do plano. **N contas pagas por M meios** — cheques da carteira mais
+quantas linhas de dinheiro/PIX/depósito quiser, no mesmo acerto.
+
+Atende os dois casos que o Evaner descreveu: *"às vezes 3 contas dão R$ 1.000
+e um cheque de R$ 1.000 paga; às vezes 1 conta dá R$ 1.000 e cheque de 600 +
+outro de 400 paga"*.
+
+**O desenho: o banco parte, a tela junta.** Cada pedaço de conta carrega
+**exatamente um meio** — é isso que deixa `forma_pagamento`, `conta_id` e
+`cheque_id` continuarem valendo 1:1, e por isso `movimentos_caixa`,
+`saldo_contas()` e o DRE **não mudaram uma linha**. A tela reagrupa por
+`conta_pai_id` e mostra a conta inteira, com os pedaços listados embaixo.
+
+A alternativa (tabela de pagamentos com itens e meios) obrigaria a reescrever
+a `movimentos_caixa`, que é a fonte do dinheiro, mais o backfill do histórico
+— semanas de risco pro mesmo resultado visível.
+
+**Ganho que não é cosmético:** partir POR MEIO faz o `cheque_id` parar de
+mentir. O fechamento do posto joga todas as notas-de-cheque no primeiro
+cheque ("é referência, não rateio"); com um meio por pedaço, a amarração vira
+verdade.
+
+**A limpeza que veio antes.** Partir conta cria duas linhas com o mesmo
+`origem_id`, e **7 consultas** do sistema buscavam conta por origem com
+`.maybeSingle()` — que com 2 linhas devolve `data: null` e um erro que
+ninguém lê. A pior estava em `despesas/[id]`: o código concluiria "não existe
+conta" e **criaria outra**, duplicando a dívida do posto sem erro nenhum.
+Todas blindadas com `.limit(1)`.
+
+**Uma coisa que eu não tinha previsto:** depois de partir, o valor original
+some do banco (a mãe passa a valer o primeiro pedaço). Ou seja, um erro de
+distribuição seria **invisível depois** — não dá pra auditar o que não ficou
+registrado. Por isso o servidor **confere a própria distribuição antes de
+gravar**: se a soma dos pedaços não for exatamente o valor da conta, nada é
+pago.
+
+**Desfazer é o acerto inteiro**, pelo `pagamento_id`: os pedaços somem, a
+conta volta a valer o valor cheio, os cheques voltam pra carteira e o troco
+sai do caixa. Apagar um pedaço solto é recusado — deixaria a conta menor do
+que ela é, e na tela (que junta) isso seria invisível.
+
+E2E: módulo 1 **77/77**; guards de dinheiro **todos de pé**, com três casos
+novos (soma dos pedaços = original; pedaço não pode ser mãe de pedaço; o
+banco recusa apagar a mãe com filho apontando). A distribuição foi exercitada
+nos 5 cenários reais, incluindo "4 notas com 3 cheques + PIX + espécie".
+
+**Próximo:** item 5 do plano — vários meios no fechamento do posto. Agora é
+pouco: o motor já existe, é trocar a tela do posto pra usá-lo.
 
 ---
 

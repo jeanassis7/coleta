@@ -24,12 +24,19 @@ export async function PATCH(
 
   // Compra paga com CHEQUE tem uma conta a pagar espelho (paga, com o
   // cheque). É ela que o DRE lê — e é por ela que a edição precisa passar.
-  const { data: contaEspelho } = await client
+  // ⚠️ `.limit(1)` e NÃO `.maybeSingle()`: desde o pagamento em lote uma
+  // origem pode ter DUAS contas (compra partida entre dois meios). Com 2
+  // linhas o `.maybeSingle()` devolve `data: null` e a edição seguiria como
+  // se não houvesse espelho — o DRE ficaria com o valor antigo, calado.
+  // Ordena pra escolher sempre a mesma: a paga manda, porque é a que o DRE lê.
+  const { data: espelhos } = await client
     .from("contas_a_pagar")
     .select("id, status, cheque_id")
     .eq("origem_tipo", "compra_direta")
     .eq("origem_id", id)
-    .maybeSingle();
+    .order("status")
+    .limit(1);
+  const contaEspelho = espelhos?.length ? espelhos[0] : null;
 
   const updates: Record<string, unknown> = {};
   if (typeof body.data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.data)) {

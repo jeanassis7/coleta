@@ -107,13 +107,18 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   const client = getSupabaseAdmin(admin.id);
 
-  const { data: contaPaga } = await client
+  // `.limit(1)` e não `.maybeSingle()`: uma origem pode ter mais de uma
+  // conta desde o pagamento em lote (nota partida entre dois meios), e com
+  // 2 linhas o `.maybeSingle()` devolveria `data: null` — o aviso de "essa
+  // manutenção já foi paga" sumiria justamente quando ele importa.
+  const { data: contasPagas } = await client
     .from("contas_a_pagar")
     .select("id")
     .eq("origem_tipo", "manutencao")
     .eq("origem_id", id)
     .eq("status", "paga")
-    .maybeSingle();
+    .limit(1);
+  const contaPaga = contasPagas?.length ? contasPagas[0] : null;
 
   const { data: contasAbertas, error: eConta } = await client
     .from("contas_a_pagar")
