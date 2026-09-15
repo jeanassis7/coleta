@@ -109,6 +109,27 @@ async function acumularCustoDoMes(
   }
 }
 
+/**
+ * O banco é gravado como CÓDIGO NUMÉRICO SEM ZERO À ESQUERDA — é como o Jean
+ * lançou os 324 cheques que já existem: "1", "41", "85", "748", "756".
+ *
+ * O prompt pede o código, mas pedir não garante: a base já tem "085" ao lado
+ * de "85" e "041" ao lado de "41", digitados por gente. Deixar o formato na
+ * mão do modelo repetiria essa fragmentação em escala — e "41" e "041" viram
+ * dois bancos diferentes em qualquer agrupamento.
+ *
+ * Então normaliza aqui, uma vez, no servidor: só dígitos, zeros da frente
+ * fora. O que não for numérico (o modelo devolveu "Banrisul") passa intacto
+ * pro gestor corrigir na conferência — melhor um nome visível do que um
+ * código inventado por nós a partir de um nome.
+ */
+function normalizarBanco<T>(cheque: T): T {
+  const c = cheque as T & { banco?: unknown };
+  const bruto = String(c.banco ?? "").trim();
+  if (!bruto || !/^\d+$/.test(bruto)) return cheque;
+  return { ...c, banco: String(Number(bruto)) };
+}
+
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -143,7 +164,11 @@ const SCHEMA = {
             description:
               "false quando a foto está ilegível, é o verso do cheque, ou não é um cheque. Nesse caso todos os outros campos vêm vazios.",
           },
-          banco: { type: "string", description: "Vazio se não tiver certeza." },
+          banco: {
+            type: "string",
+            description:
+              "O CÓDIGO NUMÉRICO do banco (3 dígitos), não o nome. Ex: 001 Banco do Brasil, 041 Banrisul, 237 Bradesco, 341 Itaú, 748 Sicredi, 756 Sicoob, 033 Santander, 104 Caixa. Tire do primeiro bloco da linha CMC7 (rodapé) ou da tabelinha impressa no topo — os dois trazem o mesmo código. Vazio se não tiver certeza.",
+          },
           emitente: {
             type: "string",
             description:
@@ -385,7 +410,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      cheques: lido.cheques ?? [],
+      cheques: (lido.cheques ?? []).map(normalizarBanco),
       custo: {
         desta_leitura: custoDestaLeitura,
         do_mes: custoDoMes,
