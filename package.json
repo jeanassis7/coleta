@@ -11,6 +11,7 @@
     "icones": "node scripts/gerar-icones.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "browser-image-compression": "^2.0.2",
@@ -18,7 +19,6 @@
     "dexie-react-hooks": "^1.1.7",
     "leaflet": "^1.9.4",
     "next": "^14.2.18",
-    "openai": "^6.49.0",
     "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -10,8 +10,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
  * da foto pro gestor ticar um a um. Quem lança é o endpoint /lote, e só o
  * que foi ticado.
  *
- * Usa OpenAI porque é o provedor que o Evaner já paga — decisão dele em
- * 19/08/2026, pra não ter dois provedores por causa de uma tela.
+ * Usa Claude (Anthropic). Em 19/08/2026 a escolha foi OpenAI "porque é o
+ * provedor que o Evaner já paga"; em 14/09/2026 descobriu-se que ele não
+ * tem conta na OpenAI e TEM conta Anthropic com crédito — o mesmo critério
+ * apontando pro outro lado. Um provedor só continua sendo a regra.
  *
  * ---------------------------------------------------------------------------
  * POR QUE O PROMPT INSISTE EM DEIXAR VAZIO
@@ -28,19 +30,20 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 export const maxDuration = 60;
 
 /**
- * Configurável por ambiente de propósito: o catálogo de modelos da OpenAI
+ * Configurável por ambiente de propósito: o catálogo de modelos da Anthropic
  * muda, e trocar não deve exigir deploy. Precisa ser um modelo com visão.
  */
-const MODELO = process.env.OPENAI_MODEL || "gpt-4o";
+const MODELO = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 
 /**
- * Preço por 1 milhão de tokens, em dólar. Conferido em 14/09/2026 pro gpt-4o.
+ * Preço por 1 milhão de tokens, em dólar. Conferido em 14/09/2026 pro
+ * claude-opus-5.
  *
- * ⚠️ Se o OPENAI_MODEL mudar, ESTE NÚMERO FICA ERRADO e a tela continua
+ * ⚠️ Se o ANTHROPIC_MODEL mudar, ESTE NÚMERO FICA ERRADO e a tela continua
  * mostrando um valor bonitinho. Por isso a tela mostra o modelo ao lado do
  * custo — é o que denuncia a divergência. Revisar junto com o modelo.
  */
-const PRECO_POR_MILHAO = { entrada: 2.5, saida: 10.0 } as const;
+const PRECO_POR_MILHAO = { entrada: 5.0, saida: 25.0 } as const;
 
 /**
  * Chave "aaaa-mm" do mês corrente em horário de Brasília (UTC-3 fixo).
@@ -244,11 +247,11 @@ export async function POST(req: NextRequest) {
   const user = await exigirAdmin();
   if (!user) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
       {
         error:
-          "A leitura por foto não está configurada (falta OPENAI_API_KEY). Lance os cheques na mão — funciona igual.",
+          "A leitura por foto não está configurada (falta ANTHROPIC_API_KEY). Lance os cheques na mão — funciona igual.",
       },
       { status: 501 }
     );
@@ -276,7 +279,7 @@ export async function POST(req: NextRequest) {
       ? body.recebido_em
       : null;
 
-  const partesImagem: { type: "image_url"; image_url: { url: string } }[] = [];
+  const partesImagem: Anthropic.ImageBlockParam[] = [];
   for (const img of imagens) {
     const media_type = String(img.media_type || "");
     const data = String(img.data || "");
@@ -290,17 +293,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "imagem vazia" }, { status: 400 });
     }
     partesImagem.push({
-      type: "image_url",
-      image_url: { url: `data:${media_type};base64,${data}` },
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: media_type as "image/jpeg" | "image/png" | "image/webp",
+        data,
+      },
     });
   }
 
   try {
-    const client = new OpenAI();
-    const resposta = await client.chat.completions.create({
+    const client = new Anthropic(); // lê ANTHROPIC_API_KEY do ambiente sozinho
+    const resposta = await client.messages.create({
       model: MODELO,
+      max_tokens: 8000,
+      system: montarInstrucoes(recebidoEm),
+      // effort "low" é deliberado: esta função tem maxDuration = 60 na Vercel,
+      // e ler texto de uma imagem é percepção, não raciocínio longo. Dá pra
+      // subir se a leitura vier ruim na prática.
+      output_config: {
+        format: { type: "json_schema", schema: SCHEMA },
+        effort: "low",
+      },
       messages: [
-        { role: "system", content: montarInstrucoes(recebidoEm) },
         {
           role: "user",
           content: [
@@ -312,14 +327,12 @@ export async function POST(req: NextRequest) {
           ],
         },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: "cheques_lidos", strict: true, schema: SCHEMA },
-      },
     });
 
-    const bruto = resposta.choices[0]?.message?.content;
-    if (!bruto) {
+    const blocoTexto = resposta.content.find(
+      (b): b is Anthropic.TextBlock => b.type === "text"
+    );
+    if (!blocoTexto) {
       return NextResponse.json(
         { error: "A leitura voltou vazia. Lance os cheques na mão." },
         { status: 502 }
@@ -328,7 +341,7 @@ export async function POST(req: NextRequest) {
 
     let lido: { cheques?: unknown[] };
     try {
-      lido = JSON.parse(bruto);
+      lido = JSON.parse(blocoTexto.text);
     } catch {
       return NextResponse.json(
         { error: "Não consegui entender a resposta da leitura. Lance na mão." },
@@ -336,12 +349,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Custo em dólar a partir dos tokens REAIS devolvidos pela OpenAI — nunca
-    // estimativa de tokens. `usage` pode faltar em teoria (contrato do SDK
-    // não garante); nesse caso o custo desta leitura fica 0 em vez de travar
-    // a resposta — melhor um número conservador do que quebrar a leitura.
-    const tokensEntrada = resposta.usage?.prompt_tokens ?? 0;
-    const tokensSaida = resposta.usage?.completion_tokens ?? 0;
+    // Custo em dólar a partir dos tokens REAIS devolvidos pela Anthropic —
+    // nunca estimativa de tokens.
+    const tokensEntrada = resposta.usage.input_tokens ?? 0;
+    const tokensSaida = resposta.usage.output_tokens ?? 0;
     const custoDestaLeitura =
       (tokensEntrada / 1_000_000) * PRECO_POR_MILHAO.entrada +
       (tokensSaida / 1_000_000) * PRECO_POR_MILHAO.saida;
@@ -349,7 +360,7 @@ export async function POST(req: NextRequest) {
     const custoDoMes = await acumularCustoDoMes(user.id, custoDestaLeitura);
 
     // COTACAO_DOLAR é opcional (cadastrada na Vercel junto com a
-    // OPENAI_API_KEY). Sem ela, ou com valor inválido, a tela mostra só
+    // ANTHROPIC_API_KEY). Sem ela, ou com valor inválido, a tela mostra só
     // dólar — nunca inventamos cotação.
     const cotacaoBruta = Number(process.env.COTACAO_DOLAR);
     const cotacao = Number.isFinite(cotacaoBruta) && cotacaoBruta > 0 ? cotacaoBruta : null;
@@ -365,28 +376,38 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (erro) {
-    if (erro instanceof OpenAI.APIError) {
-      // 401 = chave errada; 429 = limite ou saldo; o resto é falha do
-      // provedor. Em qualquer caso a saída é a mesma: lançar na mão, que
-      // sempre funciona.
-      //
-      // ⚠️ A explicação da OpenAI vai JUNTO, e não no lugar da nossa frase.
-      // Em 14/09/2026 um 401 custou uma rodada de adivinhação porque a
-      // mensagem dizia só "chave inválida" — e a OpenAI tinha mandado o
-      // motivo exato (chave incompleta? revogada? projeto sem acesso?), que
-      // o código descartava. Ela mascara a própria chave (sk-proj-ab***yz),
-      // então mostrar é seguro e ainda deixa conferir começo e fim contra o
-      // que foi colado na Vercel.
-      const msg =
-        erro.status === 401
-          ? "A chave da leitura por foto foi recusada pela OpenAI."
-          : erro.status === 429
-            ? "Limite atingido, ou a conta da OpenAI está sem saldo."
-            : `A leitura falhou (${erro.status}).`;
+    if (erro instanceof Anthropic.AuthenticationError) {
+      // ⚠️ A explicação da Anthropic vai JUNTO, e não no lugar da nossa
+      // frase. Em 14/09/2026 um 401 custou uma rodada de adivinhação porque
+      // a mensagem dizia só "chave inválida" — e o provedor tinha mandado o
+      // motivo exato (chave incompleta? revogada? sem acesso?), que o código
+      // descartava. A mensagem do erro mascara a própria chave, então
+      // mostrar é seguro e ainda deixa conferir começo e fim contra o que
+      // foi colado na Vercel.
       const detalhe = erro.message ? ` Motivo: ${erro.message}` : "";
       return NextResponse.json(
-        { error: `${msg}${detalhe} Lance os cheques na mão.` },
-        { status: erro.status === 429 ? 429 : 502 }
+        {
+          error: `A chave da leitura por foto foi recusada pela Anthropic.${detalhe} Lance os cheques na mão.`,
+        },
+        { status: 502 }
+      );
+    }
+    if (erro instanceof Anthropic.RateLimitError) {
+      return NextResponse.json(
+        {
+          error:
+            "Limite atingido, ou a conta da Anthropic está sem saldo. Lance os cheques na mão.",
+        },
+        { status: 429 }
+      );
+    }
+    if (erro instanceof Anthropic.APIError) {
+      // 401/429 já foram tratados acima com mensagem específica; o resto é
+      // falha do provedor. Em qualquer caso a saída é a mesma: lançar na
+      // mão, que sempre funciona.
+      return NextResponse.json(
+        { error: `A leitura falhou (${erro.status}). Lance os cheques na mão.` },
+        { status: 502 }
       );
     }
     throw erro;

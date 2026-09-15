@@ -84,7 +84,7 @@ export function LoteChequesPainel({
   ocrDisponivel,
 }: {
   compradores: { id: string; nome: string }[];
-  /** OPENAI_API_KEY existe no servidor? Sem ela, só o modo manual. */
+  /** ANTHROPIC_API_KEY existe no servidor? Sem ela, só o modo manual. */
   ocrDisponivel: boolean;
 }) {
   const router = useRouter();
@@ -460,7 +460,7 @@ export function LoteChequesPainel({
           {custoOcr.cotacao !== null &&
             ` (≈ ${formatBRL(custoOcr.doMes * custoOcr.cotacao)})`}{" "}
           · estimativa pelo {custoOcr.modelo} · o valor real está no painel da
-          OpenAI
+          Anthropic
         </p>
       )}
 
