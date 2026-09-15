@@ -309,22 +309,56 @@ repasse derrubava o resultado pelo valor do cheque (a despesa entrava e a
 receita nunca). Se o cheque voltar, os dois lados se desfazem sozinhos.
 `[CONFIRMADO — decisão do Evaner na auditoria de 20/08]`
 
-**R68.** **Cheque devolvido: TUDO volta.** `[CONFIRMADO]`
+**R68.** **Cheque devolvido: o dinheiro volta a ser devido — mas nem sempre
+pela mesma porta.** `[CONFIRMADO]` · `[REGRA REVISADA 15/09/2026 — ver
+R68-b]`
 
-Quando um cheque volta — tenha sido depositado ou repassado — o sistema
-desfaz a cadeia inteira:
+Quando um cheque volta — tenha sido depositado ou repassado:
 
 | O que | Volta para |
 |---|---|
 | O cheque | status **devolvido**, de volta ao rol |
 | A dívida do comprador que o entregou | **aumenta de novo** |
-| A conta a pagar que ele quitou (se foi repassado) | volta a ser **a pagar** |
+| O que você devia a quem recebeu o papel | **volta** — ver R68-b |
 
 Na prática, o que costuma acontecer depois: **a despesa é paga por PIX da
 conta bancária**, e **o comprador que deu o cheque também paga por PIX** na
 conta. Ou seja, o cheque some da cadeia e os dois lados viram dinheiro.
 `[CORRIGIDO 19/08/2026 — devolver reverte a conta a pagar e a tela avisa o
 que foi desfeito]`
+
+**R68-b.** ⚠️ **REGRA REVISADA (15/09/2026) — a nota nem sempre reabre.**
+
+O que volta depende de existir **correspondência inequívoca** entre aquele
+papel e aquela conta:
+
+- **Pagamento pontual** — um cheque quitou uma conta específica. A conta
+  volta a ser devida, como sempre foi.
+- **Fornecedor com saldo** — o posto, onde várias notinhas viram um acerto
+  só. As notinhas **continuam pagas** e nasce uma **dívida nova do valor do
+  cheque**, com aquele fornecedor. O saldo do posto sobe.
+
+Nas palavras do Evaner: *"se pagou 5 notinhas do posto de R$ 1.000 e um
+cheque voltou, as notinhas não voltam, mas o saldo volta. É uma conta que de
+fato é um saldo a ser pago, e não uma conta."*
+
+**Por quê:** no maço não existe resposta pra "qual fatia de qual nota esse
+cheque cobriu" — no acerto do Texas as 17 notas apontam todas pro primeiro
+cheque e o segundo não aponta pra nada. Reverter ali escolheria o conjunto
+errado em silêncio. A dívida pelo valor do papel é sempre exata, nasce com a
+data de hoje (e não vencida em agosto), e já embute o troco do acerto.
+
+⚠️ **A dívida do cheque devolvido NÃO é gasto novo.** O gasto contou no dia
+do repasse (R67-b); contá-la de novo faria o mesmo diesel aparecer duas
+vezes. Ela fica **fora do DRE**, como as transferências entre contas.
+
+⚠️ **Só um lado se desfaz sozinho.** A R67-b diz que "se o cheque voltar, os
+dois lados se desfazem". Com esta regra a **receita** sai sozinha (o braço lê
+`status='repassado'`) e a **despesa fica**. Entre o cheque voltar e o
+comprador pagar, o resultado do mês fica mais baixo nesse valor. No
+acumulado cada um conta uma vez — o desvio é só **entre meses**. Decisão
+consciente do Evaner: *"bem barato. Super tranquilo."*
+`[CONFIRMADO — decisão do Evaner, 15/09/2026]`
 
 **R69.** **Reapresentação de cheque é automática no banco** e **não precisa
 ser tratada no sistema**. `[CONFIRMADO]`
@@ -743,21 +777,23 @@ cheques em aberto (**em carteira + depositado**), e um **preço de referência
 em R$/litro, editável, um só para fino e grosso**.
 **Tamanho:** médio.
 
-### 5. O cheque, nos dois sentidos
-**Regra:** R67 (repassar exige despesa) e R68 (devolvido reverte tudo).
-**Hoje:**
-- existe um botão "Repassar" solto que grava um texto livre e **não cria
-  despesa nenhuma** — o gasto some do DRE;
-- quando um cheque repassado volta, a conta que ele quitou **continua paga**,
-  quando deveria voltar a ser dívida.
+### 5. O cheque, nos dois sentidos ✅ FECHADO (15/09/2026)
+**Regra:** R67 (repassar exige despesa) e R68/R68-b (devolvido).
+**Estava:**
+- existia um botão "Repassar" solto que gravava texto livre e não criava
+  despesa nenhuma — o gasto sumia do DRE;
+- quando um cheque repassado voltava, a conta que ele quitou continuava paga.
 
-**Correção:** ver o debate na Parte XIII.
-**Tamanho:** médio.
+**Feito:** o botão solto saiu em 19/08 (repassar virou consequência de pagar
+algo). A devolução foi fechada em 15/09, com a R68 revisada: pagamento
+pontual reabre a conta; maço vira **dívida nova do valor do papel**, fora do
+DRE (migration 0073).
 
-### 6. Alertas
+### 6. Alertas — parcialmente feito
 **Regra:** R120 e R130.
-**Correção:** remover "cheque bom para esta semana" e "cheque devolvido sem
-resolver"; mudar "dinheiro parado" de 7 para **15 dias**.
+**Feito (15/09):** os N alertas de "cheque passou do bom para" viraram **um
+só**, com contagem e soma, linkando pro depósito em lote.
+**Falta:** mudar "dinheiro parado" de 7 para **15 dias**.
 **Tamanho:** pequeno.
 
 ### 7. O sistema lembra do vale

@@ -189,7 +189,17 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
         setErro(resposta.error || "erro");
         return;
       }
-      if (resposta.contaRevertida) {
+      if (resposta.dividaCriada) {
+        // Maço: as notas continuam pagas e o que volta é o SALDO. Dizer isso
+        // com todas as letras importa — o gestor precisa saber que agora
+        // existe uma dívida nova, e de quanto, pra não procurar a nota antiga.
+        setAviso(
+          `As notas que esse cheque ajudou a pagar continuam quitadas. ` +
+            `Nasceu uma dívida de ${formatBRL(resposta.dividaCriada.valor)} com ` +
+            `${resposta.dividaCriada.para} — está em Contas a pagar, e no saldo ` +
+            `do posto se for um posto cadastrado.`
+        );
+      } else if (resposta.contaRevertida) {
         setAviso(
           `A conta "${resposta.contaRevertida}" voltou para "a pagar" — o cheque que a quitava voltou.` +
             (resposta.avisoVales ? ` ${resposta.avisoVales}` : "")
@@ -421,7 +431,7 @@ function Tabela({ cheques, contas }: { cheques: Cheque[]; contas: ContaOpcao[] }
               ? `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)}. Marcar como depositado não é o mesmo que compensado — o dinheiro só entra no caixa quando você confirmar que caiu.`
               : acao.tipo === "compensar"
                 ? `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)}. A partir daqui esse dinheiro é caixa de verdade.`
-                : `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)} de ${acao.cheque.emitente}. A dívida de ${acao.cheque.comprador_nome} volta automaticamente${acao.cheque.status === "repassado" ? `, e o trâmite é direto entre o emitente e ${acao.cheque.repassado_para}` : ""}${acao.cheque.status === "compensado" ? ". Devolução TARDIA: o valor SAI do saldo da conta em que tinha compensado" : ""}.`
+                : `${acao.cheque.banco} · ${formatBRL(acao.cheque.valor)} de ${acao.cheque.emitente}. A dívida de ${acao.cheque.comprador_nome} volta automaticamente${acao.cheque.status === "repassado" ? `. E como o papel tinha ido pra ${acao.cheque.repassado_para || "um fornecedor"}, você volta a dever esse valor: se ele pagou UMA conta, ela reabre; se foi um acerto de várias notas, elas continuam pagas e nasce uma dívida de ${formatBRL(acao.cheque.valor)}` : ""}${acao.cheque.status === "compensado" ? ". Devolução TARDIA: o valor SAI do saldo da conta em que tinha compensado" : ""}.`
           }
           confirmarLabel={
             acao.tipo === "depositar"

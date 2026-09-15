@@ -30,7 +30,12 @@ export type GrupoDre =
   | "fixa"
   | "financeiro"
   | "impostos"
-  | "transicao";
+  | "transicao"
+  // NÃO É RESULTADO. Move dinheiro sem ser ganho nem gasto — mesma natureza
+  // da transferência entre contas. O DRE tira este grupo INTEIRO da conta
+  // (ver `dre.ts`); ele existe pra que esse tipo de linha tenha onde morar
+  // sem poluir o resultado do mês.
+  | "neutro";
 
 export interface LinhaPlano {
   chave: string;
@@ -197,6 +202,22 @@ export const PLANO_CONTAS: LinhaPlano[] = [
     label: "Dívida do sistema antigo",
     grupo: "transicao",
     fonte: "lancamento",
+  },
+
+  // ------------------------------------------------------------- neutro
+  // Cheque que você repassou e voltou do banco (0073). Você deve esse valor
+  // de novo — mas NÃO é um gasto novo: o gasto já contou no dia em que o
+  // cheque saiu da sua mão. Se esta linha entrasse no DRE, o mesmo litro de
+  // diesel contaria duas vezes.
+  //
+  // `automatico`: o sistema cria sozinho quando o cheque volta. Não aparece
+  // no dropdown — lançar na mão dobraria.
+  {
+    chave: "cheque_devolvido",
+    label: "Cheque devolvido a pagar",
+    grupo: "neutro",
+    fonte: "automatico",
+    vemDe: "cheque repassado que voltou do banco — o gasto já contou no repasse",
   },
 ];
 

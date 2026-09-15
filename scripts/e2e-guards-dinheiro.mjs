@@ -376,6 +376,105 @@ try {
       ).rows[0].s
     );
     igual("cheque menor: pago + restante = a conta original", soma, 1000);
+
+    // -----------------------------------------------------------------
+    // CHEQUE DEVOLVIDO VIRA DÍVIDA (0073)
+    // -----------------------------------------------------------------
+    // A escolha entre "reverte a conta" e "cria dívida" é do endpoint. O que
+    // se testa aqui são as invariantes do banco em que ela se apoia — e a
+    // primeira delas é a que morderia no pior momento: o CHECK de
+    // `origem_tipo` precisa aceitar o tipo novo, senão a dívida falha
+    // exatamente quando um cheque volta do banco.
+    const posto = (
+      await client.query(
+        `insert into locais (nome_canonico, latitude, longitude, tipo)
+         values ('E2E Posto Guard', -24.0, -54.0, 'posto') returning id`
+      )
+    ).rows[0].id;
+
+    const criarDivida = (chequeId) =>
+      client.query(
+        `insert into contas_a_pagar
+           (descricao, categoria, valor, vencimento, status, local_id,
+            origem_tipo, origem_id, registrado_por)
+         values ('E2E cheque devolvido', 'cheque_devolvido', 250, current_date,
+                 'a_pagar', $1, 'cheque_devolvido', $2, $3)`,
+        [posto, chequeId, evaner]
+      );
+
+    let aceitou = true;
+    try {
+      await client.query("savepoint d1");
+      await criarDivida(cheque);
+      await client.query("release savepoint d1");
+    } catch (e) {
+      aceitou = false;
+      await client.query("rollback to savepoint d1");
+      console.log("      (motivo: " + e.message + ")");
+    }
+    afirmar(
+      "o banco ACEITA origem_tipo 'cheque_devolvido' (CHECK da 0073)",
+      aceitou,
+      aceitou ? "" : "a dívida falharia bem na hora em que o cheque volta"
+    );
+
+    let recusouSegunda = false;
+    try {
+      await client.query("savepoint d2");
+      await criarDivida(cheque);
+      await client.query("release savepoint d2");
+    } catch {
+      recusouSegunda = true;
+      await client.query("rollback to savepoint d2");
+    }
+    afirmar(
+      "o MESMO cheque devolvido não gera duas dívidas (índice único)",
+      recusouSegunda,
+      recusouSegunda ? "" : "devolver duas vezes cobraria o mesmo papel em dobro"
+    );
+
+    const saldoPosto = Number(
+      (
+        await client.query("select saldo from saldo_postos() where local_id = $1", [
+          posto,
+        ])
+      ).rows[0]?.saldo ?? -1
+    );
+    igual(
+      "a dívida do cheque devolvido APARECE no saldo do posto",
+      saldoPosto,
+      250
+    );
+
+    // O terceiro braço da saldo_postos() exclui as origens dos outros dois.
+    // Sem essa exclusão, uma conta de abastecimento que também tivesse
+    // `local_id` seria somada DUAS vezes — e o Jean pagaria o posto olhando
+    // um número maior do que deve.
+    //
+    // Testa a propriedade direto: conta com origem de abastecimento E
+    // local_id preenchido. O primeiro braço não a pega (não existe
+    // abastecimento com esse id) e o terceiro tem que ignorá-la também —
+    // então o saldo NÃO pode mudar.
+    await client.query(
+      `insert into contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, local_id,
+          origem_tipo, origem_id, registrado_por)
+       values ('E2E dobra', 'combustivel', 999, current_date, 'a_pagar', $1,
+               'abastecimento', gen_random_uuid(), $2)`,
+      [posto, evaner]
+    );
+    const saldoDepois = Number(
+      (
+        await client.query("select saldo from saldo_postos() where local_id = $1", [
+          posto,
+        ])
+      ).rows[0]?.saldo ?? -1
+    );
+    igual(
+      "conta de abastecimento com local_id NÃO é contada duas vezes",
+      saldoDepois,
+      250
+    );
   }
 
   console.log(

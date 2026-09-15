@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { linhaPlano, pedePessoa, pessoaOpcional } from "@/lib/plano-contas";
+import { randomUUID } from "node:crypto";
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
 /**
@@ -451,6 +452,7 @@ export async function PATCH(
   //
   // E o cheque repassado conta como RECEITA no dia do repasse (R67-b), então
   // o erro pra cima entrava DOIS lados: receita cheia contra despesa menor.
+  const pagamentoId = randomUUID();
   let chequeValor = 0;
   let trocoValor = 0;
   let trocoContaId: string | null = null;
@@ -551,6 +553,10 @@ export async function PATCH(
         status: "repassado",
         repassado_em: pagoEm,
         repassado_para: String(body.repassado_para || "").trim() || null,
+        // Carimbo do acerto (0073). Aqui é um pagamento PONTUAL — um cheque,
+        // uma conta — e carimbar deixa isso explícito no dado em vez de ser
+        // deduzido depois. Se este cheque voltar, a conta reabre (R68).
+        pagamento_id: pagamentoId,
       })
       .eq("id", chequeId)
       .eq("status", "em_carteira")
@@ -571,6 +577,7 @@ export async function PATCH(
       forma_pagamento: forma,
       pago_em: pagoEm,
       cheque_id: chequeId,
+      pagamento_id: pagamentoId,
       conta_id: forma === "cheque" ? null : contaId,
       // Parcial: a conta original passa a valer o que foi pago DE VERDADE.
       ...(valorParcial !== null ? { valor: valorParcial } : {}),

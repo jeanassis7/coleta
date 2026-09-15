@@ -234,6 +234,7 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0068_movimentos_caixa.sql` — ⚠️ **A VIEW `movimentos_caixa` É A FONTE DO DINHEIRO.** Toda linha que mexe numa conta financeira, com sinal (+ entra, − sai). O `saldo_contas()` deixou de somar 14 braços por conta própria e virou a SOMA dela. Mesmo desenho do estoque (`movimentos_estoque` + `estoque_atual()`). **Mexer na view muda o caixa** — e a troca só subiu porque os saldos das 3 contas ficaram idênticos ao centavo
 - `0069_tipos_de_movimento.sql` — RPC `tipos_de_movimento()`: o filtro de tipo da tela de Lançamentos se monta a partir do DADO, não de lista no código. Fonte nova aparece sozinha
 - `0070_conta_paga_com_cheque_no_extrato.sql` — conta quitada com cheque entra no extrato com `conta_id` nulo (o saldo continua ignorando). Recebimento em cheque NÃO entra: o cheque vira dinheiro quando compensa, e a compensação já é uma linha
+- `0073_cheque_devolvido_vira_divida.sql` — ⚠️ **muda a R68 do `NEGOCIOv3.md`.** Cheque devolvido só reabre a conta quando a correspondência é **inequívoca** (um cheque, uma conta, sozinho no acerto); no maço do posto as notas continuam pagas e nasce **dívida do valor do papel**, categoria `cheque_devolvido` no grupo **`neutro`** — o único grupo que o DRE tira inteiro da conta (o gasto já contou no repasse; contar de novo dobraria o mesmo diesel). Traz `pagamento_id` (carimbo do acerto, em `contas_a_pagar` **e** `cheques` — não é tabela, é agrupamento), `cheques.repassado_local_id` e `contas_a_pagar.local_id` + terceiro braço na `saldo_postos()`. **O CHECK de `origem_tipo` teve que ser estendido** — sem isso a dívida falharia exatamente quando um cheque volta
 - `0072_troco_tem_dono.sql` — `entradas_avulsas.origem_tipo/origem_id`: o troco do cheque deixa de nascer solto. Índice único parcial garante **um troco por cheque** (dois seriam caixa maior que o banco), e o DELETE do pagamento leva o troco junto — régua #4, "o desfazer tem que ser tão completo quanto o fazer". Não entra no DRE nem na anti-dobra: `entradas_avulsas` é caixa puro e o `jaTemConta` se monta só de `contas_a_pagar`
 - `0071_cheques_em_lote.sql` — RPCs `depositar_cheques()` e `compensar_cheques()`: o maço se deposita e se compensa de uma vez. **Tudo-ou-nada** (o UPDATE é um só e a função levanta exceção se a contagem não bater — PostgREST não tem transação de vários comandos, e lote meio-aplicado não dá erro nem dá pra reproduzir). ⚠️ **`cheques.conta_id` passa a ser gravado no DEPÓSITO**, não só na compensação — é seguro porque o único leitor é a `movimentos_caixa`, que filtra `status='compensado'`. **Braço novo que leia `cheques.conta_id` SEM filtrar status faz cheque depositado virar dinheiro que não existe.** O e2e tem um check só pra isso ("DEPÓSITO NÃO MEXE NO CAIXA"). As duas funções são `security invoker` de propósito: `definer` + `grant to authenticated` deixaria motorista depositar cheque
 
@@ -286,6 +287,14 @@ do bolso do motorista e desconta do saldo dele. Os três podem coexistir na
 MESMA coleta (0058) — o `pago_pela_sede` virou só "a sede entrou nessa", com
 CHECK amarrando os dois. Query nova que fala de saldo soma a **diferença**,
 nunca filtra por `not pago_pela_sede`.
+
+**Cheque que volta: a nota nem sempre reabre.** Pagamento pontual reabre a
+conta (R68). Maço de posto → as notas continuam pagas e nasce **dívida do
+valor do cheque** (R68-b), porque "qual fatia de qual nota esse papel cobriu"
+não tem resposta. Quem decide é o `pagamento_id`; pagamento antigo sem
+carimbo cai na inferência (uma conta apontando **e** nenhum cheque irmão no
+mesmo dia/destino). A dívida é do grupo **`neutro`** — fora do DRE, porque o
+gasto já contou no repasse.
 
 **O cheque tem que BATER com o que ele paga.** Cheque maior exige o **troco
 declarado** (valor + conta em que entrou) — não "lance depois no Caixa", que

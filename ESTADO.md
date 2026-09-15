@@ -90,8 +90,57 @@ novos (um cheque não gera dois trocos; pago + restante = a conta original).
 asserção de valor absoluto contra produção, que é justamente o que o
 `CLAUDE.md` manda não fazer. Confirmado que já falhava antes.
 
-**Próximo:** item 3 do plano — cheque devolvido vira dívida (ou reverte),
-com a R68 do `NEGOCIOv3.md` reescrita junto.
+---
+
+## CHEQUE QUE VOLTA VIRA DÍVIDA — 15/09/2026 ↩️ (item 3 de 5)
+
+⚠️ **Este item MUDOU UMA REGRA DE NEGÓCIO.** A R68 do `NEGOCIOv3.md` dizia
+"cheque devolvido: tudo volta", incluindo reabrir a conta que ele quitou.
+Agora tem exceção (R68-b), decidida pelo Evaner:
+
+- **pagamento pontual** (um cheque, uma conta) → a conta reabre. R68 igual.
+- **maço do posto** (várias notinhas num acerto) → as notas **continuam
+  pagas** e nasce uma **dívida nova do valor do cheque**. O saldo do posto
+  sobe. Nas palavras dele: *"as notinhas não voltam, mas o saldo volta"*.
+
+**Por que é melhor e não só mais fácil:** no maço não existe resposta pra
+"qual fatia de qual nota esse cheque cobriu" — no acerto do Texas as 17 notas
+apontam todas pro primeiro cheque e o segundo não aponta pra nada. O código
+antigo, se o segundo voltasse, reverteria **zero** notas e responderia `ok`.
+Se o primeiro voltasse, reverteria as **quatro** — inclusive as que os outros
+pagaram. Nenhum dos dois dava erro.
+
+**Quem decide:** o `pagamento_id`, um carimbo que todas as contas e cheques
+de um mesmo acerto passam a levar. Nasceu aqui (e não no item 4) porque o
+item 3 não podia depender de código futuro — o fechamento do posto já
+carimba. Pagamento antigo, sem carimbo, cai na inferência: **uma conta
+apontando E nenhum cheque irmão no mesmo dia/destino**. Conferido contra a
+produção: classifica 70 como pontuais e 27 como maço, e acerta os dois
+acertos de posto que existem.
+
+**A dívida fica FORA do DRE** (grupo `neutro`, novo). O gasto já contou no
+dia do repasse; contar de novo faria o mesmo diesel aparecer duas vezes.
+
+**A assimetria, registrada na R68-b:** a receita do repasse se desfaz sozinha,
+a despesa fica. Entre o cheque voltar e o comprador pagar, o mês fica mais
+baixo nesse valor. No acumulado fecha — o desvio é só entre meses.
+
+**Sem backfill de propósito:** `repassado_para` é texto livre e a produção tem
+"Texas", "TEXAS RODOVIA" e "Posto texas" pro mesmo lugar. Casar por
+semelhança acertaria a maioria e erraria calado em alguma — dívida no posto
+errado é pior que dívida sem posto. Cheque antigo gera a dívida com o nome e
+aparece em Contas a pagar; do fechamento novo em diante o id vai junto e o
+saldo do posto acende sozinho.
+
+E2E: módulo 1 **77/77**; guards de dinheiro **todos de pé**, com quatro casos
+novos (o CHECK aceita o tipo; devolver duas vezes não cria duas dívidas; a
+dívida aparece no saldo do posto; conta de abastecimento com `local_id` não
+conta duas vezes).
+
+**Próximo:** item 4 do plano — pagamento em lote de contas a pagar (N contas
+× M meios). ⚠️ **Antes dele, blindar as 6 consultas** que buscam conta por
+origem esperando uma linha só (`coletas` ×2, `compras`, `despesas` ×3,
+`manutencoes`) — partir conta cria duas linhas com o mesmo `origem_id`.
 
 ---
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { linhaPlano, pedePessoa, pessoaOpcional } from "@/lib/plano-contas";
+import { randomUUID } from "node:crypto";
 
 /**
  * POST /api/admin/caixa/lancamentos — lançar o que JÁ SAIU.
@@ -101,6 +102,8 @@ export async function POST(req: NextRequest) {
   // contra 500 de despesa e inflava o resultado do mês em 2.500 — e o
   // troco ficava fora do sistema. A tela de Contas já avisava disso; esta
   // não avisava nem no cliente nem no servidor.
+  // Carimbo do acerto (0073): um cheque, um lancamento. Pagamento pontual.
+  const pagamentoId = randomUUID();
   let trocoValor = 0;
   let trocoContaId: string | null = null;
 
@@ -274,6 +277,9 @@ export async function POST(req: NextRequest) {
       // Com cheque, conta_id fica NULO de propósito: nada saiu de conta.
       conta_id: cheque_id ? null : conta_id,
       cheque_id,
+      // Carimbo do acerto (0073), só quando há papel: um cheque, um
+      // lançamento. Se este cheque voltar, é a conta dele que reabre.
+      pagamento_id: cheque_id ? pagamentoId : null,
       pessoa_id: pedePessoa(categoria) ? pessoa_id : null,
       divida_id,
       observacao: body.observacao ? String(body.observacao).trim() : null,
@@ -290,6 +296,7 @@ export async function POST(req: NextRequest) {
       .from("cheques")
       .update({
         status: "repassado",
+        pagamento_id: pagamentoId,
         repassado_em: data,
         repassado_para: (body.fornecedor
           ? String(body.fornecedor).trim()

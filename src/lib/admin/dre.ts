@@ -465,8 +465,21 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // O grupo NEUTRO sai do relatório inteiro (0073)
+  // ---------------------------------------------------------------------
+  // Hoje só a dívida de cheque devolvido: você deve o valor de novo, mas o
+  // gasto já contou no dia em que o cheque saiu da sua mão. Contar aqui faria
+  // o mesmo diesel aparecer duas vezes.
+  //
+  // ⚠️ O filtro vem DEPOIS da rede de segurança das órfãs de propósito. A
+  // categoria precisa estar no plano (e ser "consumida") pra não cair como
+  // "não classificado" — que é justamente o grupo `fixa`, dentro do
+  // resultado. Filtrar antes traria a linha de volta pela porta dos fundos.
+  const linhasDoResultado = linhas.filter((l) => l.grupo !== "neutro");
+
   const doGrupo = (g: GrupoDre) =>
-    linhas.filter((l) => l.grupo === g).reduce((s, l) => s + l.valor, 0);
+    linhasDoResultado.filter((l) => l.grupo === g).reduce((s, l) => s + l.valor, 0);
 
   const receita = doGrupo("receita");
   const custoOleo = doGrupo("custo_oleo");
@@ -482,7 +495,9 @@ export async function calcularDre(inicio: string, fim: string): Promise<Dre> {
   return {
     inicio,
     fim,
-    linhas,
+    // A tela também não vê o neutro: ele não é resultado, e mostrar uma linha
+    // que não soma em nada só faria o gestor tentar encaixá-la na conta.
+    linhas: linhasDoResultado,
     receita,
     custoOleo,
     margemBruta,

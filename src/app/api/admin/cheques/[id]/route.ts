@@ -46,6 +46,19 @@ const TRANSICOES: Record<
   //   • gasto na hora        → /admin/lancamentos, "paguei com cheque"
 };
 
+/** O papel como ele estava ANTES da devolução — é isto que decide entre
+ *  reverter a conta e criar dívida nova (0073). */
+interface ChequeAntesDaDevolucao {
+  status: string;
+  valor: number;
+  banco: string | null;
+  numero: string | null;
+  repassado_para: string | null;
+  repassado_local_id: string | null;
+  repassado_em: string | null;
+  pagamento_id: string | null;
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -238,16 +251,25 @@ export async function PATCH(
 
   const client = getSupabaseAdmin(admin.id);
 
-  // Guarda o status ATUAL antes de devolver — se a reversão da conta falhar
-  // logo abaixo, é pra cá que o cheque volta (tudo-ou-nada).
+  // Guarda o estado ATUAL antes de devolver — se a reversão da conta falhar
+  // logo abaixo, é pra cá que o cheque volta (tudo-ou-nada). E os dados do
+  // papel (valor, pra quem foi, carimbo do acerto) são o que decide, mais
+  // abaixo, entre reverter a conta e criar dívida nova.
   let statusAnterior: string | null = null;
+  let antes: ChequeAntesDaDevolucao | null = null;
   if (t.para === "devolvido") {
     const { data: atual } = await client
       .from("cheques")
-      .select("status")
+      .select(
+        "status, valor, banco, numero, repassado_para, repassado_local_id, repassado_em, pagamento_id"
+      )
       .eq("id", id)
       .maybeSingle();
-    statusAnterior = atual?.status ?? null;
+    if (atual) {
+      const linha = atual as unknown as ChequeAntesDaDevolucao;
+      antes = { ...linha, valor: Number(linha.valor) };
+      statusAnterior = linha.status;
+    }
   }
 
   const { data, error } = await client
@@ -273,7 +295,108 @@ export async function PATCH(
   // fiel ao caixa — melhor que registrar um pagamento que não aconteceu.
   let contaRevertida: string | null = null;
   let avisoVales: string | null = null;
-  if (t.para === "devolvido" && data && data.length > 0) {
+  let dividaCriada: { valor: number; para: string } | null = null;
+  if (t.para === "devolvido" && data && data.length > 0 && antes) {
+    // -----------------------------------------------------------------
+    // PONTUAL ou MAÇO? (0073 — a R68 com exceção)
+    // -----------------------------------------------------------------
+    // Só existe correspondência inequívoca quando este papel pagou UMA
+    // conta e foi SOZINHO. Nos acertos do posto, todas as notas apontam
+    // pro primeiro cheque e os outros não apontam pra nada — reverter "as
+    // contas deste cheque" ali pega o conjunto errado (o primeiro reverte
+    // demais, os outros não revertem nada, e nenhum dos dois dá erro).
+    const { count: quantasContas } = await client
+      .from("contas_a_pagar")
+      .select("id", { count: "exact", head: true })
+      .eq("cheque_id", id)
+      .eq("status", "paga");
+
+    let sozinho = true;
+    if (antes.pagamento_id) {
+      // Carimbo do acerto: a resposta direta. Acerto com mais de um cheque
+      // ou mais de uma conta é maço.
+      const [{ count: chequesDoAcerto }, { count: contasDoAcerto }] =
+        await Promise.all([
+          client
+            .from("cheques")
+            .select("id", { count: "exact", head: true })
+            .eq("pagamento_id", antes.pagamento_id),
+          client
+            .from("contas_a_pagar")
+            .select("id", { count: "exact", head: true })
+            .eq("pagamento_id", antes.pagamento_id),
+        ]);
+      sozinho = (chequesDoAcerto ?? 0) <= 1 && (contasDoAcerto ?? 0) <= 1;
+    } else {
+      // Pagamento anterior ao carimbo: a pista é o próprio dado — outro
+      // cheque repassado no MESMO dia pro MESMO destino era do mesmo maço.
+      // Conferido contra a produção em 15/09: classifica 70 como pontuais
+      // e 27 como maço, e acerta os dois acertos de posto que existem.
+      let q = client
+        .from("cheques")
+        .select("id", { count: "exact", head: true })
+        .eq("repassado_em", antes.repassado_em ?? "");
+      q = antes.repassado_para
+        ? q.eq("repassado_para", antes.repassado_para)
+        : q.is("repassado_para", null);
+      const { count: irmaos } = await q;
+      sozinho = (irmaos ?? 0) <= 1;
+    }
+
+    const pontual = sozinho && (quantasContas ?? 0) === 1;
+
+    if (!pontual) {
+      // ---------------------------------------------------------------
+      // MAÇO — a nota não volta; o SALDO volta
+      // ---------------------------------------------------------------
+      // Você deve de novo o valor do papel, a quem recebeu o papel. Não
+      // importa qual fatia de qual nota ele cobriu: o valor da dívida é o
+      // valor do cheque, sempre.
+      //
+      // Categoria `cheque_devolvido` (grupo `neutro`, FORA do DRE): o gasto
+      // já contou no dia do repasse. Se entrasse como combustível, o mesmo
+      // diesel contaria duas vezes.
+      const quando = String(updates[t.carimbo]);
+      const destino = antes.repassado_para?.trim() || "quem recebeu o cheque";
+      const { error: eDivida } = await client.from("contas_a_pagar").insert({
+        descricao: `Cheque devolvido — banco ${antes.banco ?? "—"} nº ${antes.numero ?? "—"}`,
+        fornecedor: antes.repassado_para?.trim() || null,
+        categoria: "cheque_devolvido",
+        valor: antes.valor,
+        vencimento: quando,
+        status: "a_pagar",
+        local_id: antes.repassado_local_id,
+        origem_tipo: "cheque_devolvido",
+        origem_id: id,
+        registrado_por: admin.id,
+      });
+      if (eDivida) {
+        // TUDO OU NADA: sem a dívida, o cheque sumiria da carteira e você
+        // deixaria de dever um dinheiro que deve. O cheque volta ao estado
+        // anterior e o erro aparece — com a mensagem do banco junto.
+        if (statusAnterior) {
+          await client
+            .from("cheques")
+            .update({ status: statusAnterior, [t.carimbo]: null })
+            .eq("id", id);
+        }
+        return NextResponse.json(
+          {
+            error: `não consegui criar a dívida do cheque devolvido (${eDivida.message}) — nada foi alterado, tenta de novo`,
+          },
+          { status: 500 }
+        );
+      }
+      dividaCriada = { valor: antes.valor, para: destino };
+      return NextResponse.json({
+        ok: true,
+        cheque: data[0],
+        contaRevertida: null,
+        avisoVales: null,
+        dividaCriada,
+      });
+    }
+
     const { data: contas, error: eReversao } = await client
       .from("contas_a_pagar")
       .update({
@@ -339,5 +462,6 @@ export async function PATCH(
     // desfazer.
     contaRevertida,
     avisoVales,
+    dividaCriada,
   });
 }

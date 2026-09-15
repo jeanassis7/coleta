@@ -89,6 +89,11 @@ export function DreAnualGrade({ anual }: { anual: DreAnual }) {
     financeiro: (d) => d.financeiro,
     impostos: (d) => d.impostos,
     transicao: (d) => d.transicao,
+    // `neutro` nunca chega aqui: o `calcularDre` tira essas linhas antes de
+    // devolver, porque elas não são resultado (0073). A entrada existe só pro
+    // Record ficar completo — se um dia uma linha neutra escapar pra cá, ela
+    // soma zero em vez de inflar um grupo por engano.
+    neutro: () => 0,
   };
 
   return (

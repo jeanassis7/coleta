@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import { randomUUID } from "node:crypto";
 
 /**
  * FECHAMENTO DO POSTO — o acerto periódico das notas assinadas.
@@ -236,6 +237,12 @@ export async function POST(
   // se um deles já tiver sido usado em outra aba, nada é marcado como pago
   // por um papel que não está mais lá (mesma ordem do pagamento avulso).
   // ------------------------------------------------------------------
+  // Carimbo do acerto (0073): todos os cheques e todas as notas deste
+  // fechamento levam o mesmo uuid. É o que permite, lá na devolução, saber
+  // que este papel foi num MAÇO — e portanto que a dívida volta pro saldo do
+  // posto em vez de reabrir uma nota escolhida a esmo.
+  const pagamentoId = randomUUID();
+
   for (const ch of cheques) {
     const { data: ok, error } = await client
       .from("cheques")
@@ -243,6 +250,11 @@ export async function POST(
         status: "repassado",
         repassado_em: data,
         repassado_para: String(body.posto_nome || "").trim() || null,
+        // O POSTO, não o nome dele. Em produção existem "Texas", "TEXAS
+        // RODOVIA" e "Posto texas" pro mesmo lugar — dívida tem que voltar
+        // pro posto certo, não pro texto certo.
+        repassado_local_id: postoId,
+        pagamento_id: pagamentoId,
       })
       .eq("id", ch.id)
       .eq("status", "em_carteira")
@@ -266,6 +278,7 @@ export async function POST(
       .from("contas_a_pagar")
       .update({
         status: "paga",
+        pagamento_id: pagamentoId,
         forma_pagamento: dinheiroForma,
         pago_em: data,
         conta_id: dinheiroContaId,
@@ -288,6 +301,7 @@ export async function POST(
       .update({
         valor: parteDinheiro,
         status: "paga",
+        pagamento_id: pagamentoId,
         forma_pagamento: dinheiroForma,
         pago_em: data,
         conta_id: dinheiroContaId,
@@ -307,6 +321,7 @@ export async function POST(
       valor: resto,
       vencimento: aDividir.vencimento,
       status: "paga",
+        pagamento_id: pagamentoId,
       forma_pagamento: "cheque",
       pago_em: data,
       cheque_id: chequePrincipal,
@@ -332,6 +347,7 @@ export async function POST(
       .from("contas_a_pagar")
       .update({
         status: "paga",
+        pagamento_id: pagamentoId,
         forma_pagamento: "cheque",
         pago_em: data,
         conta_id: null,
