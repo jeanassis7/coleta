@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { randomUUID } from "node:crypto";
+import {
+  alocar,
+  brl,
+  cent,
+  conferirPlano,
+  gravarPagamento,
+  meiosDeDinheiro,
+  type ContaParaPagar,
+  type Meio,
+} from "@/lib/admin/pagar-contas";
 
 /**
  * FECHAMENTO DO POSTO — o acerto periódico das notas assinadas.
@@ -16,24 +26,28 @@ import { randomUUID } from "node:crypto";
  * o excedente não tinha onde entrar. Aqui ele fica fechado POR CONSTRUÇÃO —
  * pagar a mais sem informar o troco é RECUSADO, não avisado.
  *
- * SOBRE A ALOCAÇÃO: o dinheiro quita as notas mais antigas primeiro e o
- * cheque quita o resto. Quando a fronteira cai NO MEIO de uma nota, ela é
- * dividida em duas contas — uma paga em dinheiro, outra no cheque. É o que
- * aconteceu de verdade: o caixa precisa saber de qual conta saiu cada real,
- * e a soma das duas continua sendo o valor da nota.
+ * ---------------------------------------------------------------------------
+ * ATUALIZADO EM 15/09/2026 — VÁRIOS MEIOS, E UM MOTOR SÓ
+ * ---------------------------------------------------------------------------
+ * Antes cabia UM pagamento não-cheque por acerto. O caso real do Evaner é
+ * "4 notas pagas com 3 cheques + R$ 200 de PIX + R$ 50 em espécie" — agora
+ * cabem quantas linhas ele quiser.
  *
- * A primeira versão RECUSAVA esse caso, e travou o Evaner no primeiro
- * acerto real (03/09/2026, sobravam R$ 181,24). Pedir pra ele "ajustar o
- * valor em dinheiro" era pedir pra mudar um pagamento que já aconteceu —
- * o software mandando na realidade, em vez do contrário.
+ * E a distribuição saiu daqui: mora em `@/lib/admin/pagar-contas`, o mesmo
+ * motor do pagamento em lote de Contas a pagar. Duas implementações da mesma
+ * regra de dinheiro é exatamente como o buraco do cheque nasceu.
  *
- * Duas contas na mesma origem obrigaram a blindar três `.maybeSingle()` do
- * editor de abastecimento (viraram `.limit(1)`).
+ * A ORDEM DOS MEIOS É O QUE PRESERVA O COMPORTAMENTO ANTIGO: o dinheiro entra
+ * antes dos cheques, então ele quita as notas mais antigas e o cheque quita o
+ * resto — igual a 03/09. Quando a fronteira cai no meio de uma nota, ela é
+ * partida (agora com `conta_pai_id`, então a tela mostra uma linha só).
  *
- * IDEMPOTÊNCIA: não precisa de client_id. Toda conta é quitada com
- * `.eq("status","a_pagar")`; no reenvio nada está mais em aberto e a rota
- * responde que não há o que fechar. Clique duplo não paga duas vezes.
+ * IDEMPOTÊNCIA: toda conta é quitada com `.eq("status","a_pagar")`; no
+ * reenvio nada está mais em aberto e a rota responde que não há o que fechar.
  */
+
+const n2 = (v: number) => Math.round(v * 100) / 100;
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -44,17 +58,12 @@ export async function POST(
   const client = getSupabaseAdmin(admin.id);
   const body = await req.json();
 
-  const n2 = (v: number) => Math.round(v * 100) / 100;
-  const cent = (v: number) => Math.round(Number(v) * 100);
-
   const data = String(body.data || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
     return NextResponse.json({ error: "data do acerto inválida" }, { status: 400 });
   }
 
-  const contaIds: string[] = Array.isArray(body.contas)
-    ? body.contas.map(String)
-    : [];
+  const contaIds: string[] = Array.isArray(body.contas) ? body.contas.map(String) : [];
   if (contaIds.length === 0) {
     return NextResponse.json({ error: "escolha ao menos uma nota" }, { status: 400 });
   }
@@ -62,19 +71,21 @@ export async function POST(
   // ------------------------------------------------------------------
   // O servidor NÃO confia no total que a tela mandou: relê as notas.
   // ------------------------------------------------------------------
-  const { data: contas, error: eContas } = await client
+  const { data: lidas, error: eContas } = await client
     .from("contas_a_pagar")
     .select(
-      "id, valor, origem_id, origem_tipo, vencimento, status, categoria, pessoa_id, fornecedor, descricao"
+      "id, valor, vencimento, descricao, fornecedor, categoria, pessoa_id, origem_tipo, origem_id, local_id, divida_id"
     )
     .in("id", contaIds)
-    // No posto se assina nota de combustível E de despesa (palheta, óleo
-    // de motor) — 0065. As duas entram no mesmo acerto.
+    // No posto se assina nota de combustível E de despesa (palheta, óleo de
+    // motor) — 0065. As duas entram no mesmo acerto.
     .in("origem_tipo", ["abastecimento", "despesa"])
     .eq("status", "a_pagar")
-    .order("vencimento");
+    .order("vencimento")
+    .order("id");
   if (eContas) return NextResponse.json({ error: eContas.message }, { status: 400 });
-  if (!contas || contas.length === 0) {
+  const contas = (lidas ?? []) as ContaParaPagar[];
+  if (contas.length === 0) {
     return NextResponse.json(
       { error: "nenhuma dessas notas está em aberto — recarregue a tela" },
       { status: 409 }
@@ -91,36 +102,50 @@ export async function POST(
     .map((c) => c.origem_id);
   const [{ data: abast }, { data: desps }] = await Promise.all([
     origensAb.length
-      ? client.from("abastecimentos").select("id").eq("local_id", postoId).in("id", origensAb)
+      ? client
+          .from("abastecimentos")
+          .select("id")
+          .eq("local_id", postoId)
+          .in("id", origensAb as string[])
       : Promise.resolve({ data: [] as { id: string }[] }),
     origensDe.length
-      ? client.from("despesas").select("id").eq("local_id", postoId).in("id", origensDe)
+      ? client
+          .from("despesas")
+          .select("id")
+          .eq("local_id", postoId)
+          .in("id", origensDe as string[])
       : Promise.resolve({ data: [] as { id: string }[] }),
   ]);
   const doPosto = new Set([
     ...(abast ?? []).map((a) => a.id),
     ...(desps ?? []).map((d) => d.id),
   ]);
-  const foraDoPosto = contas.filter((c) => !doPosto.has(c.origem_id));
-  if (foraDoPosto.length > 0) {
+  if (contas.some((c) => !doPosto.has(c.origem_id as string))) {
     return NextResponse.json(
       { error: "há notas selecionadas que não são desse posto" },
       { status: 400 }
     );
   }
 
-  const totalDevido = contas.reduce((s, c) => s + Number(c.valor), 0);
+  const totalDevido = contas.reduce((s, c) => s + cent(c.valor), 0);
 
-  // ------------------------------------------------------------------ cheques
-  const chequeIds: string[] = Array.isArray(body.cheques)
-    ? body.cheques.map(String)
-    : [];
-  let totalCheques = 0;
-  let cheques: { id: string; valor: number }[] = [];
+  // ------------------------------------------------------------- os meios
+  // Dinheiro ANTES dos cheques: é o que faz o dinheiro quitar as notas mais
+  // antigas e o cheque quitar o resto, como em 03/09.
+  const dinheiro = meiosDeDinheiro(body);
+  if (dinheiro.erro || !dinheiro.meios) {
+    return NextResponse.json({ error: dinheiro.erro }, { status: 400 });
+  }
+  const meios: Meio[] = [...dinheiro.meios];
+
+  const chequeIds: string[] = Array.isArray(body.cheques) ? body.cheques.map(String) : [];
+  if (new Set(chequeIds).size !== chequeIds.length) {
+    return NextResponse.json({ error: "há cheque repetido na lista" }, { status: 400 });
+  }
   if (chequeIds.length > 0) {
     const { data: chs, error: eCh } = await client
       .from("cheques")
-      .select("id, valor, status")
+      .select("id, valor")
       .in("id", chequeIds)
       .eq("status", "em_carteira");
     if (eCh) return NextResponse.json({ error: eCh.message }, { status: 400 });
@@ -130,266 +155,93 @@ export async function POST(
         { status: 409 }
       );
     }
-    cheques = chs.map((c) => ({ id: c.id, valor: Number(c.valor) }));
-    totalCheques = cheques.reduce((s, c) => s + c.valor, 0);
+    for (const id of chequeIds) {
+      const ch = chs.find((c) => c.id === id)!;
+      meios.push({ tipo: "cheque", id: ch.id, centavos: cent(ch.valor) });
+    }
   }
 
-  // ----------------------------------------------------------------- dinheiro
-  const dinheiroValor = Number(body.dinheiro_valor ?? 0);
-  const dinheiroContaId = body.dinheiro_conta_id
-    ? String(body.dinheiro_conta_id)
-    : null;
-  const dinheiroForma = ["dinheiro", "pix", "deposito"].includes(
-    String(body.dinheiro_forma)
-  )
-    ? String(body.dinheiro_forma)
-    : "dinheiro";
-  if (dinheiroValor > 0 && !dinheiroContaId) {
+  if (meios.length === 0) {
     return NextResponse.json(
-      { error: "diga de qual conta da empresa saiu o dinheiro" },
+      { error: "diga com o que essas notas foram pagas" },
       { status: 400 }
     );
   }
 
-  const totalPago = n2(totalCheques + (dinheiroValor > 0 ? dinheiroValor : 0));
-
-  if (cent(totalPago) < cent(totalDevido)) {
+  const totalPago = meios.reduce((s, m) => s + m.centavos, 0);
+  if (totalPago < totalDevido) {
     return NextResponse.json(
       {
         error:
-          `o pagamento (R$ ${totalPago.toFixed(2)}) não cobre as notas ` +
-          `escolhidas (R$ ${totalDevido.toFixed(2)}). Faltam R$ ${(
-            totalDevido - totalPago
-          ).toFixed(2)} — tire uma nota da lista ou acrescente pagamento.`,
+          `o pagamento (R$ ${brl(totalPago)}) não cobre as notas escolhidas ` +
+          `(R$ ${brl(totalDevido)}). Faltam R$ ${brl(totalDevido - totalPago)} — ` +
+          `tire uma nota da lista ou acrescente pagamento.`,
       },
       { status: 400 }
     );
   }
 
   // -------------------------------------------------------------------- troco
-  const excedente = n2(totalPago - totalDevido);
+  const excedente = totalPago - totalDevido;
   const trocoValor = Number(body.troco_valor ?? 0);
   const trocoContaId = body.troco_conta_id ? String(body.troco_conta_id) : null;
   if (excedente > 0) {
-    if (cent(trocoValor) !== cent(excedente) || !trocoContaId) {
+    if (cent(trocoValor) !== excedente || !trocoContaId) {
       return NextResponse.json(
         {
           error:
-            `você está pagando R$ ${excedente.toFixed(2)} a mais do que as notas. ` +
-            `Informe o troco de R$ ${excedente.toFixed(2)} e em qual conta ele entrou — ` +
+            `você está pagando R$ ${brl(excedente)} a mais do que as notas. ` +
+            `Informe o troco de R$ ${brl(excedente)} e em qual conta ele entrou — ` +
             `sem isso esse dinheiro sumiria do caixa e o resultado ficaria inflado.`,
           precisaTroco: true,
-          excedente,
+          excedente: n2(excedente / 100),
         },
         { status: 400 }
       );
     }
-  } else if (trocoValor > 0) {
+  } else if (cent(trocoValor) > 0) {
     return NextResponse.json(
       { error: "não há troco: o pagamento é igual ao total das notas" },
       { status: 400 }
     );
   }
 
-  // ------------------------------------------------------------------
-  // Alocação: o dinheiro quita notas inteiras; o cheque quita o resto.
-  // ------------------------------------------------------------------
-  const ordenadas = [...contas].sort((a, b) =>
-    String(a.vencimento).localeCompare(String(b.vencimento))
-  );
-  const porDinheiro: string[] = [];
-  let restaDinheiro = cent(dinheiroValor > 0 ? dinheiroValor : 0);
-  for (const c of ordenadas) {
-    const v = cent(Number(c.valor));
-    if (restaDinheiro >= v) {
-      porDinheiro.push(c.id);
-      restaDinheiro -= v;
-    } else {
-      break;
-    }
-  }
-  const setDinheiro = new Set(porDinheiro);
-
-  // Sobrou dinheiro sem fechar a próxima nota: ela é paga PELOS DOIS. Vira
-  // duas contas, e a soma delas continua sendo o valor original da nota.
-  const aDividir =
-    restaDinheiro > 0
-      ? ordenadas.find((c) => !setDinheiro.has(c.id)) ?? null
-      : null;
-  if (restaDinheiro > 0 && !aDividir) {
-    // Só chega aqui se o dinheiro sozinho passou do total — e aí o excedente
-    // é troco, que o bloco acima já exigiu.
+  // ---------------------------------------------------- distribui e confere
+  const { plano, erro: eAloc } = alocar(contas, meios);
+  if (eAloc || !plano) {
     return NextResponse.json(
-      {
-        error:
-          "o dinheiro informado passa do total das notas — registre a diferença como troco",
-      },
-      { status: 400 }
+      { error: `não consegui distribuir o acerto (${eAloc}) — nada foi pago` },
+      { status: 500 }
     );
   }
+  const eConfere = conferirPlano(contas, plano, totalDevido);
+  if (eConfere) return NextResponse.json({ error: eConfere }, { status: 500 });
 
-  const porCheque = ordenadas.filter(
-    (c) => !setDinheiro.has(c.id) && c.id !== aDividir?.id
-  );
-
-  // ------------------------------------------------------------------
-  // Aplica. Os cheques saem da carteira ANTES de quitar qualquer conta:
-  // se um deles já tiver sido usado em outra aba, nada é marcado como pago
-  // por um papel que não está mais lá (mesma ordem do pagamento avulso).
-  // ------------------------------------------------------------------
-  // Carimbo do acerto (0073): todos os cheques e todas as notas deste
-  // fechamento levam o mesmo uuid. É o que permite, lá na devolução, saber
-  // que este papel foi num MAÇO — e portanto que a dívida volta pro saldo do
-  // posto em vez de reabrir uma nota escolhida a esmo.
-  const pagamentoId = randomUUID();
-
-  for (const ch of cheques) {
-    const { data: ok, error } = await client
-      .from("cheques")
-      .update({
-        status: "repassado",
-        repassado_em: data,
-        repassado_para: String(body.posto_nome || "").trim() || null,
-        // O POSTO, não o nome dele. Em produção existem "Texas", "TEXAS
-        // RODOVIA" e "Posto texas" pro mesmo lugar — dívida tem que voltar
-        // pro posto certo, não pro texto certo.
-        repassado_local_id: postoId,
-        pagamento_id: pagamentoId,
-      })
-      .eq("id", ch.id)
-      .eq("status", "em_carteira")
-      .select();
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    if (!ok?.length) {
-      return NextResponse.json(
-        { error: "um cheque saiu da carteira no meio do caminho — recarregue a tela" },
-        { status: 409 }
-      );
-    }
-  }
-
-  // Cada nota do cheque leva o id de UM cheque (a coluna é uma só). Quando
-  // um maço paga várias notas, todas apontam pro primeiro — é referência,
-  // não rateio: o valor de cada nota continua sendo o dela.
-  const chequePrincipal = cheques[0]?.id ?? null;
-
-  if (porDinheiro.length > 0) {
-    const { error } = await client
-      .from("contas_a_pagar")
-      .update({
-        status: "paga",
-        pagamento_id: pagamentoId,
-        forma_pagamento: dinheiroForma,
-        pago_em: data,
-        conta_id: dinheiroContaId,
-        cheque_id: null,
-      })
-      .in("id", porDinheiro)
-      .eq("status", "a_pagar");
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  // A NOTA PARTIDA: a original passa a valer a parte paga em dinheiro, e o
-  // resto nasce como conta nova já quitada pelo cheque. Mesmo desenho do
-  // pagamento parcial que já existe em contas a pagar.
-  if (aDividir) {
-    const parteDinheiro = n2(restaDinheiro / 100);
-    const resto = n2(Number(aDividir.valor) - parteDinheiro);
-
-    const { error: eOrig } = await client
-      .from("contas_a_pagar")
-      .update({
-        valor: parteDinheiro,
-        status: "paga",
-        pagamento_id: pagamentoId,
-        forma_pagamento: dinheiroForma,
-        pago_em: data,
-        conta_id: dinheiroContaId,
-        cheque_id: null,
-      })
-      .eq("id", aDividir.id)
-      .eq("status", "a_pagar");
-    if (eOrig) {
-      return NextResponse.json({ error: eOrig.message }, { status: 400 });
-    }
-
-    const { error: eResto } = await client.from("contas_a_pagar").insert({
-      descricao: `${aDividir.descricao} (parte em cheque)`,
-      fornecedor: aDividir.fornecedor,
-      categoria: aDividir.categoria,
-      pessoa_id: aDividir.pessoa_id,
-      valor: resto,
-      vencimento: aDividir.vencimento,
-      status: "paga",
-        pagamento_id: pagamentoId,
-      forma_pagamento: "cheque",
-      pago_em: data,
-      cheque_id: chequePrincipal,
-      conta_id: null,
-      origem_tipo: aDividir.origem_tipo,
-      origem_id: aDividir.origem_id,
-      registrado_por: admin.id,
-    });
-    if (eResto) {
-      return NextResponse.json({
-        ok: true,
-        aviso:
-          `a parte em dinheiro foi quitada, mas o resto da nota ` +
-          `(R$ ${resto.toFixed(2)}) NÃO foi: ${eResto.message}. ` +
-          `Confira em Contas a pagar antes de seguir.`,
-      });
-    }
-  }
-
-  if (porCheque.length > 0) {
-    // Pagar com cheque NÃO tira dinheiro de conta nenhuma: quitou com o papel.
-    const { error } = await client
-      .from("contas_a_pagar")
-      .update({
-        status: "paga",
-        pagamento_id: pagamentoId,
-        forma_pagamento: "cheque",
-        pago_em: data,
-        conta_id: null,
-        cheque_id: chequePrincipal,
-      })
-      .in("id", porCheque.map((c) => c.id))
-      .eq("status", "a_pagar");
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  // O troco é dinheiro que ENTRA e não é venda de óleo: entrada avulsa
-  // (0047) — soma no caixa e fica FORA do DRE, porque não é resultado.
-  if (excedente > 0 && trocoContaId) {
-    const { error } = await client.from("entradas_avulsas").insert({
-      tipo: "reembolso",
-      valor: n2(trocoValor),
-      data,
-      conta_id: trocoContaId,
-      descricao: `Troco do acerto com ${String(body.posto_nome || "o posto").trim()}`,
-      // Carimbo de origem (0072): o troco deixa de ser linha solta no caixa.
-      // Vai no PRIMEIRO cheque, mesma convenção do `cheque_id` das notas —
-      // é rastro, não rateio. Acerto pago só em dinheiro não tem papel pra
-      // carimbar e fica sem origem, como as entradas lançadas na mão.
-      origem_tipo: chequePrincipal ? "cheque" : null,
-      origem_id: chequePrincipal,
-      registrado_por: admin.id,
-    });
-    if (error) {
-      return NextResponse.json({
-        ok: true,
-        aviso: `notas quitadas, mas o troco NÃO foi registrado: ${error.message}. Lance a entrada avulsa na mão, senão o caixa fica menor que o extrato.`,
-      });
-    }
+  const r = await gravarPagamento(client, admin.id, {
+    pagamentoId: randomUUID(),
+    data,
+    contas,
+    meios,
+    plano,
+    repassadoPara: String(body.posto_nome || "").trim() || "posto",
+    // O POSTO, não o nome dele (0073). Se um desses cheques voltar, a dívida
+    // vai pro saldo do posto certo — em produção existem "Texas", "TEXAS
+    // RODOVIA" e "Posto texas" pro mesmo lugar.
+    repassadoLocalId: postoId,
+    excedente,
+    trocoContaId,
+  });
+  if (r.erro) {
+    return NextResponse.json({ error: r.erro.mensagem }, { status: r.erro.status });
   }
 
   return NextResponse.json({
     ok: true,
     notas: contas.length,
-    total: n2(totalDevido),
-    em_dinheiro: porDinheiro.length,
-    em_cheque: porCheque.length,
-    nota_dividida: aDividir ? 1 : 0,
-    troco: excedente > 0 ? n2(trocoValor) : 0,
+    meios: meios.length,
+    total: n2(totalDevido / 100),
+    partidas: r.partidas,
+    troco: excedente > 0 ? n2(excedente / 100) : 0,
+    ...(r.avisos.length > 0 ? { avisos: r.avisos } : {}),
   });
 }

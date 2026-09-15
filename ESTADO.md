@@ -187,8 +187,58 @@ novos (soma dos pedaços = original; pedaço não pode ser mãe de pedaço; o
 banco recusa apagar a mãe com filho apontando). A distribuição foi exercitada
 nos 5 cenários reais, incluindo "4 notas com 3 cheques + PIX + espécie".
 
-**Próximo:** item 5 do plano — vários meios no fechamento do posto. Agora é
-pouco: o motor já existe, é trocar a tela do posto pra usá-lo.
+---
+
+## VÁRIOS MEIOS NO FECHAMENTO DO POSTO — 15/09/2026 ⛽ (item 5 de 5) ✅
+
+Último item do plano. O fechamento aceitava **um** pagamento não-cheque por
+acerto; o caso real é *"4 notas pagas com 3 cheques + R$ 200 de PIX + R$ 50 em
+espécie"*. Agora cabem quantas linhas ele quiser.
+
+**O que importa aqui não é a tela: é que o motor virou UM SÓ.** A distribuição
+e a gravação saíram dos dois endpoints e foram pra
+`src/lib/admin/pagar-contas.ts`. O pagamento em lote de Contas a pagar e o
+fechamento do posto agora leem o que é deles e chamam a mesma função.
+
+Duas implementações da mesma regra de dinheiro é **exatamente como o buraco do
+cheque nasceu** (a tela de Lançamentos avisava sobre cheque maior, a de Contas
+não, e a diferença passou meses sem ninguém ver). Copiar a lógica pro posto
+teria funcionado hoje e divergido em seis meses.
+
+**Comportamento preservado:** a ordem dos meios é o que define quem paga o quê
+— dinheiro antes de cheque, então o dinheiro quita as notas mais antigas e o
+cheque quita o resto, igual a 03/09.
+
+**E o posto ganhou de brinde o que o item 4 trouxe:** a nota partida na
+fronteira agora tem `conta_pai_id` (a tela mostra uma linha só), cada pedaço
+carrega **o cheque certo** em vez de todos apontarem pro primeiro, e os
+cheques levam `repassado_local_id` — se um voltar, a dívida vai pro saldo do
+posto certo.
+
+**Compatibilidade:** o endpoint aceita o formato antigo (`dinheiro_valor` /
+`dinheiro_conta_id` / `dinheiro_forma`) além da lista nova. Uma aba aberta
+antes do deploy continua funcionando — recusar seria transformar um deploy num
+erro incompreensível no meio de um acerto.
+
+E2E: módulo 1 **77/77**, guards de dinheiro **todos de pé**, e a distribuição
+reconferida nos 5 cenários reais depois do refactor.
+
+---
+
+## O PLANO DO PAGAMENTO FLEXÍVEL ESTÁ COMPLETO
+
+Os 5 itens do `PLANO-PAGAMENTO-FLEXIVEL.md` subiram em 15/09/2026. O que
+ficou aberto, de propósito:
+
+- **Desfazer uma devolução de cheque** não existe (limitação conhecida,
+  registrada no plano).
+- **Backfill do `repassado_local_id`** dos cheques antigos não foi feito:
+  `repassado_para` é texto livre e casar por semelhança erraria calado.
+- **`e2e-modulo2` tem 1 falha anterior e sem relação** ("custo do fino"),
+  parece asserção de valor absoluto contra produção.
+- **A invariante "conta paga com cheque: ou o valor bate ou existe troco"**
+  ainda não é checável no banco pra dados antigos — só a partir dos acertos
+  que nascem com `pagamento_id`.
 
 ---
 

@@ -12,6 +12,22 @@ interface NotaAberta {
   valor: number;
 }
 
+type LinhaDinheiro = {
+  chave: string;
+  forma: string;
+  contaId: string;
+  centavos: number | null;
+};
+
+function novaLinha(): LinhaDinheiro {
+  return {
+    chave: Math.random().toString(36).slice(2),
+    forma: "pix",
+    contaId: "",
+    centavos: null,
+  };
+}
+
 /**
  * O acerto com o posto.
  *
@@ -46,9 +62,9 @@ export function FechamentoPosto({
     new Set(notas.map((n) => n.conta_id))
   );
   const [chequesUsados, setChequesUsados] = useState<Set<string>>(new Set());
-  const [dinheiroCentavos, setDinheiroCentavos] = useState<number | null>(null);
-  const [dinheiroForma, setDinheiroForma] = useState("dinheiro");
-  const [dinheiroConta, setDinheiroConta] = useState("");
+  // Uma linha por origem do dinheiro: "3 cheques + R$ 200 de PIX + R$ 50 em
+  // espécie" é um acerto que acontece de verdade.
+  const [linhas, setLinhas] = useState<LinhaDinheiro[]>([]);
   const [trocoConta, setTrocoConta] = useState("");
   const [data, setData] = useState(
     new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -63,9 +79,16 @@ export function FechamentoPosto({
   const totalCheques = cheques
     .filter((c) => chequesUsados.has(c.id))
     .reduce((s, c) => s + c.valor, 0);
-  const dinheiro = dinheiroCentavos ? centavosParaReais(dinheiroCentavos) : 0;
+  const dinheiro =
+    linhas.reduce((s, l) => s + (l.centavos ?? 0), 0) / 100;
   const totalPago = totalCheques + dinheiro;
   const diferenca = Math.round((totalPago - totalDevido) * 100) / 100;
+
+  function mudarLinha(chave: string, campo: Partial<LinhaDinheiro>) {
+    setLinhas((ls) => ls.map((l) => (l.chave === chave ? { ...l, ...campo } : l)));
+    setConfirmando(false);
+    setErro(null);
+  }
 
   function alternar(set: Set<string>, id: string, setter: (s: Set<string>) => void) {
     const novo = new Set(set);
@@ -88,9 +111,13 @@ export function FechamentoPosto({
           posto_nome: postoNome,
           contas: [...marcadas],
           cheques: [...chequesUsados],
-          dinheiro_valor: dinheiro,
-          dinheiro_forma: dinheiroForma,
-          dinheiro_conta_id: dinheiro > 0 ? dinheiroConta : null,
+          dinheiro: linhas
+            .filter((l) => (l.centavos ?? 0) > 0)
+            .map((l) => ({
+              forma: l.forma,
+              conta_id: l.contaId,
+              valor: centavosParaReais(l.centavos!),
+            })),
           troco_valor: diferenca > 0 ? diferenca : 0,
           troco_conta_id: diferenca > 0 ? trocoConta : null,
         }),
@@ -194,47 +221,70 @@ export function FechamentoPosto({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Em dinheiro/pix
-          </label>
-          <InputDinheiro
-            centavos={dinheiroCentavos}
-            onChange={(v) => {
-              setDinheiroCentavos(v);
+      {/* Uma linha por origem do dinheiro. O caso real do Evaner é "3 cheques
+          + R$ 200 de PIX + R$ 50 em espécie" — antes cabia UM valor só. */}
+      <div>
+        <label className="block text-sm font-medium mb-1">
+          Dinheiro, PIX, depósito
+          <span className="text-cinza-suave font-normal">
+            {" "}
+            — pode ser mais de um
+          </span>
+        </label>
+        <div className="space-y-2">
+          {linhas.map((l) => (
+            <div
+              key={l.chave}
+              className="grid grid-cols-1 sm:grid-cols-[7rem_1fr_1fr_2rem] gap-2 items-center"
+            >
+              <select
+                value={l.forma}
+                onChange={(e) => mudarLinha(l.chave, { forma: e.target.value })}
+                className="px-2 py-2 border border-cinza-borda rounded-xl text-sm"
+              >
+                <option value="dinheiro">Dinheiro</option>
+                <option value="pix">PIX</option>
+                <option value="deposito">Depósito</option>
+              </select>
+              <InputDinheiro
+                centavos={l.centavos}
+                onChange={(v) => mudarLinha(l.chave, { centavos: v })}
+              />
+              <select
+                value={l.contaId}
+                onChange={(e) => mudarLinha(l.chave, { contaId: e.target.value })}
+                className="px-3 py-2 border border-cinza-borda rounded-xl text-sm"
+              >
+                <option value="">— de qual conta saiu —</option>
+                {contas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setLinhas((ls) => ls.filter((x) => x.chave !== l.chave));
+                  setConfirmando(false);
+                }}
+                className="text-alerta px-2"
+                title="tirar esta linha"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setLinhas((ls) => [...ls, novaLinha()]);
               setConfirmando(false);
             }}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Forma</label>
-          <select
-            value={dinheiroForma}
-            onChange={(e) => setDinheiroForma(e.target.value)}
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            className="text-sm px-3 py-1.5 rounded-lg border border-cinza-borda hover:bg-slate-50"
           >
-            <option value="dinheiro">Dinheiro</option>
-            <option value="pix">PIX</option>
-            <option value="deposito">Depósito</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            De qual conta saiu
-          </label>
-          <select
-            value={dinheiroConta}
-            onChange={(e) => setDinheiroConta(e.target.value)}
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-          >
-            <option value="">—</option>
-            {contas.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+            + acrescentar valor
+          </button>
         </div>
       </div>
 
@@ -290,7 +340,9 @@ export function FechamentoPosto({
           salvando ||
           marcadas.size === 0 ||
           diferenca < 0 ||
-          (dinheiro > 0 && !dinheiroConta) ||
+          // Toda linha COM valor precisa dizer de qual conta saiu — senão o
+          // dinheiro sairia do nada e o saldo não fecharia.
+          linhas.some((l) => (l.centavos ?? 0) > 0 && !l.contaId) ||
           (diferenca > 0 && !trocoConta)
         }
         className={`w-full font-semibold rounded-xl px-5 py-3 text-white disabled:bg-cinza-borda disabled:text-cinza-suave ${

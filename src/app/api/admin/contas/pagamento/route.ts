@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { exigirAdmin } from "@/lib/auth/exigir-admin";
+import {
+  alocar,
+  brl,
+  cent,
+  conferirPlano,
+  gravarPagamento,
+  meiosDeDinheiro,
+  type ContaParaPagar,
+  type Meio,
+} from "@/lib/admin/pagar-contas";
 
 /**
  * PAGAMENTO EM LOTE — N contas quitadas por M meios.
@@ -8,40 +18,19 @@ import { exigirAdmin } from "@/lib/auth/exigir-admin";
  * "Às vezes 3 contas dão R$ 1.000 e um cheque de R$ 1.000 paga. Às vezes 1
  * conta dá R$ 1.000 e cheque de 600 + outro de 400 paga." (Evaner, 15/09)
  *
- * MEIO = um cheque da carteira, ou um valor saindo de uma conta financeira
- * (dinheiro, PIX, depósito, boleto). O lote aceita quantos quiser de cada.
+ * A distribuição e a gravação moram em `@/lib/admin/pagar-contas` — o mesmo
+ * motor que o fechamento do posto usa. Aqui fica só o que é desta porta: ler
+ * as contas escolhidas, montar os meios e conferir a soma.
  *
- * ---------------------------------------------------------------------------
- * COMO A ALOCAÇÃO FUNCIONA
- * ---------------------------------------------------------------------------
- * As contas são quitadas da mais antiga pra mais nova, consumindo os meios na
- * ordem em que vieram (dinheiro antes de cheque, como o fechamento do posto
- * já fazia). Quando um meio acaba no MEIO de uma conta, ela é PARTIDA: o
- * pedaço original fica com o que aquele meio pagou, e o resto vira pedaço
- * novo apontando pra ele (`conta_pai_id`, 0074).
- *
- * Cada pedaço carrega EXATAMENTE UM meio — é isso que deixa `conta_id` e
- * `cheque_id` continuarem valendo 1:1, e por isso `movimentos_caixa`,
- * `saldo_contas()` e o DRE não mudam uma linha. A tela junta os pedaços.
- *
- * ---------------------------------------------------------------------------
- * O SERVIDOR NÃO CONFIA EM NADA QUE VEIO DA TELA
- * ---------------------------------------------------------------------------
- * Relê as contas e os cheques do banco e refaz a soma. Total mandado pela
- * tela é informação, não autoridade — mesma postura do fechamento do posto.
+ * O SERVIDOR NÃO CONFIA EM NADA QUE VEIO DA TELA: relê as contas e os cheques
+ * do banco e refaz a conta. Total mandado pela tela é informação, não
+ * autoridade.
  *
  * IDEMPOTÊNCIA: `pagamento_id` vem do navegador. Se a resposta se perder e o
  * gestor clicar de novo, o servidor vê que aquele acerto já existe e recusa.
- * Clique duplo não paga duas vezes.
  */
 
 const n2 = (v: number) => Math.round(v * 100) / 100;
-const cent = (v: number) => Math.round(Number(v) * 100);
-const brl = (c: number) => (c / 100).toFixed(2).replace(".", ",");
-
-type Meio =
-  | { tipo: "cheque"; id: string; centavos: number }
-  | { tipo: "conta"; forma: string; contaId: string; centavos: number };
 
 export async function POST(req: NextRequest) {
   const admin = await exigirAdmin();
@@ -94,24 +83,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "escolha ao menos uma conta" }, { status: 400 });
   }
 
-  const { data: contas, error: eContas } = await client
+  const { data: lidas, error: eContas } = await client
     .from("contas_a_pagar")
     .select(
       "id, valor, vencimento, descricao, fornecedor, categoria, pessoa_id, origem_tipo, origem_id, local_id, divida_id"
     )
     .in("id", contaIds)
-    // `prevista` fica DE FORA: o valor dela é chute, e pagar um chute grava
-    // no caixa um número que o banco não tem. Ela tem que ser confirmada
-    // uma a uma antes — a regra já existe no pagamento avulso.
+    // `prevista` fica DE FORA: o valor dela é chute, e pagar um chute grava no
+    // caixa um número que o banco não tem. Ela é confirmada uma a uma antes.
     .eq("status", "a_pagar")
     .order("vencimento")
     .order("id");
   if (eContas) return NextResponse.json({ error: eContas.message }, { status: 400 });
-  if (!contas || contas.length !== contaIds.length) {
+  const contas = (lidas ?? []) as ContaParaPagar[];
+  if (contas.length !== contaIds.length) {
     return NextResponse.json(
       {
         error:
-          `só ${contas?.length ?? 0} das ${contaIds.length} contas escolhidas ainda estão em aberto ` +
+          `só ${contas.length} das ${contaIds.length} contas escolhidas ainda estão em aberto ` +
           `(previsões não entram no lote — confirme o valor delas antes). Nada foi pago; recarregue a tela.`,
       },
       { status: 409 }
@@ -121,38 +110,12 @@ export async function POST(req: NextRequest) {
   const totalDevido = contas.reduce((s, c) => s + cent(c.valor), 0);
 
   // -------------------------------------------------------------- os meios
-  const meios: Meio[] = [];
-
-  // Dinheiro/PIX/depósito/boleto: uma linha por origem do dinheiro.
-  const linhas: unknown[] = Array.isArray(body.dinheiro) ? body.dinheiro : [];
-  for (const raw of linhas) {
-    const l = raw as { forma?: unknown; conta_id?: unknown; valor?: unknown };
-    const valor = Number(l.valor);
-    if (!Number.isFinite(valor) || cent(valor) <= 0) {
-      return NextResponse.json(
-        { error: "toda linha de dinheiro precisa de um valor maior que zero" },
-        { status: 400 }
-      );
-    }
-    const forma = String(l.forma ?? "dinheiro");
-    if (!["dinheiro", "pix", "deposito", "boleto"].includes(forma)) {
-      return NextResponse.json({ error: "forma de pagamento inválida" }, { status: 400 });
-    }
-    if (!l.conta_id) {
-      return NextResponse.json(
-        { error: "diga de qual conta da empresa saiu cada valor" },
-        { status: 400 }
-      );
-    }
-    meios.push({
-      tipo: "conta",
-      forma,
-      contaId: String(l.conta_id),
-      centavos: cent(valor),
-    });
+  const dinheiro = meiosDeDinheiro(body);
+  if (dinheiro.erro || !dinheiro.meios) {
+    return NextResponse.json({ error: dinheiro.erro }, { status: 400 });
   }
+  const meios: Meio[] = [...dinheiro.meios];
 
-  // Cheques: o valor é o do PAPEL, lido do banco. A tela não opina.
   const chequeIds: string[] = Array.isArray(body.cheques) ? body.cheques.map(String) : [];
   if (new Set(chequeIds).size !== chequeIds.length) {
     return NextResponse.json({ error: "há cheque repetido na lista" }, { status: 400 });
@@ -160,7 +123,7 @@ export async function POST(req: NextRequest) {
   if (chequeIds.length > 0) {
     const { data: chs, error: eCh } = await client
       .from("cheques")
-      .select("id, valor, banco, numero")
+      .select("id, valor")
       .in("id", chequeIds)
       .eq("status", "em_carteira");
     if (eCh) return NextResponse.json({ error: eCh.message }, { status: 400 });
@@ -184,7 +147,6 @@ export async function POST(req: NextRequest) {
   }
 
   const totalPago = meios.reduce((s, m) => s + m.centavos, 0);
-
   if (totalPago < totalDevido) {
     return NextResponse.json(
       {
@@ -223,193 +185,32 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ------------------------------------------------------------- alocação
-  // Conta mais antiga primeiro, consumindo os meios na ordem em que vieram.
-  // Nada é gravado aqui: primeiro o plano inteiro fecha na matemática, e só
-  // depois o banco é tocado.
-  type Pedaco = { conta: (typeof contas)[number]; centavos: number; meio: Meio };
-  const plano: Pedaco[] = [];
-  let m = 0;
-  let sobraDoMeio = meios[0].centavos;
-  for (const conta of contas) {
-    let falta = cent(conta.valor);
-    while (falta > 0) {
-      if (m >= meios.length) {
-        // Não chega aqui: totalPago >= totalDevido já foi conferido. Se
-        // chegasse, seria bug de aritmética — e é melhor recusar tudo do que
-        // gravar meia conta paga.
-        return NextResponse.json(
-          { error: "não consegui distribuir os pagamentos — nada foi pago, avise o Evaner" },
-          { status: 500 }
-        );
-      }
-      const usa = Math.min(falta, sobraDoMeio);
-      if (usa > 0) plano.push({ conta, centavos: usa, meio: meios[m] });
-      falta -= usa;
-      sobraDoMeio -= usa;
-      if (sobraDoMeio === 0 && m < meios.length - 1) {
-        m += 1;
-        sobraDoMeio = meios[m].centavos;
-      } else if (sobraDoMeio === 0 && falta > 0) {
-        m += 1; // força o erro acima em vez de laço infinito
-      }
-    }
-  }
-
-  // ------------------------------------------------- o servidor se confere
-  // ⚠️ Depois de partir, o valor ORIGINAL da conta some do banco (a mãe passa
-  // a valer só o primeiro pedaço). Ou seja: um erro de distribuição aqui
-  // seria INVISÍVEL depois — não dá pra auditar o que não ficou registrado.
-  //
-  // Então a conferência é ANTES de gravar: a soma dos pedaços de cada conta
-  // tem que ser exatamente o valor dela, e a soma de tudo tem que ser o
-  // total devido. Se não bater, nada é pago. Recusar é sempre melhor do que
-  // gravar um número que ninguém vai conseguir conferir.
-  for (const conta of contas) {
-    const soma = plano
-      .filter((p) => p.conta.id === conta.id)
-      .reduce((s, p) => s + p.centavos, 0);
-    if (soma !== cent(conta.valor)) {
-      return NextResponse.json(
-        {
-          error: `erro interno na distribuição do pagamento (a conta "${conta.descricao}" recebeu R$ ${brl(soma)} de R$ ${brl(cent(conta.valor))}). NADA foi pago — avise o Evaner.`,
-        },
-        { status: 500 }
-      );
-    }
-  }
-  const somaPlano = plano.reduce((s, p) => s + p.centavos, 0);
-  if (somaPlano !== totalDevido) {
+  // ---------------------------------------------------- distribui e confere
+  const { plano, erro: eAloc } = alocar(contas, meios);
+  if (eAloc || !plano) {
     return NextResponse.json(
-      {
-        error: `erro interno na distribuição do pagamento (distribuí R$ ${brl(somaPlano)} de R$ ${brl(totalDevido)}). NADA foi pago — avise o Evaner.`,
-      },
+      { error: `não consegui distribuir os pagamentos (${eAloc}) — nada foi pago` },
       { status: 500 }
     );
   }
+  const eConfere = conferirPlano(contas, plano, totalDevido);
+  if (eConfere) return NextResponse.json({ error: eConfere }, { status: 500 });
 
-  // ------------------------------------------------------------- gravação
-  // Ordem escolhida pra que uma falha interrompa o menos pior:
-  //   1. cheques saem da carteira (se um já foi usado, nada mais aconteceu)
-  //   2. contas são quitadas/partidas
-  //   3. troco entra no caixa
-  const chequesUsados = meios.filter((x) => x.tipo === "cheque") as Extract<
-    Meio,
-    { tipo: "cheque" }
-  >[];
-  const paraQuem =
-    contas.length === 1
-      ? contas[0].fornecedor || contas[0].descricao
-      : `${contas.length} contas`;
-
-  for (const ch of chequesUsados) {
-    const { data: ok, error } = await client
-      .from("cheques")
-      .update({
-        status: "repassado",
-        repassado_em: data,
-        repassado_para: String(paraQuem).slice(0, 120),
-        pagamento_id: pagamentoId,
-      })
-      .eq("id", ch.id)
-      .eq("status", "em_carteira")
-      .select("id");
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    if (!ok?.length) {
-      return NextResponse.json(
-        { error: "um cheque saiu da carteira no meio do caminho — recarregue a tela" },
-        { status: 409 }
-      );
-    }
-  }
-
-  const campoDoMeio = (meio: Meio) =>
-    meio.tipo === "cheque"
-      ? { forma_pagamento: "cheque", cheque_id: meio.id, conta_id: null }
-      : { forma_pagamento: meio.forma, cheque_id: null, conta_id: meio.contaId };
-
-  const avisos: string[] = [];
-  let partidas = 0;
-
-  for (const conta of contas) {
-    const pedacos = plano.filter((p) => p.conta.id === conta.id);
-
-    // O PRIMEIRO pedaço reaproveita a conta original — ela guarda a
-    // identidade (é ela que a origem aponta, é ela que o histórico conhece).
-    const primeiro = pedacos[0];
-    const { data: mexeu, error } = await client
-      .from("contas_a_pagar")
-      .update({
-        status: "paga",
-        pago_em: data,
-        pagamento_id: pagamentoId,
-        valor: n2(primeiro.centavos / 100),
-        ...campoDoMeio(primeiro.meio),
-      })
-      .eq("id", conta.id)
-      .eq("status", "a_pagar")
-      .select("id");
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    if (!mexeu?.length) {
-      return NextResponse.json(
-        {
-          error: `a conta "${conta.descricao}" mudou de situação no meio do caminho — parte do lote pode ter sido paga. Recarregue a tela e confira antes de repetir.`,
-        },
-        { status: 409 }
-      );
-    }
-
-    // Os demais viram pedaços novos, apontando pro original.
-    for (const p of pedacos.slice(1)) {
-      partidas += 1;
-      const { error: ePedaco } = await client.from("contas_a_pagar").insert({
-        descricao: conta.descricao,
-        fornecedor: conta.fornecedor,
-        categoria: conta.categoria,
-        pessoa_id: conta.pessoa_id,
-        valor: n2(p.centavos / 100),
-        vencimento: conta.vencimento,
-        status: "paga",
-        pago_em: data,
-        pagamento_id: pagamentoId,
-        conta_pai_id: conta.id,
-        origem_tipo: conta.origem_tipo,
-        origem_id: conta.origem_id,
-        local_id: conta.local_id,
-        divida_id: conta.divida_id,
-        registrado_por: admin.id,
-        ...campoDoMeio(p.meio),
-      });
-      if (ePedaco) {
-        // O pedaço que faltou é dívida que sumiu: ninguém deve e ninguém
-        // pagou. Avisa com o valor exato pra dar pra consertar na mão.
-        avisos.push(
-          `ATENÇÃO: R$ ${brl(p.centavos)} da conta "${conta.descricao}" NÃO foram registrados (${ePedaco.message}) — essa parte sumiu da dívida; confira em Contas a pagar antes de seguir`
-        );
-      }
-    }
-  }
-
-  // O troco é dinheiro que ENTRA e não é venda: entrada avulsa (0047) — soma
-  // no caixa e fica FORA do DRE. Carimbada com o cheque de origem (0072)
-  // quando o excedente veio de um papel.
-  if (excedente > 0 && trocoContaId) {
-    const ultimo = meios[meios.length - 1];
-    const { error: eTroco } = await client.from("entradas_avulsas").insert({
-      tipo: "reembolso",
-      valor: n2(trocoValor),
-      data,
-      conta_id: trocoContaId,
-      descricao: `Troco do pagamento de ${paraQuem}`,
-      origem_tipo: ultimo.tipo === "cheque" ? "cheque" : null,
-      origem_id: ultimo.tipo === "cheque" ? ultimo.id : null,
-      registrado_por: admin.id,
-    });
-    if (eTroco) {
-      avisos.push(
-        `ATENÇÃO: as contas foram pagas, mas o TROCO de R$ ${brl(excedente)} NÃO entrou no caixa (${eTroco.message}) — lance a entrada avulsa na mão, senão o saldo do app fica menor que o do banco`
-      );
-    }
+  const r = await gravarPagamento(client, admin.id, {
+    pagamentoId,
+    data,
+    contas,
+    meios,
+    plano,
+    repassadoPara:
+      contas.length === 1
+        ? String(contas[0].fornecedor || contas[0].descricao)
+        : `${contas.length} contas`,
+    excedente,
+    trocoContaId,
+  });
+  if (r.erro) {
+    return NextResponse.json({ error: r.erro.mensagem }, { status: r.erro.status });
   }
 
   return NextResponse.json({
@@ -417,10 +218,10 @@ export async function POST(req: NextRequest) {
     pagamento_id: pagamentoId,
     contas: contas.length,
     meios: meios.length,
-    partidas,
+    partidas: r.partidas,
     total: n2(totalDevido / 100),
     troco: excedente > 0 ? n2(excedente / 100) : 0,
-    ...(avisos.length > 0 ? { avisos } : {}),
+    ...(r.avisos.length > 0 ? { avisos: r.avisos } : {}),
   });
 }
 
@@ -473,8 +274,8 @@ export async function DELETE(req: NextRequest) {
     }
   }
 
-  // 2) Os PEDAÇOS filhos somem e a mãe volta a valer a conta inteira. A
-  //    ordem importa: a FK sem cascade recusaria apagar a mãe antes.
+  // 2) Os PEDAÇOS filhos somem e a mãe volta a valer a conta inteira. A ordem
+  //    importa: a FK sem cascade recusaria apagar a mãe antes.
   const filhos = contas.filter((c) => c.conta_pai_id);
   const somaPorMae = new Map<string, number>();
   for (const f of filhos) {
@@ -492,8 +293,7 @@ export async function DELETE(req: NextRequest) {
     if (eFilhos) return NextResponse.json({ error: eFilhos.message }, { status: 400 });
   }
 
-  // 3) As mães (e as contas não partidas) voltam a ser devidas, pelo valor
-  //    inteiro.
+  // 3) As mães (e as contas não partidas) voltam a ser devidas, inteiras.
   const maes = contas.filter((c) => !c.conta_pai_id);
   for (const mae of maes) {
     const valorInteiro = Number(mae.valor) + (somaPorMae.get(mae.id) ?? 0);
@@ -528,9 +328,7 @@ export async function DELETE(req: NextRequest) {
       .select("id");
     if (eCh) return NextResponse.json({ error: eCh.message }, { status: 400 });
     if (voltaram?.length) {
-      desfeito.push(
-        `${voltaram.length} cheque(s) voltou(aram) pra carteira`
-      );
+      desfeito.push(`${voltaram.length} cheque(s) voltou(aram) pra carteira`);
     }
   }
 

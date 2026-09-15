@@ -292,6 +292,14 @@ MESMA coleta (0058) — o `pago_pela_sede` virou só "a sede entrou nessa", com
 CHECK amarrando os dois. Query nova que fala de saldo soma a **diferença**,
 nunca filtra por `not pago_pela_sede`.
 
+**O motor do pagamento é UM SÓ** (`src/lib/admin/pagar-contas.ts`). Distribuir
+N contas entre M meios, partir a conta na fronteira e gravar mora lá; o
+pagamento em lote de Contas a pagar e o fechamento do posto só leem o que é
+deles e chamam. **Duas implementações da mesma regra de dinheiro é exatamente
+como o buraco do cheque nasceu** — a tela de Lançamentos avisava, a de Contas
+não, e a diferença passou meses. A ordem dos meios é o que define quem paga o
+quê: dinheiro antes de cheque, como o posto sempre fez.
+
 **Cheque que volta: a nota nem sempre reabre.** Pagamento pontual reabre a
 conta (R68). Maço de posto → as notas continuam pagas e nasce **dívida do
 valor do cheque** (R68-b), porque "qual fatia de qual nota esse papel cobriu"
