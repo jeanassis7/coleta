@@ -291,10 +291,18 @@ export async function POST(req: NextRequest) {
   // payload da função (4,5MB) que manda aqui, não uma regra de negócio. A
   // tela nunca manda mais de 3 por vez (o batching fica bem abaixo disso).
   if (imagens.length > 5) {
+    // A mensagem NÃO cita o número: quem lança não tem o que fazer com ele.
+    // A tela manda de 3 em 3 sozinha, então chegar aqui é bug nosso no
+    // batching, não excesso de foto dele — e um "máximo 5" na tela faria o
+    // gestor achar que precisa contar as fotos antes de apertar Ler. O
+    // número fica no log, que é onde serve pra alguma coisa.
+    console.error(
+      `[ocr] batching furou: chegaram ${imagens.length} imagens numa chamada (teto 5)`
+    );
     return NextResponse.json(
       {
         error:
-          "no máximo 5 fotos por chamada — é o limite de payload da função",
+          "Não consegui ler essas fotos de uma vez. Isso é falha do sistema, não sua — avise o Evaner. Enquanto isso, lance os cheques na mão.",
       },
       { status: 400 }
     );
