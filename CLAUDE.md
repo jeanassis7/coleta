@@ -156,7 +156,23 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
   - Mês = dia 1 ao último dia do mês atual
   - Comparações "vs anterior" = **mesmo intervalo até mesma data** (justo)
 - **Email dos usuários** = identificador interno `nome@coleta.local`, não é email real
-- **Foto:** 800px / JPEG q60 / alvo 100KB. Comprimida no celular antes de salvar. Label na UI = "Foto da fachada/portão"
+- **Foto:** 800px / JPEG q60 / alvo 100KB. Comprimida no celular antes de salvar.
+- **Onde a foto é OBRIGATÓRIA no app do motorista** (levantado em 18/09/2026):
+
+  | Tela | Foto | Obrigatória? |
+  |---|---|---|
+  | Nova coleta | fachada/portão | **por motorista** — flag `features.foto` (rollout gradual) |
+  | Abastecimento | cupom | **sim** |
+  | Despesa | comprovante | **sim** |
+  | **Descarregar** | **papel da balança** | **sim** (ativado em 18/09) |
+  | Iniciar carga | painel (km) | não |
+
+  A trava é **só no cliente**, de propósito: os 4 lançamentos são
+  offline-first e a linha sobe ANTES da foto, em requisição separada
+  (`foto_subida`). Exigir no servidor recusaria lançamento legítimo de quem
+  está sem sinal — que no oeste do PR é o normal, não a exceção. Botão
+  desabilitado **sempre** diz o que falta (`oQueFalta()`); cinza mudo faz o
+  motorista achar que o app travou.
 - **GPS:** captura ao ABRIR Nova Coleta (não no save). Timeout 10s. Flag `gps_pendente` impede sync antes de GPS resolver.
 
 ## Números "mágicos" com contexto

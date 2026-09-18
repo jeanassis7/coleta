@@ -92,8 +92,27 @@ export default function DescarregarPage() {
   const kmDigitado = kmValor !== null && kmValor > 0;
 
   // Botão fica clicável assim que digitou os números — validações no clique
+  // A FOTO DO PAPEL DA BALANÇA É OBRIGATÓRIA (18/09/2026, decisão do Evaner).
+  //
+  // Ela não é formalidade: o peso da balança é o número que vira estoque,
+  // vira custo do óleo e vira venda. É o único lançamento do motorista que
+  // move todo o resto — e era o único dos quatro sem comprovante obrigatório
+  // (despesa e abastecimento já exigiam).
+  //
+  // ⚠️ A trava é SÓ AQUI, de propósito. A descarga é offline-first: a linha
+  // sobe primeiro e a foto depois, em outra requisição (`foto_subida`).
+  // Exigir a foto no servidor recusaria descarga legítima de quem está sem
+  // sinal — que é a situação normal no oeste do PR, não a exceção.
   const podeSalvar =
-    !!carga && !!motoristaId && pesoDigitado && kmDigitado && !salvando;
+    !!carga && !!motoristaId && pesoDigitado && kmDigitado && !!foto && !salvando;
+
+  /** O que falta — o botão diz, em vez de ficar cinza mudo. */
+  function oQueFalta(): string | null {
+    if (!pesoDigitado) return "Falta o peso da balança.";
+    if (!kmDigitado) return "Falta o km do caminhão.";
+    if (!foto) return "Falta a foto do papel da balança.";
+    return null;
+  }
 
   function trocarPeso(v: number | null) {
     setPesoBrutoValor(v);
@@ -356,6 +375,9 @@ export default function DescarregarPage() {
             <label className="block text-xl font-semibold mb-3">
               📷 Foto do papel da balança
             </label>
+            <p className="text-base text-cinza-suave mb-2">
+              Precisa da foto pra confirmar a descarga.
+            </p>
             <FotoPicker onChange={setFoto} motoristaId={motoristaId} />
           </div>
         )}
@@ -420,6 +442,15 @@ export default function DescarregarPage() {
               diferença). Confere o número no papelzinho da balança. Se estiver
               certo mesmo, aperta o botão de novo.
             </p>
+          </div>
+        )}
+
+        {/* Nasce ACIMA do botão e empurra ele pra baixo — mesmo padrão da
+            Nova coleta. Botão cinza sem explicação faz o motorista achar que
+            o app travou. */}
+        {!podeSalvar && !salvando && oQueFalta() && (
+          <div className="bg-alerta/10 border-2 border-alerta rounded-2xl p-4">
+            <p className="text-lg font-bold text-alerta">{oQueFalta()}</p>
           </div>
         )}
 
