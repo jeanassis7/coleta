@@ -52,7 +52,22 @@ export default function IniciarCargaPage() {
   const [avisoSalto, setAvisoSalto] = useState<number | null>(null);
   const [caminhaoId, setCaminhaoId] = useState<string>("");
   const [kmInicial, setKmInicial] = useState<string>("");
+  // A FOTO DO PAINEL É OBRIGATÓRIA (18/09/2026, decisão do Evaner).
+  //
+  // O km inicial é o que fecha o km/L da carga inteira e é a base do
+  // antiburro de salto de km das próximas. Era o último lançamento sem
+  // comprovante — e as 149 cargas já feitas mostram o que "opcional" produz:
+  // 144 delas não têm foto do painel.
   const [fotoPainel, setFotoPainel] = useState<Blob | null>(null);
+
+  /** O que falta — o botão diz, em vez de ficar cinza mudo. */
+  const faltaAlgo = !caminhaoId
+    ? "Falta escolher o caminhão."
+    : !kmInicial
+      ? "Falta o km do painel."
+      : !fotoPainel
+        ? "Falta a foto do painel."
+        : null;
   // Tela de boas-vindas antes do formulário (pedido do Evaner)
   const [formAberto, setFormAberto] = useState(false);
   const [nomeMotorista, setNomeMotorista] = useState("");
@@ -220,7 +235,23 @@ export default function IniciarCargaPage() {
             upsert: true,
             contentType: "image/jpeg",
           });
-        if (!upErr) foto_painel_path = path;
+        // ⚠️ A FOTO FALHOU: a carga NÃO nasce (18/09/2026).
+        //
+        // Antes o `if (!upErr)` seguia em frente calado e a carga era criada
+        // sem foto — o motorista via "deu certo" e o km inicial ficava sem
+        // comprovante nenhum. Com a foto obrigatória isso não pode: seria a
+        // regra valendo na tela e não valendo no que foi gravado.
+        //
+        // Aqui dá pra ser rígido porque INICIAR CARGA é a única ação que já
+        // exige internet (o servidor garante "1 carga ativa"). Falha de
+        // upload aqui é problema de agora, e tentar de novo resolve.
+        if (upErr) {
+          setErro(
+            "Não consegui enviar a foto do painel. Confere o sinal e aperta de novo — a carga não foi iniciada."
+          );
+          return;
+        }
+        foto_painel_path = path;
       }
 
       const { data, error } = await supabase
@@ -473,6 +504,9 @@ export default function IniciarCargaPage() {
             <label className="block text-xl font-semibold mb-3">
               Foto do painel
             </label>
+            <p className="text-base text-cinza-suave mb-2">
+              Precisa da foto pra iniciar a carga.
+            </p>
             <FotoPicker onChange={setFotoPainel} motoristaId={motoristaId} />
           </div>
         )}
@@ -494,9 +528,18 @@ export default function IniciarCargaPage() {
           </div>
         )}
 
+        {/* Nasce ACIMA do botão e empurra ele pra baixo — mesmo padrão da
+            Nova coleta e da Descarga. Botão cinza sem explicação faz o
+            motorista achar que o app travou. */}
+        {!salvando && faltaAlgo && (
+          <div className="bg-alerta/10 border-2 border-alerta rounded-2xl p-4">
+            <p className="text-lg font-bold text-alerta">{faltaAlgo}</p>
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={salvando || !caminhaoId || !kmInicial}
+          disabled={salvando || !!faltaAlgo}
           className={
             avisoSalto !== null && !erro
               ? "btn-primario text-2xl bg-amber-500 active:bg-amber-600"

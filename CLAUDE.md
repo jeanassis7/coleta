@@ -165,9 +165,12 @@ Existiu um terceiro papel `dev` enquanto os Módulos 1 e 2 eram invisíveis pro 
   | Abastecimento | cupom | **sim** |
   | Despesa | comprovante | **sim** |
   | **Descarregar** | **papel da balança** | **sim** (ativado em 18/09) |
-  | Iniciar carga | painel (km) | não |
+  | **Iniciar carga** | **painel (km)** | **sim** (ativado em 18/09) |
 
-  A trava é **só no cliente**, de propósito: os 4 lançamentos são
+  ⚠️ **Iniciar carga é a exceção**: como é a única ação que já exige internet,
+  ali a falha de upload **impede a carga de nascer** (antes seguia calada e a
+  carga ficava sem comprovante do km). Nos outros quatro a trava é **só no
+  cliente**, de propósito: os 4 lançamentos são
   offline-first e a linha sobe ANTES da foto, em requisição separada
   (`foto_subida`). Exigir no servidor recusaria lançamento legítimo de quem
   está sem sinal — que no oeste do PR é o normal, não a exceção. Botão
