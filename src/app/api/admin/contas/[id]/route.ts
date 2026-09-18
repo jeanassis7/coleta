@@ -4,6 +4,7 @@ import { exigirAdmin } from "@/lib/auth/exigir-admin";
 import { linhaPlano, pedePessoa, pessoaOpcional } from "@/lib/plano-contas";
 import { randomUUID } from "node:crypto";
 const n2 = (v: number) => Math.round(v * 100) / 100;
+const real = (v: number) => `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
 
 /**
  * PATCH — quatro ações:
@@ -293,6 +294,185 @@ export async function PATCH(
       }
     }
     return NextResponse.json({ ok: true });
+  }
+
+  // ---------------------------------------------------------------------
+  // DESFAZER O PAGAMENTO — sem apagar a conta
+  // ---------------------------------------------------------------------
+  // Faltava, e o buraco só apareceu num caso real (14-15/09/2026): o Jean
+  // pagou uma nota do posto com o cheque errado e não tinha como voltar
+  // atrás. O DELETE recusa conta que nasceu de um fato — com razão, porque
+  // apagar deixaria o abastecimento sem dívida nenhuma. Só que a trava
+  // pegava junto uma coisa que era pra ser permitida: **desfazer o
+  // pagamento** deixa a conta no lugar, só volta a dever.
+  //
+  // Sem isso, pagamento de nota de posto não tinha como ser corrigido NUNCA.
+  if (acao === "desfazer_pagamento") {
+    const { data: conta, error: eLer } = await client
+      .from("contas_a_pagar")
+      .select("id, status, valor, descricao, cheque_id, pagamento_id, conta_pai_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (eLer) return NextResponse.json({ error: eLer.message }, { status: 400 });
+    if (!conta) return NextResponse.json({ error: "conta não encontrada" }, { status: 404 });
+    if (conta.status !== "paga") {
+      return NextResponse.json(
+        { error: "essa conta não está paga — não há pagamento pra desfazer" },
+        { status: 409 }
+      );
+    }
+
+    // Pedaço de conta partida: quem manda é a mãe. Desfazer pelo filho
+    // deixaria a mãe paga por um valor menor do que a conta vale.
+    const alvoId = conta.conta_pai_id ?? conta.id;
+
+    // Acerto com VÁRIAS contas se desfaz inteiro, senão sobram contas pagas
+    // por um cheque que voltou pra carteira.
+    if (conta.pagamento_id) {
+      const { count } = await client
+        .from("contas_a_pagar")
+        .select("id", { count: "exact", head: true })
+        .eq("pagamento_id", conta.pagamento_id)
+        .is("conta_pai_id", null);
+      if ((count ?? 0) > 1) {
+        return NextResponse.json(
+          {
+            error: `essa conta foi paga junto com outras ${(count ?? 1) - 1} num acerto só — desfaça o acerto inteiro, senão sobram contas pagas por um cheque que já voltou pra carteira.`,
+            pagamento_id: conta.pagamento_id,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    const desfeito: string[] = [];
+
+    // Os pedaços da conta, se ela tiver sido partida entre meios (0074).
+    const { data: pedacos } = await client
+      .from("contas_a_pagar")
+      .select("id, valor, cheque_id")
+      .or(`id.eq.${alvoId},conta_pai_id.eq.${alvoId}`);
+    const todos = pedacos ?? [];
+    const valorInteiro = todos.reduce((s, p) => s + Number(p.valor), 0);
+    const chequesDoPagamento = [
+      ...new Set(todos.map((p) => p.cheque_id).filter(Boolean)),
+    ] as string[];
+
+    // 1) O TROCO SAI PRIMEIRO. Se o cheque voltasse antes e isto falhasse, o
+    //    caixa ficaria com dinheiro que entrou por um pagamento que não
+    //    existe mais — e nada na tela contaria isso.
+    if (chequesDoPagamento.length > 0) {
+      const { data: trocos, error: eTroco } = await client
+        .from("entradas_avulsas")
+        .delete()
+        .eq("origem_tipo", "cheque")
+        .in("origem_id", chequesDoPagamento)
+        .select("valor");
+      if (eTroco) return NextResponse.json({ error: eTroco.message }, { status: 400 });
+      if (trocos?.length) {
+        const soma = trocos.reduce((s, t) => s + Number(t.valor), 0);
+        desfeito.push(`o troco de ${real(soma)} saiu do caixa junto`);
+      }
+
+      // 2) O crédito que a sobra virou (0076) some junto — mas só se ainda
+      //    não tiver sido gasto. Gasto, ele virou pagamento de outra nota, e
+      //    aí quem tem que ser desfeito é aquele acerto.
+      const { data: creditos, error: eCred } = await client
+        .from("creditos_fornecedor")
+        .delete()
+        .in("cheque_id", chequesDoPagamento)
+        .is("consumido_em", null)
+        .select("valor");
+      if (eCred) return NextResponse.json({ error: eCred.message }, { status: 400 });
+      if (creditos?.length) {
+        const soma = creditos.reduce((s, c) => s + Number(c.valor), 0);
+        desfeito.push(`o crédito de ${real(soma)} com o posto deixou de existir`);
+      }
+    }
+
+    // 3) Os créditos que ESTE acerto consumiu voltam a ficar disponíveis.
+    if (conta.pagamento_id) {
+      const { data: voltaram } = await client
+        .from("creditos_fornecedor")
+        .update({ consumido_em: null, consumido_por: null })
+        .eq("consumido_por", conta.pagamento_id)
+        .select("valor");
+      if (voltaram?.length) {
+        const soma = voltaram.reduce((s, c) => s + Number(c.valor), 0);
+        desfeito.push(`${real(soma)} de crédito com o posto voltou a ficar disponível`);
+      }
+    }
+
+    // 4) Os cheques voltam pra carteira.
+    if (chequesDoPagamento.length > 0) {
+      const { data: ch, error: eCh } = await client
+        .from("cheques")
+        .update({
+          status: "em_carteira",
+          repassado_em: null,
+          repassado_para: null,
+          repassado_local_id: null,
+          pagamento_id: null,
+        })
+        .in("id", chequesDoPagamento)
+        .eq("status", "repassado")
+        .select("banco, numero, valor");
+      if (eCh) return NextResponse.json({ error: eCh.message }, { status: 400 });
+      for (const c of ch ?? []) {
+        desfeito.push(
+          `o cheque ${c.banco} nº ${c.numero ?? "—"} de ${real(Number(c.valor))} voltou pra carteira`
+        );
+      }
+    }
+
+    // 5) Os pedaços somem e a conta volta a valer inteira.
+    const filhos = todos.filter((p) => p.id !== alvoId);
+    if (filhos.length > 0) {
+      const { error: eFilhos } = await client
+        .from("contas_a_pagar")
+        .delete()
+        .in("id", filhos.map((f) => f.id));
+      if (eFilhos) return NextResponse.json({ error: eFilhos.message }, { status: 400 });
+      desfeito.push(`os ${todos.length} pedaços viraram uma conta só de novo`);
+    }
+
+    const { data: reaberta, error: eReabrir } = await client
+      .from("contas_a_pagar")
+      .update({
+        status: "a_pagar",
+        valor: n2(valorInteiro),
+        pago_em: null,
+        forma_pagamento: null,
+        conta_id: null,
+        cheque_id: null,
+        pagamento_id: null,
+      })
+      .eq("id", alvoId)
+      .eq("status", "paga")
+      .select("descricao, valor");
+    if (eReabrir) return NextResponse.json({ error: eReabrir.message }, { status: 400 });
+    if (!reaberta?.length) {
+      return NextResponse.json(
+        { error: "essa conta já mudou de situação — recarregue a tela" },
+        { status: 409 }
+      );
+    }
+
+    // 6) Os vales que este pagamento quitou voltam a pendentes — o desconto
+    //    não aconteceu.
+    const { data: vales } = await client
+      .from("acertos")
+      .update({ vale_quitado_em: null, vale_quitado_por: null })
+      .eq("vale_quitado_por", alvoId)
+      .select("id");
+    if (vales?.length) {
+      desfeito.push(`${vales.length} vale(s) voltou(aram) a ficar pendente(s)`);
+    }
+
+    desfeito.unshift(
+      `"${reaberta[0].descricao}" voltou a ser devida, por ${real(Number(reaberta[0].valor))}`
+    );
+    return NextResponse.json({ ok: true, desfeito });
   }
 
   if (acao === "confirmar") {

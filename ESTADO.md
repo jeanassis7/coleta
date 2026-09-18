@@ -1,5 +1,30 @@
 # Estado do projeto — onde paramos
 
+## ⚠️ PENDENTE AGORA — o acerto do CENTRO OESTE (18/09/2026)
+
+O Jean precisa refazer um lançamento, e o caminho **já está no ar**. Passo a
+passo pra ele:
+
+1. **Contas a pagar → aba Pagas** → achar *"Diesel (nota assinada) — CENTRO
+   OESTE"* de R$ 157,17 (pago em 13-14/09) → **"Desfazer pagamento"**.
+   O cheque de R$ 4.055,56 volta pra carteira e a nota volta a ser devida.
+2. **Postos → CENTRO OESTE → "Fechar conta com o posto"** → marcar as **10
+   notas** (R$ 3.882,79) e o cheque de R$ 4.055,56.
+3. Vai sobrar R$ 172,77. Escolher **"O posto ficou devendo esse valor"**.
+
+Depois disso o saldo do CENTRO OESTE fica **−R$ 172,77** ("o posto está te
+devendo"), e esse crédito aparece sozinho como forma de pagamento no próximo
+acerto.
+
+**O que estava errado:** em 14/09 (um dia antes do conserto do item 2) o
+cheque de R$ 4.055,56 deu baixa em **uma nota de R$ 157,17** e os R$ 3.898,39
+restantes sumiram. As 10 notas foram todas lançadas na mesma sentada (15/09,
+12:06–12:14, transcrição do extrato do posto), então o cheque era do lote
+inteiro. **Setembro está mostrando R$ 3.898,39 a mais de resultado** até isso
+ser refeito — o cheque repassado contou receita cheia e só R$ 157,17 saiu como
+despesa.
+
+
 > Atualizado em 15/09/2026 (cheque se deposita em maço; leitor de cheques
 > ligou; o app para de mentir; admin edita tudo na carga — e o saldo do
 > Lucimar).

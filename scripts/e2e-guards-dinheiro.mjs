@@ -557,6 +557,124 @@ try {
     );
   }
 
+  // =========================================================================
+  console.log("\nCRÉDITO COM O POSTO (0076) — quando eles ficam devendo");
+  // =========================================================================
+  // Caso real de 14-15/09: acerto de R$ 3.882,79 pago com cheque de
+  // R$ 4.055,56; o posto ficou devendo R$ 172,77 e isso não tinha onde morar.
+  {
+    const posto2 = (
+      await client.query(
+        `insert into locais (nome_canonico, latitude, longitude, tipo)
+         values ('E2E Posto Credito', -24.1, -54.1, 'posto') returning id`
+      )
+    ).rows[0].id;
+
+    const novoCredito = (valor) =>
+      client.query(
+        `insert into creditos_fornecedor (local_id, valor, data, registrado_por)
+         values ($1, $2, current_date, $3) returning id`,
+        [posto2, valor, evaner]
+      );
+
+    // Uma nota de 500 em aberto e um crédito de 172,77: o posto deve 500, a
+    // gente tem 172,77 lá. Saldo líquido = 327,23.
+    await client.query(
+      `insert into contas_a_pagar
+         (descricao, categoria, valor, vencimento, status, local_id, registrado_por)
+       values ('E2E nota', 'combustivel', 500, current_date, 'a_pagar', $1, $2)`,
+      [posto2, evaner]
+    );
+    const credId = (await novoCredito(172.77)).rows[0].id;
+
+    const linha = async () =>
+      (
+        await client.query(
+          "select saldo, credito_aberto, notas_abertas from saldo_postos() where local_id = $1",
+          [posto2]
+        )
+      ).rows[0];
+
+    let l = await linha();
+    igual("o crédito ABATE o saldo do posto (500 − 172,77)", l.saldo, 327.23);
+    igual("e aparece separado, pra dar pra explicar o número", l.credito_aberto, 172.77);
+    afirmar(
+      "crédito NÃO é contado como nota aberta",
+      Number(l.notas_abertas) === 1,
+      `notas_abertas=${l.notas_abertas}`
+    );
+
+    // O saldo PODE ficar negativo: é a lembrança de que eles devem pra gente.
+    await novoCredito(400);
+    l = await linha();
+    igual("saldo NEGATIVO quando o crédito passa das notas", l.saldo, -72.77);
+
+    // Crédito gasto sai da conta na hora — senão abateria pra sempre.
+    await client.query(
+      `update creditos_fornecedor set consumido_em = current_date,
+              consumido_por = gen_random_uuid() where id = $1`,
+      [credId]
+    );
+    l = await linha();
+    igual("crédito GASTO para de abater", l.saldo, 100);
+
+    // ⚠️ CRÉDITO NÃO É CAIXA. Ele não está em conta nenhuma — está com o
+    // posto. Se alguém ligar isso na movimentos_caixa, o saldo do app passa a
+    // mostrar dinheiro que não está em banco nenhum.
+    const noCaixa = Number(
+      (
+        await client.query(
+          `select count(*) q from movimentos_caixa m where m.tipo ilike '%credito%'`
+        )
+      ).rows[0].q
+    );
+    afirmar(
+      "crédito com o posto NÃO entra no caixa",
+      noCaixa === 0,
+      noCaixa === 0 ? "" : `${noCaixa} linha(s) de crédito no extrato do caixa`
+    );
+
+    // Um cheque gera no máximo UM crédito, pelo mesmo motivo do troco.
+    let recusouDois = false;
+    try {
+      await client.query("savepoint cr1");
+      await client.query(
+        `insert into creditos_fornecedor (local_id, valor, data, cheque_id, registrado_por)
+         values ($1, 10, current_date, $2, $3), ($1, 20, current_date, $2, $3)`,
+        [posto2, cheque, evaner]
+      );
+      await client.query("release savepoint cr1");
+    } catch {
+      recusouDois = true;
+      await client.query("rollback to savepoint cr1");
+    }
+    afirmar(
+      "o MESMO cheque não gera dois créditos (índice único)",
+      recusouDois,
+      recusouDois ? "" : "gerou dois — seria dinheiro inventado"
+    );
+
+    // 'credito' precisa ser forma de pagamento válida (0077), senão o pedaço
+    // pago com crédito não teria como ser gravado e o acerto inteiro cairia.
+    let aceitouForma = true;
+    try {
+      await client.query("savepoint cr2");
+      await client.query(
+        `insert into contas_a_pagar
+           (descricao, categoria, valor, vencimento, status, pago_em, forma_pagamento, registrado_por)
+         values ('E2E pago com credito', 'combustivel', 50, current_date, 'paga',
+                 current_date, 'credito', $1)`,
+        [evaner]
+      );
+      await client.query("release savepoint cr2");
+    } catch (e) {
+      aceitouForma = false;
+      await client.query("rollback to savepoint cr2");
+      console.log("      (motivo: " + e.message + ")");
+    }
+    afirmar("o banco aceita forma_pagamento 'credito' (0077)", aceitouForma);
+  }
+
   console.log(
     falhas === 0
       ? "\nTODOS OS GUARDS DE PÉ.\n"

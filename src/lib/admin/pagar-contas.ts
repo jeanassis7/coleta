@@ -33,6 +33,9 @@ export const brl = (c: number) => (c / 100).toFixed(2).replace(".", ",");
 
 export type Meio =
   | { tipo: "cheque"; id: string; centavos: number }
+  // Crédito com o posto (0076): o que ELES já deviam pra gente. Se comporta
+  // como um cheque sem papel — nasce inteiro, é gasto inteiro.
+  | { tipo: "credito"; id: string; centavos: number }
   | { tipo: "conta"; forma: string; contaId: string; centavos: number };
 
 /** O que o motor precisa saber de cada conta. Quem chama lê do banco. */
@@ -116,10 +119,18 @@ export function conferirPlano(
   return null;
 }
 
-const campoDoMeio = (meio: Meio) =>
-  meio.tipo === "cheque"
-    ? { forma_pagamento: "cheque", cheque_id: meio.id, conta_id: null }
-    : { forma_pagamento: meio.forma, cheque_id: null, conta_id: meio.contaId };
+const campoDoMeio = (meio: Meio) => {
+  if (meio.tipo === "cheque") {
+    return { forma_pagamento: "cheque", cheque_id: meio.id, conta_id: null };
+  }
+  if (meio.tipo === "credito") {
+    // Sem `conta_id` de propósito: o dinheiro não saiu de conta nenhuma, saiu
+    // de um saldo que o posto já devia. A `movimentos_caixa` ignora linha sem
+    // conta, então o caixa continua certo sozinho — igual ao cheque (0070).
+    return { forma_pagamento: "credito", cheque_id: null, conta_id: null };
+  }
+  return { forma_pagamento: meio.forma, cheque_id: null, conta_id: meio.contaId };
+};
 
 export interface ResultadoPagamento {
   erro?: { mensagem: string; status: number };
@@ -149,11 +160,43 @@ export async function gravarPagamento(
     /** Posto que recebeu, quando é um (0073) — o nome não basta pra dívida. */
     repassadoLocalId?: string | null;
     excedente: number;
+    /** A sobra voltou em dinheiro pra esta conta da empresa. */
     trocoContaId: string | null;
+    /** OU a sobra ficou de crédito com este posto (0076). Um dos dois. */
+    trocoLocalId?: string | null;
   }
 ): Promise<ResultadoPagamento> {
   const avisos: string[] = [];
   let partidas = 0;
+
+  // Os créditos usados saem de cena ANTES de qualquer conta ser quitada —
+  // mesma ordem do cheque. Se um já tiver sido gasto em outra aba, nada foi
+  // marcado como pago por um saldo que não existe mais.
+  const creditosUsados = opts.meios.filter(
+    (x): x is Extract<Meio, { tipo: "credito" }> => x.tipo === "credito"
+  );
+  for (const cr of creditosUsados) {
+    const { data: ok, error } = await client
+      .from("creditos_fornecedor")
+      .update({ consumido_em: opts.data, consumido_por: opts.pagamentoId })
+      .eq("id", cr.id)
+      .is("consumido_em", null)
+      .select("id");
+    if (error) {
+      return { erro: { mensagem: error.message, status: 400 }, partidas, avisos };
+    }
+    if (!ok?.length) {
+      return {
+        erro: {
+          mensagem:
+            "um crédito do posto já tinha sido usado em outro acerto — recarregue a tela",
+          status: 409,
+        },
+        partidas,
+        avisos,
+      };
+    }
+  }
 
   const chequesUsados = opts.meios.filter(
     (x): x is Extract<Meio, { tipo: "cheque" }> => x.tipo === "cheque"
@@ -252,6 +295,28 @@ export async function gravarPagamento(
   // O troco é dinheiro que ENTRA e não é venda: entrada avulsa (0047) — soma
   // no caixa e fica FORA do DRE. Carimbada com o cheque de origem (0072)
   // quando o excedente veio de um papel.
+  // A sobra ficou COM O POSTO: vira crédito (0076), não entrada de caixa.
+  // É o caso real do CENTRO OESTE — o posto abateu todas as notas e ficou
+  // devendo R$ 172,77. Sem isto, esse valor sumia e a única lembrança era a
+  // cabeça do gestor.
+  if (opts.excedente > 0 && opts.trocoLocalId) {
+    const ultimo = opts.meios[opts.meios.length - 1];
+    const { error: eCredito } = await client.from("creditos_fornecedor").insert({
+      local_id: opts.trocoLocalId,
+      valor: n2(opts.excedente / 100),
+      data: opts.data,
+      pagamento_id: opts.pagamentoId,
+      cheque_id: ultimo.tipo === "cheque" ? ultimo.id : null,
+      observacao: `Sobra do acerto com ${opts.repassadoPara}`,
+      registrado_por: adminId,
+    });
+    if (eCredito) {
+      avisos.push(
+        `ATENÇÃO: as contas foram pagas, mas o crédito de R$ ${brl(opts.excedente)} com o posto NÃO foi registrado (${eCredito.message}) — esse valor sumiu da lembrança; confira na tela do posto antes de seguir`
+      );
+    }
+  }
+
   if (opts.excedente > 0 && opts.trocoContaId) {
     const ultimo = opts.meios[opts.meios.length - 1];
     const { error: eTroco } = await client.from("entradas_avulsas").insert({
@@ -272,6 +337,44 @@ export async function gravarPagamento(
   }
 
   return { partidas, avisos };
+}
+
+/**
+ * Lê os créditos escolhidos e os devolve como meios.
+ *
+ * Mora aqui pelo mesmo motivo que o resto do motor: as duas portas (pagamento
+ * em lote e fechamento do posto) precisam da mesma leitura, e duas cópias
+ * divergem. Só devolve crédito AINDA ABERTO e DO POSTO certo — id vindo da
+ * tela não é prova de nada.
+ */
+export async function lerCreditos(
+  client: SupabaseClient,
+  ids: string[],
+  localId: string | null
+): Promise<{ meios: Meio[]; erro?: undefined } | { meios?: undefined; erro: string }> {
+  if (ids.length === 0) return { meios: [] };
+  if (new Set(ids).size !== ids.length) {
+    return { erro: "há crédito repetido na lista" };
+  }
+  let q = client
+    .from("creditos_fornecedor")
+    .select("id, valor, local_id")
+    .in("id", ids)
+    .is("consumido_em", null);
+  if (localId) q = q.eq("local_id", localId);
+  const { data, error } = await q;
+  if (error) return { erro: error.message };
+  if (!data || data.length !== ids.length) {
+    return {
+      erro: "algum crédito já foi usado ou não é desse posto — recarregue a tela",
+    };
+  }
+  return {
+    meios: ids.map((id) => {
+      const c = data.find((x) => x.id === id)!;
+      return { tipo: "credito" as const, id: c.id, centavos: cent(c.valor) };
+    }),
+  };
 }
 
 /**

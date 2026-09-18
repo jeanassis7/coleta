@@ -15,19 +15,23 @@ export interface PostoComSaldo {
   id: string;
   nome: string;
   notas_abertas: number;
+  /** Positivo = voce deve ao posto. NEGATIVO = o posto deve pra voce (0076). */
   saldo: number;
+  /** Quanto o posto esta devendo, se estiver. */
+  credito_aberto: number;
 }
 
 export async function buscarPostosComSaldo(): Promise<PostoComSaldo[]> {
   const supabase = await getSupabaseServer();
   const { data, error } = await supabase.rpc("saldo_postos");
   if (error || !data) return [];
-  return (data as { local_id: string; nome: string; notas_abertas: number; saldo: number }[])
+  return (data as { local_id: string; nome: string; notas_abertas: number; saldo: number; credito_aberto: number }[])
     .map((p) => ({
       id: p.local_id,
       nome: p.nome,
       notas_abertas: Number(p.notas_abertas),
       saldo: Number(p.saldo),
+      credito_aberto: Number(p.credito_aberto ?? 0),
     }))
     .sort((a, b) => b.saldo - a.saldo || a.nome.localeCompare(b.nome));
 }

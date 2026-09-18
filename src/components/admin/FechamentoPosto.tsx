@@ -43,6 +43,7 @@ export function FechamentoPosto({
   notas,
   contas,
   cheques,
+  creditos,
 }: {
   postoId: string;
   postoNome: string;
@@ -55,6 +56,8 @@ export function FechamentoPosto({
     numero: string | null;
     bom_para: string | null;
   }[];
+  /** O que o posto já deve pra gente (0076) — entra como forma de pagamento. */
+  creditos: { id: string; valor: number; data: string; observacao: string | null }[];
 }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
@@ -66,6 +69,10 @@ export function FechamentoPosto({
   // espécie" é um acerto que acontece de verdade.
   const [linhas, setLinhas] = useState<LinhaDinheiro[]>([]);
   const [trocoConta, setTrocoConta] = useState("");
+  // A sobra ficou COM o posto (0076) em vez de voltar em dinheiro. E o caso
+  // real do CENTRO OESTE: eles abateram tudo e ficaram devendo R$ 172,77.
+  const [ficaDevendo, setFicaDevendo] = useState(false);
+  const [creditosUsados, setCreditosUsados] = useState<Set<string>>(new Set());
   const [data, setData] = useState(
     new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
   );
@@ -76,12 +83,15 @@ export function FechamentoPosto({
   const totalDevido = notas
     .filter((n) => marcadas.has(n.conta_id))
     .reduce((s, n) => s + n.valor, 0);
+  const totalCreditos = creditos
+    .filter((c) => creditosUsados.has(c.id))
+    .reduce((s, c) => s + c.valor, 0);
   const totalCheques = cheques
     .filter((c) => chequesUsados.has(c.id))
     .reduce((s, c) => s + c.valor, 0);
   const dinheiro =
     linhas.reduce((s, l) => s + (l.centavos ?? 0), 0) / 100;
-  const totalPago = totalCheques + dinheiro;
+  const totalPago = totalCheques + dinheiro + totalCreditos;
   const diferenca = Math.round((totalPago - totalDevido) * 100) / 100;
 
   function mudarLinha(chave: string, campo: Partial<LinhaDinheiro>) {
@@ -118,8 +128,10 @@ export function FechamentoPosto({
               conta_id: l.contaId,
               valor: centavosParaReais(l.centavos!),
             })),
+          creditos: [...creditosUsados],
           troco_valor: diferenca > 0 ? diferenca : 0,
-          troco_conta_id: diferenca > 0 ? trocoConta : null,
+          troco_conta_id: diferenca > 0 && !ficaDevendo ? trocoConta : null,
+          troco_fica_com_o_posto: diferenca > 0 && ficaDevendo,
         }),
       });
       const r = await res.json();
@@ -191,6 +203,35 @@ export function FechamentoPosto({
           className="px-3 py-2 border border-cinza-borda rounded-xl"
         />
       </div>
+
+      {creditos.length > 0 && (
+        <div>
+          <p className="text-sm font-medium mb-2">
+            O posto já te deve — dá pra abater aqui
+          </p>
+          <div className="space-y-1">
+            {creditos.map((c) => (
+              <label
+                key={c.id}
+                className="flex items-center gap-2 text-sm py-1 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={creditosUsados.has(c.id)}
+                  onChange={() =>
+                    alternar(creditosUsados, c.id, setCreditosUsados)
+                  }
+                />
+                <span className="flex-1">
+                  crédito de {formatData(c.data)}
+                  {c.observacao ? ` · ${c.observacao}` : ""}
+                </span>
+                <span className="font-mono">{formatBRL(c.valor)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {cheques.length > 0 && (
         <div>
@@ -293,6 +334,12 @@ export function FechamentoPosto({
         <Linha rotulo="Notas selecionadas" valor={formatBRL(totalDevido)} />
         <Linha rotulo="Cheques" valor={formatBRL(totalCheques)} />
         <Linha rotulo="Dinheiro" valor={formatBRL(dinheiro)} />
+        {totalCreditos > 0 && (
+          <Linha
+            rotulo="Crédito que o posto devia"
+            valor={formatBRL(totalCreditos)}
+          />
+        )}
         <div className="border-t border-cinza-borda pt-1">
           <Linha rotulo="Total pago" valor={formatBRL(totalPago)} forte />
         </div>
@@ -304,27 +351,72 @@ export function FechamentoPosto({
       </div>
 
       {diferenca > 0 && (
-        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 space-y-2">
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 space-y-3">
           <p className="text-sm font-bold">
-            O posto devolve {formatBRL(diferenca)} de troco
+            Sobram {formatBRL(diferenca)} — o que aconteceu com esse valor?
           </p>
           <p className="text-xs">
-            Você está pagando mais do que as notas somam. Diga em qual conta
-            esse dinheiro entrou — sem isso ele sumiria do caixa e o resultado
-            ficaria inflado.
+            Você está pagando mais do que as notas somam. Sem dizer onde esse
+            dinheiro foi parar, ele sumiria do sistema.
           </p>
-          <select
-            value={trocoConta}
-            onChange={(e) => setTrocoConta(e.target.value)}
-            className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
-          >
-            <option value="">— escolha a conta —</option>
-            {contas.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+
+          <div className="grid gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFicaDevendo(false);
+                setConfirmando(false);
+              }}
+              className={`text-left px-3 py-2 rounded-lg border-2 ${
+                !ficaDevendo
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <div className="text-sm font-medium">Devolveram em dinheiro</div>
+              <div
+                className={`text-xs ${!ficaDevendo ? "text-white/80" : "text-cinza-suave"}`}
+              >
+                entra no caixa agora, na conta que você escolher
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFicaDevendo(true);
+                setConfirmando(false);
+              }}
+              className={`text-left px-3 py-2 rounded-lg border-2 ${
+                ficaDevendo
+                  ? "bg-verde text-white border-verde"
+                  : "bg-white border-cinza-borda"
+              }`}
+            >
+              <div className="text-sm font-medium">
+                O posto ficou devendo esse valor
+              </div>
+              <div
+                className={`text-xs ${ficaDevendo ? "text-white/80" : "text-cinza-suave"}`}
+              >
+                fica de crédito aqui no posto e abate no próximo acerto
+              </div>
+            </button>
+          </div>
+
+          {!ficaDevendo && (
+            <select
+              value={trocoConta}
+              onChange={(e) => setTrocoConta(e.target.value)}
+              className="w-full px-3 py-2 border border-cinza-borda rounded-xl"
+            >
+              <option value="">— em qual conta o dinheiro entrou —</option>
+              {contas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
@@ -343,7 +435,7 @@ export function FechamentoPosto({
           // Toda linha COM valor precisa dizer de qual conta saiu — senão o
           // dinheiro sairia do nada e o saldo não fecharia.
           linhas.some((l) => (l.centavos ?? 0) > 0 && !l.contaId) ||
-          (diferenca > 0 && !trocoConta)
+          (diferenca > 0 && !ficaDevendo && !trocoConta)
         }
         className={`w-full font-semibold rounded-xl px-5 py-3 text-white disabled:bg-cinza-borda disabled:text-cinza-suave ${
           confirmando ? "bg-amber-500 hover:bg-amber-600" : "bg-verde hover:bg-verde-escuro"

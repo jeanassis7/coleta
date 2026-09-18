@@ -21,7 +21,7 @@ export default async function PostoDetalhePage({
 }) {
   const { id } = await params;
   const supabase = await getSupabaseServer();
-  const [posto, contas, cheques, todos, { data: veiculos }, { data: pessoas }] =
+  const [posto, contas, cheques, todos, { data: veiculos }, { data: pessoas }, { data: creditos }] =
     await Promise.all([
       buscarPostoDetalhe(id),
       buscarContasFinanceiras(),
@@ -33,6 +33,14 @@ export default async function PostoDetalhePage({
         .eq("ativo", true)
         .order("placa"),
       supabase.from("profiles").select("id, nome").order("nome"),
+      // O que o posto ja deve pra gente (0076): entra como forma de pagamento
+      // no acerto seguinte.
+      supabase
+        .from("creditos_fornecedor")
+        .select("id, valor, data, observacao")
+        .eq("local_id", id)
+        .is("consumido_em", null)
+        .order("data"),
     ]);
   if (!posto) notFound();
 
@@ -73,12 +81,39 @@ export default async function PostoDetalhePage({
         </p>
       )}
 
-      <div className="card border-2 border-verde mb-6 flex items-baseline justify-between">
-        <span className="text-sm text-cinza-suave">Saldo em aberto</span>
-        <span className="text-2xl font-bold font-mono">
-          {formatBRL(posto.saldo)}
-        </span>
-      </div>
+      {/* O saldo pode ficar NEGATIVO desde a 0076: pagar a mais num acerto
+          deixa o posto devendo, e era essa lembrança que sumia antes. O
+          `posto.saldo` conta só as notas; o crédito vem da saldo_postos(). */}
+      {(() => {
+        const naRpc = todos.find((p) => p.id === posto.id);
+        const credito = naRpc?.credito_aberto ?? 0;
+        const liquido = posto.saldo - credito;
+        return (
+          <div
+            className={`card border-2 mb-6 ${
+              liquido < 0 ? "border-blue-400" : "border-verde"
+            }`}
+          >
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-cinza-suave">
+                {liquido < 0 ? "O posto está te devendo" : "Saldo em aberto"}
+              </span>
+              <span className="text-2xl font-bold font-mono">
+                {formatBRL(Math.abs(liquido))}
+              </span>
+            </div>
+            {credito > 0 && (
+              <div className="text-xs text-cinza-suave mt-2 border-t border-cinza-borda pt-2 flex justify-between">
+                <span>
+                  {formatBRL(posto.saldo)} em notas − {formatBRL(credito)} de
+                  crédito que eles te devem
+                </span>
+                <span>abate no próximo acerto</span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Lançar o extrato do posto: é assim que a nota chega — uma vez por
           mês, no papel, não em tempo real pelo celular. */}
@@ -109,6 +144,14 @@ export default async function PostoDetalhePage({
             numero: c.numero,
             bom_para: c.bom_para,
           }))}
+          creditos={(
+            (creditos ?? []) as {
+              id: string;
+              valor: number;
+              data: string;
+              observacao: string | null;
+            }[]
+          ).map((c) => ({ ...c, valor: Number(c.valor) }))}
         />
       )}
 

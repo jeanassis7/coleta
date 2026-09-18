@@ -235,6 +235,8 @@ Em `supabase/migrations/` — aplicar com `node scripts/aplicar-migration.mjs <a
 - `0068_movimentos_caixa.sql` — ⚠️ **A VIEW `movimentos_caixa` É A FONTE DO DINHEIRO.** Toda linha que mexe numa conta financeira, com sinal (+ entra, − sai). O `saldo_contas()` deixou de somar 14 braços por conta própria e virou a SOMA dela. Mesmo desenho do estoque (`movimentos_estoque` + `estoque_atual()`). **Mexer na view muda o caixa** — e a troca só subiu porque os saldos das 3 contas ficaram idênticos ao centavo
 - `0069_tipos_de_movimento.sql` — RPC `tipos_de_movimento()`: o filtro de tipo da tela de Lançamentos se monta a partir do DADO, não de lista no código. Fonte nova aparece sozinha
 - `0070_conta_paga_com_cheque_no_extrato.sql` — conta quitada com cheque entra no extrato com `conta_id` nulo (o saldo continua ignorando). Recebimento em cheque NÃO entra: o cheque vira dinheiro quando compensa, e a compensação já é uma linha
+- `0077_credito_e_forma_de_pagamento.sql` — `forma_pagamento` aceita `credito`. Sem isso o pedaco pago com credito nao teria como ser gravado e o acerto inteiro cairia
+- `0076_credito_com_o_posto.sql` — **`creditos_fornecedor`: quando o POSTO fica devendo pra gente.** Nasceu de um caso real (14-15/09): acerto de R$ 3.882,79 pago com cheque de R$ 4.055,56, e os R$ 172,77 de sobra nao tinham onde morar. O credito **se comporta como um cheque sem papel** — nasce inteiro, e gasto inteiro, e no acerto seguinte entra como MEIO de pagamento. `saldo_postos()` ganha `credito_aberto` e **pode ficar NEGATIVO** (eles devem pra gente). ⚠️ **Credito NAO e caixa nem DRE**: nao esta em conta nenhuma (a `movimentos_caixa` ignora linha sem conta) e o resultado ja fecha sozinho — o cheque contou receita cheia no repasse e a despesa entra quando o credito for gasto
 - `0074_conta_partida_por_meio.sql` — `contas_a_pagar.conta_pai_id`: **o banco parte, a tela junta.** N contas pagas por M meios (cheques + dinheiro/PIX/depósito) — cada PEDAÇO carrega exatamente UM meio, então `forma_pagamento`/`conta_id`/`cheque_id` continuam 1:1 e **`movimentos_caixa`, `saldo_contas()` e o DRE não mudam nada**. A tela agrupa por `conta_pai_id ?? id` e mostra o valor somado. FK **sem cascade** de propósito (cascade levaria filhos já pagos junto) + trigger que impede dois níveis. ⚠️ Partir apaga o valor original do banco — por isso o endpoint **confere a própria distribuição antes de gravar** e recusa tudo se não bater
 - `0073_cheque_devolvido_vira_divida.sql` — ⚠️ **muda a R68 do `NEGOCIOv3.md`.** Cheque devolvido só reabre a conta quando a correspondência é **inequívoca** (um cheque, uma conta, sozinho no acerto); no maço do posto as notas continuam pagas e nasce **dívida do valor do papel**, categoria `cheque_devolvido` no grupo **`neutro`** — o único grupo que o DRE tira inteiro da conta (o gasto já contou no repasse; contar de novo dobraria o mesmo diesel). Traz `pagamento_id` (carimbo do acerto, em `contas_a_pagar` **e** `cheques` — não é tabela, é agrupamento), `cheques.repassado_local_id` e `contas_a_pagar.local_id` + terceiro braço na `saldo_postos()`. **O CHECK de `origem_tipo` teve que ser estendido** — sem isso a dívida falharia exatamente quando um cheque volta
 - `0072_troco_tem_dono.sql` — `entradas_avulsas.origem_tipo/origem_id`: o troco do cheque deixa de nascer solto. Índice único parcial garante **um troco por cheque** (dois seriam caixa maior que o banco), e o DELETE do pagamento leva o troco junto — régua #4, "o desfazer tem que ser tão completo quanto o fazer". Não entra no DRE nem na anti-dobra: `entradas_avulsas` é caixa puro e o `jaTemConta` se monta só de `contas_a_pagar`
@@ -299,6 +301,21 @@ deles e chamam. **Duas implementações da mesma regra de dinheiro é exatamente
 como o buraco do cheque nasceu** — a tela de Lançamentos avisava, a de Contas
 não, e a diferença passou meses. A ordem dos meios é o que define quem paga o
 quê: dinheiro antes de cheque, como o posto sempre fez.
+
+**Desfazer o PAGAMENTO ≠ apagar a conta.** O DELETE recusa conta que nasceu
+de um fato — apagar deixaria o abastecimento sem dívida. Mas a trava pegava
+junto o que era pra ser permitido, e por isso pagamento de nota de posto não
+tinha volta NENHUMA (descoberto num caso real, 14/09). Hoje existe
+`acao: "desfazer_pagamento"`: a conta continua lá e volta a dever, o cheque
+volta pra carteira, o troco sai do caixa, o crédito some e os vales voltam a
+pendentes. Acerto com várias contas se desfaz inteiro, pelo `pagamento_id`.
+
+**Quando o POSTO fica devendo pra gente, isso tem lugar** (`creditos_fornecedor`,
+0076). Pagar a mais num acerto gera crédito, que **abate o saldo do posto** (e
+pode deixá-lo negativo) e entra como **meio de pagamento** no acerto seguinte.
+Eu tinha escrito no plano que "sobra é troco e troco volta em dinheiro"; o caso
+real desmentiu, e o Evaner confirmou que é recorrente ("sempre residual, 100,
+200 reais"). **Crédito não é caixa nem DRE** — ver o comentário da 0076.
 
 **Cheque que volta: a nota nem sempre reabre.** Pagamento pontual reabre a
 conta (R68). Maço de posto → as notas continuam pagas e nasce **dívida do

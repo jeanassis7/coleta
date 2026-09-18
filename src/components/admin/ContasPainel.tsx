@@ -539,6 +539,9 @@ function TabelaContas({
   const [confirmando, setConfirmando] = useState<ContaAPagar | null>(null);
   const [editando, setEditando] = useState<ContaAPagar | null>(null);
   const [cancelando, setCancelando] = useState<ContaAPagar | null>(null);
+  // Desfazer o PAGAMENTO (não apagar a conta). Faltava, e um caso real de
+  // 14/09 mostrou o buraco: pagamento de nota de posto não tinha volta.
+  const [desfazendo, setDesfazendo] = useState<ContaAPagar | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [avisoOk, setAvisoOk] = useState<string | null>(null);
@@ -562,6 +565,32 @@ function TabelaContas({
     } finally {
       setLoading(false);
       setCancelando(null);
+    }
+  }
+
+  async function desfazerPagamento(c: ContaAPagar) {
+    setLoading(true);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/admin/contas/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "desfazer_pagamento" }),
+      });
+      const r = await res.json();
+      if (!res.ok) {
+        setErro(r.error || "não consegui desfazer");
+        return;
+      }
+      // Desfazer calado é pior que não desfazer: a tela lista tudo que
+      // voltou atrás — cheque, troco, crédito, vale.
+      if (Array.isArray(r.desfeito) && r.desfeito.length > 0) {
+        setAvisoOk(r.desfeito.join(". ") + ".");
+      }
+      router.refresh();
+    } finally {
+      setLoading(false);
+      setDesfazendo(null);
     }
   }
 
@@ -690,6 +719,15 @@ function TabelaContas({
                         </button>
                       </>
                     )}
+                    {aba === "paga" && (
+                      <button
+                        onClick={() => setDesfazendo(c)}
+                        className="text-alerta hover:underline"
+                        title="A conta volta a ser devida e o cheque volta pra carteira. A conta NÃO é apagada."
+                      >
+                        Desfazer pagamento
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -726,6 +764,18 @@ function TabelaContas({
           carregando={loading}
           onConfirmar={() => cancelar(cancelando)}
           onFechar={() => setCancelando(null)}
+        />
+      )}
+
+      {desfazendo && (
+        <ModalConfirmar
+          titulo="Desfazer esse pagamento?"
+          descricao={`${desfazendo.descricao} · ${formatBRL(desfazendo.valor)}. A conta volta a ser DEVIDA e o cheque (se teve) volta pra carteira, junto com o troco e o crédito que ele tiver gerado. A conta NÃO é apagada — só o pagamento é desfeito, pra você lançar de novo do jeito certo.`}
+          confirmarLabel="Desfazer pagamento"
+          perigo
+          carregando={loading}
+          onConfirmar={() => desfazerPagamento(desfazendo)}
+          onFechar={() => setDesfazendo(null)}
         />
       )}
     </div>

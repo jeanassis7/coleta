@@ -8,6 +8,7 @@ import {
   cent,
   conferirPlano,
   gravarPagamento,
+  lerCreditos,
   meiosDeDinheiro,
   type ContaParaPagar,
   type Meio,
@@ -161,6 +162,16 @@ export async function POST(
     }
   }
 
+  // Crédito que o posto já devia (0076) entra como meio, do lado do cheque.
+  const creditoIds: string[] = Array.isArray(body.creditos)
+    ? body.creditos.map(String)
+    : [];
+  const cr = await lerCreditos(client, creditoIds, postoId);
+  if (cr.erro || !cr.meios) {
+    return NextResponse.json({ error: cr.erro }, { status: 409 });
+  }
+  meios.push(...cr.meios);
+
   if (meios.length === 0) {
     return NextResponse.json(
       { error: "diga com o que essas notas foram pagas" },
@@ -185,17 +196,28 @@ export async function POST(
   const excedente = totalPago - totalDevido;
   const trocoValor = Number(body.troco_valor ?? 0);
   const trocoContaId = body.troco_conta_id ? String(body.troco_conta_id) : null;
+  // A sobra tem DOIS destinos possíveis, e um deles é obrigatório: ou o posto
+  // devolveu em dinheiro (conta), ou ficou devendo (crédito — 0076). O caso
+  // real do CENTRO OESTE é o segundo, e era ele que não tinha onde morar.
+  const trocoFicaComOPosto = body.troco_fica_com_o_posto === true;
   if (excedente > 0) {
-    if (cent(trocoValor) !== excedente || !trocoContaId) {
+    if (cent(trocoValor) !== excedente || (!trocoContaId && !trocoFicaComOPosto)) {
       return NextResponse.json(
         {
           error:
             `você está pagando R$ ${brl(excedente)} a mais do que as notas. ` +
-            `Informe o troco de R$ ${brl(excedente)} e em qual conta ele entrou — ` +
-            `sem isso esse dinheiro sumiria do caixa e o resultado ficaria inflado.`,
+            `Diga o que aconteceu com esses R$ ${brl(excedente)}: o posto devolveu ` +
+            `em dinheiro (e em qual conta entrou), ou ficou devendo pra você? ` +
+            `Sem isso esse valor sumiria.`,
           precisaTroco: true,
           excedente: n2(excedente / 100),
         },
+        { status: 400 }
+      );
+    }
+    if (trocoContaId && trocoFicaComOPosto) {
+      return NextResponse.json(
+        { error: "a sobra ou volta em dinheiro ou fica de crédito — não os dois" },
         { status: 400 }
       );
     }
@@ -229,7 +251,8 @@ export async function POST(
     // RODOVIA" e "Posto texas" pro mesmo lugar.
     repassadoLocalId: postoId,
     excedente,
-    trocoContaId,
+    trocoContaId: trocoFicaComOPosto ? null : trocoContaId,
+    trocoLocalId: trocoFicaComOPosto ? postoId : null,
   });
   if (r.erro) {
     return NextResponse.json({ error: r.erro.mensagem }, { status: r.erro.status });
