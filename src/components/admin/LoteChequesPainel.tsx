@@ -124,6 +124,22 @@ export function LoteChequesPainel({
   } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // ---------------------------------------------------------------------
+  // O MAÇO EM ANDAMENTO (0078) — fotografa no celular, confere no notebook
+  // ---------------------------------------------------------------------
+  // As linhas lidas viviam só na memória da aba: fechou o navegador, perdeu
+  // tudo e pagou a leitura de novo. Agora elas ficam no servidor, e qualquer
+  // aparelho continua de onde parou.
+  //
+  // A FOTO NÃO vai junto, de propósito — quem confere está com os cheques de
+  // papel na mesa, e papel na frente confere melhor que foto na tela.
+  const [carregandoRascunho, setCarregandoRascunho] = useState(true);
+  const [salvoEm, setSalvoEm] = useState<string | null>(null);
+  const [descartando, setDescartando] = useState(false);
+  // Trava a gravação até o rascunho do servidor ter sido carregado. Sem ela,
+  // o estado vazio do primeiro render sobrescreveria o maço do celular assim
+  // que o notebook abrisse a tela — apagando o trabalho que devia continuar.
+  const jaCarregou = useRef(false);
   const [ampliada, setAmpliada] = useState<string | null>(null);
   const [totalRelatorioCentavos, setTotalRelatorioCentavos] = useState<number | null>(null);
   // Último custo devolvido pela leitura por foto (dólar por token REAL da
@@ -154,6 +170,87 @@ export function LoteChequesPainel({
     fimDaListaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     setRolarParaFim(false);
   }, [rolarParaFim]);
+
+  // Abriu a tela: tem maço em andamento? Se tiver, ele volta inteiro e a
+  // tela já abre na conferência — é o F5 no notebook depois de fotografar.
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/cheques/rascunho");
+        const json = await res.json();
+        if (!vivo) return;
+        const r = json?.rascunho;
+        if (r && Array.isArray(r.linhas) && r.linhas.length > 0) {
+          // A foto não atravessa aparelho: `imagemId` volta nulo sempre, e a
+          // linha fica sem miniatura. A conferência é contra o papel.
+          setLinhas(
+            (r.linhas as Linha[]).map((l) => ({ ...l, imagemId: null }))
+          );
+          if (r.comprador_id) setCompradorId(r.comprador_id);
+          if (r.data) setData(r.data);
+          setSalvoEm(r.atualizado_em ?? null);
+          setAberto(true);
+        }
+      } catch {
+        // Sem rascunho a tela funciona igual — é atalho, não dependência.
+      } finally {
+        if (vivo) {
+          jaCarregou.current = true;
+          setCarregandoRascunho(false);
+        }
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // Grava sozinho, com folga de 1,2s. Botão de "salvar" seria mais uma coisa
+  // pra ele lembrar — e esquecer de salvar é exatamente o problema que este
+  // trabalho veio resolver.
+  useEffect(() => {
+    if (!jaCarregou.current) return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/admin/cheques/rascunho", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            comprador_id: compradorId || null,
+            data,
+            linhas: linhas.map((l) => ({ ...l, imagemId: null })),
+          }),
+        });
+        const json = await res.json();
+        if (res.ok) setSalvoEm(json.atualizado_em ?? (linhas.length ? new Date().toISOString() : null));
+      } catch {
+        // Rede caiu: a tela continua funcionando com o que está na memória.
+        // Some o carimbo de salvo — não dizer "salvo" quando não salvou.
+        setSalvoEm(null);
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [linhas, compradorId, data]);
+
+  async function descartarMaco() {
+    setDescartando(true);
+    try {
+      await fetch("/api/admin/cheques/rascunho", { method: "DELETE" });
+    } finally {
+      jaCarregou.current = false;
+      setLinhas([]);
+      setFotos([]);
+      setSalvoEm(null);
+      setAberto(false);
+      setDescartando(false);
+      // Volta a gravar só depois de o estado vazio assentar, senão o próprio
+      // clear dispararia uma gravação e recriaria o rascunho.
+      setTimeout(() => {
+        jaCarregou.current = true;
+      }, 1500);
+    }
+  }
 
   const conferidas = linhas.filter((l) => l.conferido);
   const total = conferidas.reduce(
@@ -389,11 +486,20 @@ export function LoteChequesPainel({
         router.refresh();
         return;
       }
+      // O maço virou cheque de verdade: o rascunho não tem mais razão de
+      // existir. Apagado ANTES de limpar a tela, pra que uma falha aqui
+      // deixe o rascunho visível em vez de virar fantasma invisível.
+      jaCarregou.current = false;
+      await fetch("/api/admin/cheques/rascunho", { method: "DELETE" }).catch(() => {});
       setLinhas([]);
       setFotos([]);
       setAberto(false);
+      setSalvoEm(null);
       setTotalRelatorioCentavos(null);
       setSomaConfirmadaCentavos(null);
+      setTimeout(() => {
+        jaCarregou.current = true;
+      }, 1500);
       router.refresh();
     } finally {
       setSalvando(false);
@@ -403,8 +509,12 @@ export function LoteChequesPainel({
   if (!aberto) {
     return (
       <div className="mb-4">
-        <button onClick={() => setAberto(true)} className="btn-primario">
-          + Lançar maço de cheques
+        <button
+          onClick={() => setAberto(true)}
+          className="btn-primario disabled:opacity-40"
+          disabled={carregandoRascunho}
+        >
+          {carregandoRascunho ? "Abrindo…" : "+ Lançar maço de cheques"}
         </button>
       </div>
     );
@@ -421,6 +531,41 @@ export function LoteChequesPainel({
           Fechar
         </button>
       </div>
+
+      {/* A promessa das duas etapas, dita onde ele vai ler: pode guardar o
+          celular. Só aparece quando há maço de verdade — dizer "salvo" com a
+          lista vazia seria ruído. */}
+      {linhas.length > 0 && (
+        <div
+          className={`rounded-xl p-3 text-sm flex items-center justify-between gap-3 flex-wrap ${
+            salvoEm
+              ? "bg-verde/5 border border-verde/40"
+              : "bg-amber-50 border border-amber-300"
+          }`}
+        >
+          <span>
+            {salvoEm ? (
+              <>
+                <strong>Salvo.</strong> Pode fechar e continuar em outro
+                aparelho — é só abrir esta tela de novo. A foto não vai junto:
+                a conferência é com os cheques na mão.
+              </>
+            ) : (
+              <>
+                <strong>Ainda não salvo.</strong> Sem internet no momento — não
+                feche esta tela até aparecer &quot;salvo&quot; aqui.
+              </>
+            )}
+          </span>
+          <button
+            onClick={descartarMaco}
+            disabled={descartando}
+            className="text-xs text-alerta hover:underline shrink-0 disabled:opacity-40"
+          >
+            {descartando ? "descartando…" : "descartar maço"}
+          </button>
+        </div>
+      )}
 
       {erro && (
         <div className="bg-alerta/10 border border-alerta text-alerta rounded-xl p-2 text-sm">
@@ -628,14 +773,19 @@ export function LoteChequesPainel({
                   <p className="text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-2 py-1.5 mb-2">
                     ⚠️ O número diz{" "}
                     {formatBRL(centavosParaReais(l.valorCentavos!))} e o extenso diz{" "}
-                    {formatBRL(centavosParaReais(l.valorExtensoCentavos!))} — confira
-                    na foto.
+                    {formatBRL(centavosParaReais(l.valorExtensoCentavos!))} — confira{" "}
+                    {/* Sem foto (maço continuado em outro aparelho) a
+                        conferência é contra o papel, que é o que está na mesa.
+                        Mandar "confira na foto" onde não há foto é mandar
+                        procurar uma coisa que não existe. */}
+                    {foto ? "na foto" : "no cheque"}.
                   </p>
                 )}
                 {l.deuPraLer && !divergeValor && faltaConferirValor && (
                   <p className="text-xs text-cinza-suave mb-2">
                     Só {l.valorCentavos !== null ? "o número" : "o extenso"} foi
-                    lido com certeza — confira o outro na foto.
+                    lido com certeza — confira o outro{" "}
+                    {foto ? "na foto" : "no cheque"}.
                   </p>
                 )}
 

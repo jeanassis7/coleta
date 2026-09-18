@@ -1,6 +1,37 @@
 # Estado do projeto — onde paramos
 
-## ⚠️ PENDENTE AGORA — o acerto do CENTRO OESTE (18/09/2026)
+## O MAÇO DE CHEQUES EM DUAS ETAPAS — 18/09/2026 📱→💻
+
+Como o Jean trabalha de verdade: pega o celular, fotografa os cheques um a
+um, e depois senta no notebook, dá F5, e confere com o maço de papel na mesa.
+
+Antes isso era impossível — as linhas lidas viviam na **memória da aba**.
+Fechou o navegador, perdeu tudo e pagou a leitura de novo. Agora elas ficam
+no servidor (`rascunho_lote_cheques`, 0078) e qualquer aparelho continua de
+onde parou. Celular inteiro, computador inteiro, ou metade em cada — tanto
+faz.
+
+**A foto NÃO é salva, e isso foi decidido com o Evaner.** O que persiste são
+os dados lidos. Funciona porque **ele confere com os cheques na mesa** —
+papel na frente confere melhor que foto na tela. ⚠️ Se um dia ele passar a
+conferir longe dos cheques, essa decisão cai: sem foto e sem papel, conferir
+vira acreditar.
+
+**As divergências viajam junto** (valor por extenso, ano assumido, origem do
+"bom para"). Elas só existiam na tela e nunca vão pro `/lote` — mas se o
+rascunho guardasse só os valores, o notebook receberia um número limpo onde
+havia uma dúvida, e a dúvida é o ponto da segunda etapa.
+
+Grava sozinho com folga de 1,2s, e a tela diz **"Salvo. Pode fechar e
+continuar em outro aparelho"** — botão de salvar seria mais uma coisa pra ele
+lembrar, e esquecer de salvar é o problema que isto veio resolver. Quando não
+consegue gravar, ela diz isso também, em vez de mentir.
+
+---
+
+## ✅ RESOLVIDO — o acerto do CENTRO OESTE (18/09/2026)
+
+O Jean fez e deu certo. Fica o registro do que era, porque a causa vale.
 
 O Jean precisa refazer um lançamento, e o caminho **já está no ar**. Passo a
 passo pra ele:
